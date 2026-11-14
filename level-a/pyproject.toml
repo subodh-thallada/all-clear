@@ -21,10 +21,10 @@ dependencies = [
 test = ["pytest>=8", "pytest-timeout>=2.3"]
 
 [tool.setuptools.packages.find]
-include = ["levela*", "seedkit*"]
+include = ["levela*"]
 
 [tool.setuptools.package-data]
-levela = ["wall/*", "api/templates/*"]
+levela = ["api/templates/*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -33,6 +33,7 @@ python_files = ["test_*.py", "e2e_*.py"]
 timeout = 300
 addopts = "-ra"
 markers = [
+  "integration: operator checks that require a database-backed engine",
   "atlas: needs a real Atlas cluster (vector search); skipped on a plain mongod",
   "slow: long-running (crash schedules, real-time e2e)",
 ]
