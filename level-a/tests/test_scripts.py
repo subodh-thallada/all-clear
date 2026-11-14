@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tomllib
 from itertools import count
+from pathlib import Path
 from unittest import mock
 
 import httpx
@@ -61,7 +62,7 @@ def _makefile() -> tuple[str, dict[str, str], dict[str, list[str]]]:
     rules: dict[str, list[str]] = {}
     current = None
     for line in text.splitlines():
-        target = re.match(r"^([a-z0-9-]+):", line)
+        target = re.match(r"^([a-z0-9_-]+):", line)
         if target:
             current = target.group(1)
             rules[current] = []
@@ -134,9 +135,6 @@ def _check_command(argv: list[str]) -> None:
     prog, rest = argv[0], argv[1:]
     if prog == "python" and rest[:2] == ["-m", "levela"]:
         _check_parsed(_levela_parser(), rest[2:], f"python -m levela {rest[2]}")
-    elif prog == "python" and rest[:2] == ["-m", "seedkit"]:
-        from seedkit.__main__ import main as seedkit_main
-        _check_parsed(_parser_of(seedkit_main), rest[2:], "python -m seedkit")
     elif prog == "python" and rest[:2] == ["-m", "pytest"]:
         marker = rest[rest.index("-m", 2) + 1]
         assert marker in ("slow", "not slow")
@@ -190,7 +188,8 @@ def test_every_recipe_is_a_real_cli_call(overrides):
 
 def test_targets_run_what_the_runbook_says():
     _, _, rules = _makefile()
-    assert rules["seed"] == ["$(PYTHON) -m levela load-history"]
+    assert rules["seed"] == ["$(PYTHON) -m levela setup-db --search-indexes"]
+    assert rules["dryrun"] == ['$(PYTHON) -m pytest -q tests/test_atlas_basics.py -m "not slow"']
     assert "--scenario recall_long --mode demo" in rules["demo"][0]
     assert "--scenario recall_1 --mode demo" in rules["demo-4"][0]
     assert rules["test"] == ['$(PYTHON) -m pytest -q -m "not slow"']
@@ -203,6 +202,10 @@ def test_targets_run_what_the_runbook_says():
 def _bash() -> str:
     """A bash that runs (on Windows, Git's; WSL's launcher without a distro does not)."""
     bash = shutil.which("bash")
+    if os.name == "nt" and (git := shutil.which("git")):
+        git_bash = Path(git).parent.parent / "bin" / "bash.exe"
+        if git_bash.is_file():
+            bash = str(git_bash)
     if bash is None:
         pytest.skip("no bash on PATH")
     try:
@@ -354,6 +357,7 @@ def test_kill_demo_ps1_counts_only_the_failpoint_kill_like_the_bash_script(tmp_p
     assert ("Could not count the kill" in res.stdout) is ("COUNT_EXIT" in env)
 
 
+@pytest.mark.integration
 def test_count_kill_counts_a_kill_survived_like_the_supervisor(client, db, settings, monkeypatch, capsys):
     """`python -m levela count-kill` adds one to runs.kills and writes the
     supervisor's own feed line for a worker that died with exit 137; the
@@ -395,14 +399,14 @@ def _wall(**over) -> dict:
     state = {
         "now": NOW,
         "recall": {"_id": "RCL-TEST-1", "status": "open", "batch_code": "B-4471", "units_total": 2400,
-                   "product": "Granola Bars"},
+                   "product": "Maple Farm milk powder 800 g"},
         "run": {"sim_label": "d6 14:00", "day": 6, "days_total": 10, "seconds_per_sim_hour": 30, "paused": False,
                 "parties": {"total": 40, "at_start": 5, "found": 35}, "checked": [31, 40], "steps": 412,
                 "kills": 9, "duplicates": 0, "tokens_per_decision": 1850, "model_calls": 3,
                 "invariants": {"passed": [True] * 4, "ok": True, "at_label": "d6 14:00"},
                 "supervisor": {"paused": False}, "saboteur": {"on": False}},
-        "metrics": {"checks_completed": [31, 40], "units_documented": [2115, 2400],
-                    "units_recovered": [1340, 2400], "open_units": 285, "disputed_units": 15,
+        "metrics": {"checks_completed": [31, 40], "tins_located": [2115, 2400],
+                    "held_or_returned": [1340, 2400], "open_units": 285, "disputed_units": 15,
                     "mass_balance": 2400, "units_total": 2400},
         "parties": [{"party_id": "harbour-market", "hold_for_demo": True, "live_attempt": None}],
         "edges": [], "feed": [], "failpoints": {}, "calls": {"total": 0, "by_party": {}},
@@ -567,7 +571,7 @@ def test_start_posts_the_recall_and_prints_the_forms():
 def test_status_shows_the_numbers_the_wall_shows():
     lines = "\n".join(demo.status_lines(_wall()))
     for text in ("Parties 40 (5 at the start, 35 found)", "Kills survived 9", "Duplicate effects 0",
-                 "Invariants: 4 of 4 hold", "Documented 2,115 of 2,400", "North orders", "Steps 412"):
+                 "Invariants: 4 of 4 hold", "Located 2,115 of 2,400", "North orders", "Steps 412"):
         assert text in lines, text
     assert "No run-time recall" in demo.status_lines({"recall": None})[0]
 
@@ -637,13 +641,33 @@ def test_ci_runs_both_pythons_on_a_mongodb_replica_set():
     runs = {s.get("name"): s for s in steps if "run" in s}
     commands = "\n".join(s["run"] for s in runs.values())
     assert "pip install -r requirements-dev.txt" in commands
-    assert 'python -m seedkit --uri "$LEVELA_TEST_URI" dryrun' in commands
+    assert 'python -m pytest -q tests/test_atlas_basics.py -m "not slow"' in commands
     assert 'python -m pytest -q -m "not slow"' in commands
     slow = next(s for s in runs.values() if "-m slow" in s["run"])
     assert slow["timeout-minutes"] == 20
-    assert any(str(s.get("uses", "")).startswith("actions/setup-node") for s in steps)
-    assert "node --check levela/wall/wall.js" in commands
-    assert (ROOT / "requirements-dev.txt").is_file() and (ROOT / "levela" / "wall" / "wall.js").is_file()
+    assert "seedkit" not in commands and "levela/wall/wall.js" not in commands
+    assert (ROOT / "requirements-dev.txt").is_file()
+
+
+def test_ci_tests_and_builds_the_current_workflow_screen():
+    job = _workflow()["jobs"]["web"]
+    assert job["defaults"]["run"]["working-directory"] == "level-a/web"
+    node = next(s for s in job["steps"] if str(s.get("uses", "")).startswith("actions/setup-node"))
+    assert node["with"]["node-version"] == "20"
+    assert node["with"]["cache-dependency-path"] == "level-a/web/package-lock.json"
+    assert [s["run"] for s in job["steps"] if "run" in s] == ["npm ci", "npm test", "npm run build"]
+    package = json.loads((ROOT / "web" / "package.json").read_text(encoding="utf-8"))
+    assert {"test", "build"} <= set(package["scripts"])
+
+
+def test_ci_checks_the_workflow_and_operator_tools_without_the_backend():
+    job = _workflow()["jobs"]["infrastructure"]
+    assert job["defaults"]["run"]["working-directory"] == "level-a"
+    commands = [s["run"] for s in job["steps"] if "run" in s]
+    assert 'python -m pytest -q tests/test_docs.py tests/test_scripts.py -m "not integration"' in commands
+    # The marked database test still runs in the fast backend suite.
+    backend = _workflow()["jobs"]["test"]
+    assert 'python -m pytest -q -m "not slow"' in [s["run"] for s in backend["steps"] if "run" in s]
 
 
 def _env_example_keys() -> tuple[set[str], set[str]]:
@@ -737,13 +761,16 @@ def test_dockerfile_runs_the_api_as_a_non_root_user_without_secrets():
     assert ".env" in ignore
 
 
-def test_gitattributes_keeps_scripts_lf_and_the_history_still_verifies():
+def test_gitattributes_keeps_scripts_and_bundled_scenarios_portable():
     rules = (REPO / ".gitattributes").read_text(encoding="utf-8").splitlines()
     for line in ("* text=auto", "*.sh text eol=lf", "Makefile text eol=lf", "*.py text eol=lf",
                  "*.json text eol=lf", "*.pdf binary"):
         assert line in rules, line
-    from seedkit.load import DATA_DIR, digest, read_history
-    manifest, docs = read_history()                   # refuses files that do not match the manifest
-    assert sum(len(v) for v in docs.values()) == sum(manifest["counts"].values())
-    lf = (DATA_DIR / "parties.json").read_bytes().replace(b"\r\n", b"\n")
-    assert digest(lf) == digest(lf.replace(b"\n", b"\r\n")) == manifest["sha256"]["parties"]
+    from levela.db.seed import list_scenarios, load_scenario
+    assert {"recall_1", "recall_2", "recall_long"} <= set(list_scenarios())
+    for name in list_scenarios():
+        scenario = load_scenario(name)
+        assert sum(p["shipped_in"] for p in scenario["parties"]) == scenario["recall"]["units_total"]
+        path = ROOT / "scenarios" / f"{name}.json"
+        lf = path.read_bytes().replace(b"\r\n", b"\n")
+        assert json.loads(lf) == json.loads(lf.replace(b"\n", b"\r\n"))

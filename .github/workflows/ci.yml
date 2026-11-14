@@ -1,4 +1,4 @@
-# Level A: every push and pull request runs the seed kit's dry run, the fast
+# Level A: every push and pull request runs the database smoke checks, the fast
 # tests and the slow ones (the long run, random kills, eight workers) against a
 # MongoDB 8.0 replica set, the same server version as an Atlas free cluster.
 # Tests marked `atlas` (Vector Search) skip on a plain mongod.
@@ -16,6 +16,27 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  infrastructure:
+    name: workflow and operator checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: level-a
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            level-a/requirements.txt
+            level-a/requirements-dev.txt
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Check workflow, commands, documentation and launch scripts
+        run: python -m pytest -q tests/test_docs.py tests/test_scripts.py -m "not integration"
+
   test:
     name: tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -49,8 +70,8 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
 
-      - name: Seed kit dry run
-        run: python -m seedkit --uri "$LEVELA_TEST_URI" dryrun
+      - name: Database smoke tests
+        run: python -m pytest -q tests/test_atlas_basics.py -m "not slow"
 
       - name: Fast tests
         run: python -m pytest -q -m "not slow"
@@ -65,9 +86,24 @@ jobs:
           if [ "$code" -eq 5 ]; then echo "No slow tests collected."; exit 0; fi
           exit "$code"
 
+  web:
+    name: workflow screen
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: level-a/web
+    steps:
+      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
+          cache-dependency-path: level-a/web/package-lock.json
 
-      - name: Wall script parses
-        run: node --check levela/wall/wall.js
+      - name: Install screen dependencies
+        run: npm ci
+      - name: Screen engine tests
+        run: npm test
+      - name: Build workflow screen
+        run: npm run build
