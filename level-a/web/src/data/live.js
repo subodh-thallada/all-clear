@@ -511,7 +511,13 @@ export function createLive(api) {
         emit();
         return;
       }
+      if (!last?.recall?._id) await poll();     // a press right after a restart or a new run: read the run first
       const rid = last?.recall?._id;
+      if (!rid) {
+        link = { ...link, note: 'No open run yet. Wait a second and press again' };
+        emit();
+        return;
+      }
       let note = null;
       for (const [path, body, optional] of steps(rid)) {
         const problem = await send(path, body);

@@ -145,7 +145,8 @@ def wall_page():
     if not index.is_file():
         return PlainTextResponse("The screen is not built: run `npm run build` in web/ (web/dist/index.html "
                                  "is missing).", status_code=404)
-    return FileResponse(index, media_type="text/html")
+    # no-store: a rebuilt screen must reach the room's browser on its next load, not a cached copy.
+    return FileResponse(index, media_type="text/html", headers={"Cache-Control": "no-store"})
 
 
 @router.get("/wall/state")
