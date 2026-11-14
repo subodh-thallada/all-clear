@@ -1,0 +1,114 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "submit_count",
+    "description": "Record the counts and checks this party confirmed for the recalled batch of fire alarm panels. Call it only after every number and answer has been read back and confirmed with a yes, and send the complete set in one call: in_stock, returned, installed, fixed and forwarded_qty, with 0 for any the person said was none, plus the three checks when you asked them. After a correction, call it again with the complete corrected set. The reply says whether the counts were accepted. If stop is true, stop asking, thank the person and end the call. If accepted is false and the reply gives two values that disagree, say both plainly and ask them to check again. Otherwise do what the reply's message says.",
+    "response_timeout_secs": 20,
+    "api_schema": {
+      "url": "{{PUBLIC_BASE_URL}}/tools/submit_count",
+      "method": "POST",
+      "content_type": "application/json",
+      "request_headers": {
+        "X-Tool-Secret": {
+          "secret_id": "{{TOOL_SECRET_ID}}"
+        }
+      },
+      "request_body_schema": {
+        "type": "object",
+        "description": "One party's confirmed counts for the recalled batch, in whole panels, and its checks.",
+        "required": [
+          "attempt_id",
+          "party_id"
+        ],
+        "properties": {
+          "attempt_id": {
+            "type": "string",
+            "dynamic_variable": "attempt_id"
+          },
+          "party_id": {
+            "type": "string",
+            "dynamic_variable": "party_id"
+          },
+          "system__conversation_id": {
+            "type": "string",
+            "dynamic_variable": "system__conversation_id"
+          },
+          "system__call_sid": {
+            "type": "string",
+            "dynamic_variable": "system__call_sid"
+          },
+          "in_stock": {
+            "type": "integer",
+            "description": "Panels of this batch the party still has in stock, not installed anywhere, as the person confirmed. Send 0 if they have none. Leave it out only if they could not give a number."
+          },
+          "returned": {
+            "type": "integer",
+            "description": "Panels of this batch already sent back to the supplier, as the person confirmed. Send 0 if none were returned. Leave it out only if they could not give a number."
+          },
+          "installed": {
+            "type": "integer",
+            "description": "Panels of this batch installed in the party's own buildings and not yet updated, as the person confirmed. Send 0 if none. An installer's panels installed at someone else's building are forwarded, not installed."
+          },
+          "fixed": {
+            "type": "integer",
+            "description": "Panels of this batch in the party's own buildings that the installer has already updated, as the person confirmed. Send 0 if none. Send the three checks with it."
+          },
+          "forwarded_qty": {
+            "type": "integer",
+            "description": "Panels of this batch installed at a building owner's site or passed to another installer, as the person confirmed. Send 0 if none went anywhere."
+          },
+          "forwarded_to_name": {
+            "type": "string",
+            "description": "Name of the building owner or installer the forwarded panels went to, as read back and confirmed with the person. Send it only when forwarded_qty is more than 0; leave it out otherwise."
+          },
+          "received_qty": {
+            "type": "integer",
+            "description": "Only when the call details say to ask what they received: how many panels of this batch the party received from the party that sent them. Leave it out entirely for every other party, even as 0."
+          },
+          "received_from": {
+            "type": "string",
+            "description": "Only for a party that received panels of this batch from more than one sender: the name of the party that sent the panels counted in received_qty, as read back and confirmed. Leave it out otherwise."
+          },
+          "model_seen": {
+            "type": "string",
+            "description": "Only when you asked the three checks: the model printed on the front of the panel, as read back and confirmed. Leave it out otherwise."
+          },
+          "version_seen": {
+            "type": "string",
+            "description": "Only when you asked the three checks: the software version the panel's display shows, digits and points only, as read back and confirmed. Leave it out otherwise."
+          },
+          "sounder_test": {
+            "type": "boolean",
+            "description": "Only when you asked the three checks: true if the sounder rang when the test button was pressed, false if it did not. Leave it out otherwise."
+          },
+          "delivery_note": {
+            "type": "string",
+            "description": "The delivery note number exactly as the person confirmed it, letters and digits, for example DN-73105. Send it only when the call details say to ask for the delivery note; leave it out otherwise."
+          },
+          "forwards": {
+            "type": "array",
+            "description": "Only when panels went to more than one building owner or installer: one entry per party with its name and the number of panels, as read back and confirmed. When every party is listed here, leave forwarded_qty and forwarded_to_name out. Leave it out entirely when one party or no party got panels.",
+            "items": {
+              "type": "object",
+              "description": "One party that received forwarded panels.",
+              "properties": {
+                "to_name": {
+                  "type": "string",
+                  "description": "The party's name as read back and confirmed with the person."
+                },
+                "qty": {
+                  "type": "integer",
+                  "description": "How many panels went to that party."
+                }
+              },
+              "required": [
+                "to_name",
+                "qty"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

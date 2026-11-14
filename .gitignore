@@ -1,0 +1,25 @@
+# Secrets and local state: never commit
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Claude Code worktrees and local tooling
+.claude/
+
+# Node / web build output
+node_modules/
+web/dist/
+level-a/web/dist/
+*.tsbuildinfo
+
+# Local artifacts
+*.log
+.DS_Store
+screenshots/

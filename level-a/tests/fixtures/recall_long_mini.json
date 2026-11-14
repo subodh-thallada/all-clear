@@ -1,0 +1,111 @@
+{
+  "scenario_id": "recall_long_mini",
+  "synthetic": true,
+  "about": "Test fixture with the shape of recall_long.json at a small scale: two slice installers and an order system distributor on the shipment records (tier 1), order system accounts (tier 2) and a building owner named by a claim (tier 3) in the directory, a long-run schedule. All phone numbers are fictional 555-01xx numbers.",
+  "recall": {
+    "_id": "RCL-LONG-MINI",
+    "batch_code": "B-4471",
+    "batch_spoken": "B, four four seven one",
+    "model": "DEMO-7",
+    "product": "DEMO-7 fire alarm control panel",
+    "supplier": "Kestrel Life Safety",
+    "hazard": "The sounder circuit may fail to activate in an alarm",
+    "affected_versions": ["2.3", "2.4"],
+    "fixed_version": "2.5",
+    "unit": "panel",
+    "units_total": 400
+  },
+  "schedule": {
+    "sim_start": 9.0,
+    "seconds_per_sim_hour": 30,
+    "days_total": 10,
+    "hold_slice_in_demo": true,
+    "order_system_change_at": {
+      "north": 81.5
+    }
+  },
+  "parties": [
+    {
+      "party_id": "harbour-fire",
+      "name": "Harbour Fire",
+      "type": "installer",
+      "tier": 1,
+      "channel": "voice",
+      "phone_env": "PHONE_HARBOUR",
+      "sim_phone": "+14165550141",
+      "shipped_in": 40,
+      "delivery_note": "DN-48213",
+      "profile": "Fire alarm contractor on Queens Quay. The office manager answers the phone.",
+      "slice": true
+    },
+    {
+      "party_id": "queen-st-alarm",
+      "name": "Queen St Alarm",
+      "type": "installer",
+      "tier": 1,
+      "channel": "sim",
+      "phone": "+14165550142",
+      "shipped_in": 60,
+      "delivery_note": "DN-48214",
+      "profile": "Fire alarm installer on Queen St W with a large stock room.",
+      "slice": true
+    },
+    {
+      "party_id": "dist-north",
+      "name": "Distributor North",
+      "type": "distributor",
+      "tier": 1,
+      "channel": "order_system",
+      "order_system": "north",
+      "shipped_in": 300
+    }
+  ],
+  "directory": [
+    {
+      "party_id": "corner-properties",
+      "name": "Corner Properties",
+      "aliases": [
+        "the corner properties",
+        "corner property"
+      ],
+      "type": "owner",
+      "tier": 3,
+      "channel": "voice",
+      "phone_env": "PHONE_CORNER",
+      "sim_phone": "+14165550144",
+      "profile": "Property manager of mid-rise buildings in Parkdale.",
+      "slice": true
+    },
+    {
+      "party_id": "bloor-alarm",
+      "name": "Bloor Alarm",
+      "type": "installer",
+      "tier": 2,
+      "channel": "sim",
+      "phone": "+14165550127",
+      "account": "N-014",
+      "distributor": "dist-north",
+      "profile": "Fire alarm contractor on Bloor St W, an account of Distributor North."
+    },
+    {
+      "party_id": "annex-fire",
+      "name": "Annex Fire",
+      "type": "installer",
+      "tier": 2,
+      "channel": "sim",
+      "phone": "+14165550128",
+      "account": "N-009",
+      "distributor": "dist-north",
+      "profile": "Fire alarm installer in the Annex, an account of Distributor North."
+    },
+    {
+      "party_id": "dundas-lofts",
+      "name": "Dundas Lofts",
+      "type": "owner",
+      "tier": 3,
+      "channel": "sim",
+      "phone": "+14165550129",
+      "profile": "Loft building whose panels the Annex Fire installed."
+    }
+  ]
+}

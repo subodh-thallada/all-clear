@@ -1,0 +1,393 @@
+{
+  "scenario_id": "recall_1",
+  "synthetic": true,
+  "about": "The live slice. Batch B-4471, 240 panels shipped to three installers; one building owner is hidden. Ends with 15 panels disputed and 25 installed and not fixed at Corner Properties, so the recall cannot close. Corner Properties' fix check (the installer's visit, software 2.5, the sounder rings) and the dispute follow-up settle both.",
+  "recall": {
+    "_id": "RCL-2026-017",
+    "batch_code": "B-4471",
+    "batch_spoken": "B, four four seven one",
+    "model": "DEMO-7",
+    "product": "DEMO-7 fire alarm control panel",
+    "supplier": "Kestrel Life Safety",
+    "hazard": "The sounder circuit may fail to activate in an alarm",
+    "affected_versions": [
+      "2.3",
+      "2.4"
+    ],
+    "fixed_version": "2.5",
+    "checks": [
+      {
+        "id": "model",
+        "label": "Affected unit",
+        "question": "What model is printed on the front of the panel?",
+        "answer": "model",
+        "rule": "Must be the recalled model"
+      },
+      {
+        "id": "version",
+        "label": "Still at risk",
+        "question": "What software version does the display show?",
+        "answer": "version digits",
+        "rule": "A version in the affected list means not fixed"
+      },
+      {
+        "id": "sounder",
+        "label": "Fix took effect",
+        "question": "Press the test button. Did the sounder ring?",
+        "answer": "yes or no",
+        "rule": "fixed needs yes"
+      }
+    ],
+    "unit": "panel",
+    "units_total": 240
+  },
+  "parties": [
+    {
+      "party_id": "harbour-fire",
+      "name": "Harbour Fire",
+      "type": "installer",
+      "tier": 1,
+      "channel": "voice",
+      "phone_env": "PHONE_HARBOUR",
+      "sim_phone": "+14165550141",
+      "shipped_in": 40,
+      "delivery_note": "DN-48213",
+      "profile": "Fire alarm contractor on Queens Quay by the Toronto waterfront. A crew of four technicians installs and services panels in mid-rise residential buildings. Buys panels from the supplier by the case. The office manager answers the phone during working hours.",
+      "slice": true
+    },
+    {
+      "party_id": "queen-st-alarm",
+      "name": "Queen St Alarm",
+      "type": "installer",
+      "tier": 1,
+      "channel": "sim",
+      "phone": "+14165550142",
+      "shipped_in": 120,
+      "delivery_note": "DN-48214",
+      "profile": "Fire alarm installer on Queen St W in Parkdale, Toronto. A busy contractor with a stock room larger than its jobs need. Installs panels for property managers across the west end and keeps its job sheets on paper.",
+      "slice": true
+    },
+    {
+      "party_id": "lakeside-systems",
+      "name": "Lakeside Systems",
+      "type": "installer",
+      "tier": 1,
+      "channel": "sim",
+      "phone": "+14165550143",
+      "shipped_in": 80,
+      "delivery_note": "DN-48215",
+      "profile": "Fire alarm and sprinkler contractor on Lake Shore Blvd W in Mimico, Etobicoke. Pulls recalled stock the same day and ships it back to the supplier with return slips.",
+      "slice": true
+    }
+  ],
+  "directory": [
+    {
+      "party_id": "corner-properties",
+      "name": "Corner Properties",
+      "aliases": [
+        "corner properties",
+        "the corner properties",
+        "corner property",
+        "korner properties",
+        "corner properties ltd"
+      ],
+      "type": "owner",
+      "tier": 3,
+      "channel": "voice",
+      "phone_env": "PHONE_CORNER",
+      "sim_phone": "+14165550144",
+      "profile": "Property manager in Parkdale, Toronto, running several mid-rise residential buildings. Buys its fire alarm panels through a local installer, not from a distributor. The building manager answers a mobile phone.",
+      "slice": true
+    }
+  ],
+  "sim": {
+    "harbour-fire": {
+      "initial": [
+        {
+          "delay_s": 2.0,
+          "answers": {
+            "delivery_note": "DN-48213"
+          },
+          "say": "We've got sixty in stock.",
+          "claim": {
+            "in_stock": 60
+          },
+          "expect": {
+            "accepted": false,
+            "reported_total": 60,
+            "shipped_in": 40
+          }
+        },
+        {
+          "delay_s": 2.0,
+          "answers": {
+            "delivery_note": "DN-48213"
+          },
+          "say": "Sorry, I was reading the wrong job. Thirty in stock, ten already sent back to the supplier.",
+          "claim": {
+            "in_stock": 30,
+            "returned": 10
+          },
+          "expect": {
+            "accepted": true
+          }
+        }
+      ]
+    },
+    "queen-st-alarm": {
+      "initial": [
+        {
+          "delay_s": 4.0,
+          "demo_hold": true,
+          "answers": {
+            "delivery_note": "DN-48214"
+          },
+          "say": "Fifty in stock, thirty returned, and forty installed at Corner Properties' buildings.",
+          "claim": {
+            "in_stock": 50,
+            "returned": 30,
+            "forwarded_qty": 40,
+            "forwarded_to_name": "Corner Properties"
+          },
+          "expect": {
+            "accepted": true
+          }
+        }
+      ],
+      "dispute_followup": [
+        {
+          "delay_s": 2.0,
+          "told": {
+            "other_side_qty": 25
+          },
+          "answers": {
+            "delivery_note": "DN-48214"
+          },
+          "say": "Checked the job sheets. Twenty-five went into Corner Properties. The other fifteen are still in our stock room.",
+          "claim": {
+            "in_stock": 65,
+            "returned": 30,
+            "forwarded_qty": 25,
+            "forwarded_to_name": "Corner Properties"
+          },
+          "expect": {
+            "accepted": true
+          }
+        }
+      ]
+    },
+    "lakeside-systems": {
+      "initial": [
+        {
+          "delay_s": 3.0,
+          "answers": {
+            "delivery_note": "DN-48215"
+          },
+          "say": "Twenty in stock. Sixty already shipped back to the supplier.",
+          "claim": {
+            "in_stock": 20,
+            "returned": 60
+          },
+          "expect": {
+            "accepted": true
+          }
+        }
+      ]
+    },
+    "corner-properties": {
+      "initial": [
+        {
+          "delay_s": 3.0,
+          "say": "We received twenty-five, all installed. The front says DEMO-7, the display says 2.4, and the sounder did not ring.",
+          "claim": {
+            "received_qty": 25,
+            "installed": 25,
+            "model_seen": "DEMO-7",
+            "version_seen": "2.4",
+            "sounder_test": false
+          },
+          "expect": {
+            "accepted": true
+          }
+        }
+      ],
+      "dispute_followup": [
+        {
+          "delay_s": 3.0,
+          "told": {
+            "other_side_qty": 40
+          },
+          "say": "No, twenty-five. I have the installer's invoice.",
+          "claim": {
+            "received_qty": 25,
+            "installed": 25,
+            "model_seen": "DEMO-7",
+            "version_seen": "2.4",
+            "sounder_test": false
+          },
+          "expect": {
+            "accepted": true
+          }
+        }
+      ],
+      "fix_check": [
+        {
+          "delay_s": 3.0,
+          "say": "The installer came by. All twenty-five are updated: the display shows 2.5 and the sounder rang.",
+          "claim": {
+            "received_qty": 25,
+            "fixed": 25,
+            "model_seen": "DEMO-7",
+            "version_seen": "2.5",
+            "sounder_test": true
+          },
+          "expect": {
+            "accepted": true
+          }
+        }
+      ]
+    }
+  },
+  "expected": {
+    "note": "Hand-computed with every party simulated. checks = parties in claimed or reconciled / all parties. located = in stock + installed + fixed + returned. fixed_or_returned = fixed + returned. open = unresolved + installed + open or disputed transfers. mass_balance must equal 240 after every step.",
+    "steps": [
+      {
+        "step": "start",
+        "open_units": 240,
+        "checks": [
+          0,
+          3
+        ],
+        "located": 0,
+        "fixed_or_returned": 0
+      },
+      {
+        "step": "harbour-fire initial #1",
+        "accepted": false,
+        "open_units": 240,
+        "checks": [
+          0,
+          3
+        ],
+        "located": 0,
+        "fixed_or_returned": 0
+      },
+      {
+        "step": "harbour-fire initial #2",
+        "accepted": true,
+        "open_units": 200,
+        "checks": [
+          1,
+          3
+        ],
+        "located": 40,
+        "fixed_or_returned": 10
+      },
+      {
+        "step": "lakeside-systems initial #1",
+        "accepted": true,
+        "open_units": 120,
+        "checks": [
+          2,
+          3
+        ],
+        "located": 120,
+        "fixed_or_returned": 70
+      },
+      {
+        "step": "queen-st-alarm initial #1",
+        "accepted": true,
+        "open_units": 40,
+        "checks": [
+          3,
+          4
+        ],
+        "located": 200,
+        "fixed_or_returned": 100
+      },
+      {
+        "step": "close",
+        "closed": false,
+        "open_units": 40
+      },
+      {
+        "step": "corner-properties initial #1",
+        "accepted": true,
+        "open_units": 40,
+        "checks": [
+          4,
+          4
+        ],
+        "located": 225,
+        "fixed_or_returned": 100
+      },
+      {
+        "step": "close",
+        "closed": false,
+        "open_units": 40
+      },
+      {
+        "step": "queen-st-alarm dispute_followup #1",
+        "accepted": true,
+        "open_units": 25,
+        "checks": [
+          4,
+          4
+        ],
+        "located": 240,
+        "fixed_or_returned": 100
+      },
+      {
+        "step": "close",
+        "closed": false,
+        "open_units": 25
+      },
+      {
+        "step": "corner-properties fix_check #1",
+        "accepted": true,
+        "open_units": 0,
+        "checks": [
+          4,
+          4
+        ],
+        "located": 240,
+        "fixed_or_returned": 125
+      },
+      {
+        "step": "close",
+        "closed": true,
+        "open_units": 0
+      }
+    ],
+    "slice_end": {
+      "disputed_units": 15,
+      "awaiting_fix": 25,
+      "open_units": 40,
+      "headline": "NOT ALL CLEAR: 40 panels open (15 disputed, 25 awaiting fix)"
+    },
+    "edge_after_corner_properties": {
+      "from_party": "queen-st-alarm",
+      "to_party": "corner-properties",
+      "sender_qty": 40,
+      "recipient_qty": 25,
+      "corroborated_qty": 25,
+      "disputed_qty": 15,
+      "state": "disputed"
+    },
+    "episodes_after_run": [
+      {
+        "party_id": "harbour-fire",
+        "tags": [
+          "over_reported"
+        ]
+      },
+      {
+        "party_id": "queen-st-alarm",
+        "tags": [
+          "forwards_to"
+        ],
+        "forwards_to": "Corner Properties"
+      }
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+# Normalise text to LF in the repository, whatever the checkout's platform.
+* text=auto
+
+# Executed or parsed by tools that break on CR: keep LF in every checkout,
+# Windows included (bash refuses "\r" in scripts; make needs its tabs as-is).
+*.sh text eol=lf
+Makefile text eol=lf
+*.py text eol=lf
+*.json text eol=lf
+
+# Never touched.
+*.pdf binary

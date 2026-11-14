@@ -1,0 +1,99 @@
+# Render Blueprint for the All Clear API: the one process that needs a public
+# HTTPS URL (ElevenLabs' tool and post-call webhooks, the party form, the wall).
+# In Render: New > Blueprint, pick this repository, and set the Blueprint file
+# path to level-a/deploy/render.yaml. Render asks for every `sync: false` value
+# when the Blueprint is created; they are never stored in git.
+#
+# The free plan sleeps after 15 minutes without inbound traffic and takes about
+# a minute to wake, and a sleeping API runs no scheduler (no invariant checks,
+# no scheduled order system change). Open /healthz ten minutes before the show and
+# keep the wall open, or switch `plan` to starter for the judged run.
+#
+# The worker, the supervisor and the two mock order systems run on the team laptop,
+# not here: the supervisor kills the worker on purpose, and the order systems keep
+# their state in memory. The laptop's .env sets API_BASE_URL to this service's
+# public URL; this service reaches the order systems through their tunnel URLs
+# (ORDER_NORTH_URL, ORDER_EAST_URL; see deploy/README.md).
+#
+# Laptop-only variables are deliberately absent: ELEVEN_WEBHOOK_ID (read by
+# scripts/provision_agent.py) and LEVELA_TEST_URI (read by the tests).
+services:
+  - type: web
+    name: levela-api
+    runtime: python
+    plan: free
+    region: virginia            # next to the Atlas cluster (AWS us-east-1): the tool round trip is one transaction
+    rootDir: level-a
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m levela api --host 0.0.0.0 --port $PORT
+    healthCheckPath: /healthz
+    # A deploy restarts the API, its simulator and its scheduler: never during the judged run.
+    autoDeploy: false
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.7"
+      # Pinned so the API's own simulator can post back to it at API_BASE_URL.
+      - key: PORT
+        value: "8000"
+      - key: API_BASE_URL
+        value: http://127.0.0.1:8000
+      # ---- Atlas
+      - key: ATLAS_URI
+        sync: false
+      - key: ATLAS_DB
+        value: levela
+      # ---- URLs: this service's own https URL, once Render has assigned it
+      - key: PUBLIC_BASE_URL
+        sync: false
+      # ---- Shared secrets (the same values as the laptop's .env)
+      - key: TOOL_SECRET
+        sync: false
+      - key: ELEVEN_WEBHOOK_SECRET
+        sync: false
+      - key: ADMIN_TOKEN
+        sync: false
+      # ---- ElevenLabs and Twilio
+      - key: ELEVEN_API_KEY
+        sync: false
+      - key: ELEVEN_AGENT_ID
+        sync: false
+      - key: ELEVEN_PHONE_ID
+        sync: false
+      - key: TWILIO_SID
+        sync: false
+      - key: TWILIO_TOKEN
+        sync: false
+      - key: RINGING_TIMEOUT_S
+        value: "20"
+      - key: VOICE_PROVIDER
+        value: elevenlabs
+      - key: PHONE_HARBOUR
+        sync: false
+      - key: PHONE_CORNER
+        sync: false
+      # ---- Embeddings
+      - key: EMBED_API_KEY
+        sync: false
+      - key: EMBED_MODEL
+        value: voyage-4
+      - key: EMBED_BASE_URL
+        value: https://ai.mongodb.com/v1
+      - key: MEMORY_ENABLED
+        value: "true"
+      # ---- Mock order systems on the laptop, through their tunnels
+      - key: ORDER_NORTH_URL
+        sync: false
+      - key: ORDER_EAST_URL
+        sync: false
+      # ---- Decider, planner and order system repair
+      - key: PLANNER
+        value: rules
+      - key: PLANNER_MODEL
+        value: claude-haiku-5-5
+      - key: REPAIR_MODEL
+        value: claude-sonnet-5-5
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      # ---- The scheduler runs in this process only
+      - key: SCHEDULER_ENABLED
+        value: "true"

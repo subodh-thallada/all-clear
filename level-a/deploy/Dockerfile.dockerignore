@@ -1,0 +1,12 @@
+# Build context exclusions for deploy/Dockerfile (BuildKit reads
+# <Dockerfile>.dockerignore next to the Dockerfile). Secrets and local state
+# never enter the context, even by accident.
+.env
+.env.*
+!.env.example
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.venv
+venv
+tests

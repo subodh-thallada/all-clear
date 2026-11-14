@@ -1,0 +1,54 @@
+{
+  "tool_config": {
+    "type": "webhook",
+    "name": "submit_answer",
+    "description": "Record this party's answer to one open question from the call details. Call it once per question, only after you have read the answer back and the person said yes. Send the question's id exactly as it appears in the call details and the answer in value. The reply says whether the answer was recorded and how many questions are left. If accepted is false, do what the reply's message says, which is usually to read the question back and ask again. If stop is true, stop asking, thank the person and end the call.",
+    "response_timeout_secs": 20,
+    "api_schema": {
+      "url": "{{PUBLIC_BASE_URL}}/tools/submit_answer",
+      "method": "POST",
+      "content_type": "application/json",
+      "request_headers": {
+        "X-Tool-Secret": {
+          "secret_id": "{{TOOL_SECRET_ID}}"
+        }
+      },
+      "request_body_schema": {
+        "type": "object",
+        "description": "One confirmed answer to one open question.",
+        "required": [
+          "attempt_id",
+          "party_id",
+          "question_id",
+          "value"
+        ],
+        "properties": {
+          "attempt_id": {
+            "type": "string",
+            "dynamic_variable": "attempt_id"
+          },
+          "party_id": {
+            "type": "string",
+            "dynamic_variable": "party_id"
+          },
+          "system__conversation_id": {
+            "type": "string",
+            "dynamic_variable": "system__conversation_id"
+          },
+          "system__call_sid": {
+            "type": "string",
+            "dynamic_variable": "system__call_sid"
+          },
+          "question_id": {
+            "type": "string",
+            "description": "The id of the question being answered, exactly as written in the call details: the letter q, a dash and two digits, for example q-07."
+          },
+          "value": {
+            "type": "string",
+            "description": "The answer as the person confirmed it. When the question wants yes or no and a count, send yes or no followed by the number in digits, for example \"yes, 12\" or \"no\". When it wants a count, send the number in digits only. When it wants yes or no, send yes or no. Otherwise send their answer in a few words."
+          }
+        }
+      }
+    }
+  }
+}

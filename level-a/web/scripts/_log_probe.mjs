@@ -1,0 +1,10 @@
+import { chromium } from "playwright-core";
+const browser = await chromium.launch({ executablePath: "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe", headless: true, args: ["--use-angle=d3d11","--enable-gpu","--ignore-gpu-blocklist"] });
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+page.on("console", m => console.log("console", m.type(), m.text().slice(0, 400)));
+page.on("requestfailed", r => console.log("failed", r.url()));
+page.on("response", r => { if (r.status() >= 400) console.log("http", r.status(), r.url()); });
+await page.goto(process.argv[2], { waitUntil: "load" });
+await page.waitForSelector('[data-ready="1"]', { timeout: 120000 });
+const info = await page.evaluate(() => new Promise(res => setTimeout(() => res("ok"), 4000)));
+await browser.close();

@@ -1,0 +1,1 @@
+Hello, this is the automated recall line for {{company}}. This call is a simulation. Am I speaking with {{party_name}}?
