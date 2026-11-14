@@ -1,0 +1,6 @@
+/* Self-hosted, latin subset, woff2 only. Nothing is fetched from a CDN. */
+@font-face { font-family: 'Lexend'; font-weight: 400; font-display: block; src: url('../../node_modules/@fontsource/lexend/files/lexend-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Lexend'; font-weight: 500; font-display: block; src: url('../../node_modules/@fontsource/lexend/files/lexend-latin-500-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Lexend'; font-weight: 600; font-display: block; src: url('../../node_modules/@fontsource/lexend/files/lexend-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-weight: 400; font-display: block; src: url('../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-400-normal.woff2') format('woff2'); }
+@font-face { font-family: 'IBM Plex Mono'; font-weight: 600; font-display: block; src: url('../../node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-600-normal.woff2') format('woff2'); }
