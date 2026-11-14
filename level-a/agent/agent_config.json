@@ -54,7 +54,7 @@
       "model_id": "eleven_flash_v2"
     },
     "conversation": {
-      "max_duration_seconds": 180
+      "max_duration_seconds": 600
     },
     "turn": {
       "turn_timeout": 7,
