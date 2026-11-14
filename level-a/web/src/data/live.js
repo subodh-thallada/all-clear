@@ -22,6 +22,15 @@ import { WORDS } from './format.js';
 const KEY_STORE = 'allclear.adminKey';
 const LEASE_TTL_S = 8;
 
+// The demo's parties, as scripts/demo.py names them. The judge's call releases
+// Harbour and Lakeside only; the kill beat arms the failpoint for Corner Mart
+// first and only then lets Corner Mart and Queen St Grocer's held reply go, so
+// Corner Mart can never be dialled before the failpoint is waiting for it.
+const JUDGE_PARTIES = ['harbour-market', 'lakeside-foods'];
+const KILL_PARTY = 'corner-mart';
+const KILL_RELEASES = ['corner-mart', 'queen-st-grocer'];
+const KILL_FAILPOINT = 'after_dial_request';
+
 const pick = (o, ...keys) => {
   for (const k of keys) if (o?.[k] !== undefined && o[k] !== null) return o[k];
   return undefined;
@@ -405,20 +414,36 @@ export function createLive(api) {
     emit();
   }
 
-  // An operator action. If the API refuses it, its own words go to the top bar.
-  const post = (path, body) => async () => {
-    const rid = last?.recall?._id;
+  // One admin request. Returns null when it worked, or the problem in words.
+  async function send(path, body) {
     try {
-      const r = await fetch(`${api}${path}`, { method: 'POST', headers: headers(true), body: JSON.stringify(body(rid)) });
+      const r = await fetch(`${api}${path}`, { method: 'POST', headers: headers(true), body: JSON.stringify(body) });
+      if (r.ok) return null;
       const text = await r.text();
-      if (r.status === 401) throw new Error('The admin key was refused. Open the screen with ?key=<admin token>');
-      if (!r.ok) throw new Error(`${path} answered ${r.status}: ${text.slice(0, 160)}`);
-      link = { ...link, note: null };
+      if (r.status === 401) return 'The admin key was refused. Open the screen with ?key=<admin token>';
+      return `${path} answered ${r.status}: ${text.slice(0, 160)}`;
     } catch (err) {
-      link = { ...link, note: err.message };
+      return `${path}: ${err.message}`;
     }
+  }
+
+  // An operator action: one or more requests in order. A party this recall does
+  // not have (404 from /admin/release) is skipped; any other failure stops the
+  // action and its words go to the top bar.
+  const act = (steps) => async () => {
+    const rid = last?.recall?._id;
+    let note = null;
+    for (const [path, body, optional] of steps(rid)) {
+      const problem = await send(path, body);
+      if (problem && !(optional && / 404:/.test(problem))) {
+        note = problem;
+        break;
+      }
+    }
+    link = { ...link, note };
     poll();
   };
+  const post = (path, body) => act((rid) => [[path, body(rid)]]);
 
   snapshot = empty();
 
@@ -438,10 +463,19 @@ export function createLive(api) {
       timers = [];
     },
     actions: {
-      releaseStores: post('/admin/release', (recall_id) => ({ recall_id, party_id: 'slice' })),
+      // The judge's call (scripts/demo.py judge): pause random kills, release Harbour and Lakeside only.
+      releaseStores: act((recall_id) => [
+        ['/admin/supervisor', { recall_id, paused: true, reason: "the judge's call: the kill beat uses the failpoint" }],
+        ...JUDGE_PARTIES.map((party_id) => ['/admin/release', { recall_id, party_id }, true]),
+      ]),
       armFailpoint: () => post('/admin/failpoint', () => ({ name: snapshot.failpointArmed ? null : 'after_dial_request' }))(),
-      // The API cannot kill a process. The kill beat arms the failpoint: the next worker to dial a phone dies.
-      killWorker: post('/admin/failpoint', () => ({ name: 'after_dial_request', channel: 'voice' })),
+      // The kill beat (scripts/demo.py kill-arm). The API cannot kill a process: it arms the failpoint for
+      // Corner Mart, then releases Corner Mart and Queen St Grocer's reply, whose claim names Corner Mart.
+      // The worker that dials Corner Mart dies after asking for the call and before saving it.
+      killWorker: act((recall_id) => [
+        ['/admin/failpoint', { name: KILL_FAILPOINT, party_id: KILL_PARTY }],
+        ...KILL_RELEASES.map((party_id) => ['/admin/release', { recall_id, party_id }, true]),
+      ]),
       switchNorth: post('/admin/order-system', () => ({ order_system: 'north', action: 'switch_v2' })),
       saboteur: post('/admin/saboteur', (recall_id) => ({ recall_id, on: true, seconds: 20 })),
       closeRecall: post('/admin/close', (recall_id) => ({ recall_id })),
