@@ -21,7 +21,7 @@ export default function Banner({ s }) {
       {found && ageMs <= STAY ? (
         <div className={`banner ${found.tone}`} key={found.e.id} role="status"><i />{found.text}</div>
       ) : (
-        <span className="banner-idle">{s.parties.some((p) => p.holdForDemo) ? (s.source === 'live' ? 'The run is going. Release the slice to start the live part.' : 'The run is already going. Press Play demo to start the live part.') : ''}</span>
+        <span className="banner-idle">{s.parties.some((p) => p.holdForDemo) ? (s.source === 'live' ? 'The run is going. Press Call Harbour to start the live part.' : 'The run is already going. Press Play demo to start the live part.') : ''}</span>
       )}
     </div>
   );
