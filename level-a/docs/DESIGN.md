@@ -1,11 +1,11 @@
 # All Clear — implementation design and contracts
 
-This is the contract every module is built against. The product spec is
-`../../docs/Level_A_build_spec_and_test_plan.pdf` (same text as the build
-spec markdown); this file records how it is implemented, the interfaces
-between modules, and every place the build deliberately extends or fixes the
-spec (§10). If code and this file disagree, fix one of them in the same
-change.
+These are the engine's first design notes, kept for the interfaces between
+modules and the places the build extends the spec (§10). The product spec is
+`../../docs/All_Clear_build_spec_and_test_plan.md` and the builders' contract
+is `BUILD_PLAN.md`; where this file and either of them disagree, they win.
+Field names here follow the food version (six buckets: `sold`, `on_shelf`,
+`held`, `returned`, `forwarded`, `unresolved`). The seed kit is not used.
 
 ## 1. Layout
 
@@ -16,7 +16,7 @@ level-a/
     config.py            Settings.from_env(); constants (LIVE/FINAL states, FAILPOINTS, MAX_CHALLENGES)
     feed.py              emit()/recent(): the wall's event feed (collection `feed`)
     db/client.py         get_client/get_db, run_txn(client, fn, counter=) (with_transaction + retry count)
-    db/setup.py          setup(db): spec collections/validators/indexes (from seedkit.schema) + feed, sim_calls
+    db/setup.py          setup(db): spec collections/validators/indexes (from levela.db.schema) + feed, sim_calls
     db/seed.py           start_recall(...), reset(db), runtime_recall_ids(db)
     ledger/claims.py     submit_claim(), dedupe_key(), speakable(), challenges_used(), CHALLENGE_CODES
     ledger/transfers.py  resolve_party(), edge_numbers(), stub_party(), open_edge(), settle_edge()
@@ -33,16 +33,14 @@ level-a/
     providers/twilio_probe.py  TwilioProbe (Calls list + fetch)
     providers/sim.py     SimNetwork (plays scripted parties, posts through the API), SimVoice, SimProbe
     providers/fake_voice.py    FakeVoice: in-process test double with fault injection
-    memory/embed.py      get_embedder(settings) (wraps seedkit.embed)
+    memory/embed.py      get_embedder(settings)
     memory/episodes.py   write_episode_for_attempt()
     memory/retrieve.py   retrieve() ($vectorSearch, local fallback), policy()
     api/main.py          create_app(settings, *, sim_network=None) -> FastAPI
     api/tools.py, hooks.py, form.py, admin.py, wall.py, sim.py (routers)
     wall/index.html, wall.js, wall.css     the wall display (plain HTML/JS, polls /wall/state at 1 Hz)
-    __main__.py          CLI: python -m levela {api,worker,setup-db,load-history,start,reset,close,status,preflight,...}
-  seedkit/               the seed kit (history loader, dry run, preflight) — unchanged API
+    __main__.py          CLI: python -m levela {api,worker,setup-db,start,reset,close,status,preflight,...}
   scenarios/recall_1.json, recall_2.json
-  data/history/*.json    16 synthetic past recalls
   agent/prompt.md, agent/first_message.txt, agent/tool_submit_count.json, agent/agent_config.json
   scripts/               call_once.py, provision_agent.py, kill_demo.{sh,ps1}, crash_schedules.py, demo.py, video_shots.md
   tests/                 pytest; conftest.py gives each test a scratch DB
@@ -61,7 +59,7 @@ Document shapes beyond what the spec lists (fields marked * are new):
 `scenario_id synthetic mode* ("demo"|"sim") options*{all_sim, sim_parties, followups("auto"|"manual"), memory(bool)}`
 `directory*[{party_id,name,aliases,tier,channel,phone,profile}]` (phones already resolved) `followups_released*(bool)`
 
-**parties** `_id="{recall}:{party}" recall_id party_id name shipped_in on_hand returned destroyed sold forwarded unresolved`
+**parties** `_id="{recall}:{party}" recall_id party_id name shipped_in sold on_shelf held returned forwarded unresolved`
 `state tier channel phone profile discovered_by ("shipment"|"claim:<party>"|"memory") form_token* created_at last_claim_at`
 `memory*{checked_at, mode("atlas"|"local"|"off"), hits[{episode_id, party_id, recall_id, score, tags}], actions[...]}`
 `escalation*` ("human" when the party hit the challenge cap or max attempts) `memory_source*{episode_id, from_party}` (stubs created by memory)
@@ -85,7 +83,7 @@ Document shapes beyond what the spec lists (fields marked * are new):
 `worker:<name>` {boot_id, pid, host, started_at, heartbeat_at, resume_token, resumed{at, missed}, stopped_at},
 `badge:crash_schedules` / `badge:rebuild` {text, at, detail} (lines the wall shows), `sim_release:<recall>:<party>` {released_at}.
 
-## 3. Rules enforced by Atlas (unchanged from the spec; defined in seedkit/schema.py)
+## 3. Rules enforced by Atlas (defined in levela/db/schema.py)
 
 1. Party conservation validator (`$jsonSchema` non-negative ints + `$expr` equation).
 2. Edge sanity validator (`corroborated_qty <= sender_qty`).
@@ -98,7 +96,7 @@ Document shapes beyond what the spec lists (fields marked * are new):
 `submit_claim(client, db, *, recall_id, party_id, attempt_id, source, raw, now=None, directory=None, claim_id=None, require_delivery_note=False, fail_after_party_update=False) -> dict`
 Result: `accepted, claim_id, message` always; on reject `code, reason`, and for `over_count` `reported_total, shipped_in`, plus
 `atlas_error` when the validator refused; on accept `open_units, txn_runs, discovered? (new stub party_id), edge? {.., before}`;
-`duplicate: True` on a repeated delivery. `raw` keys: `on_hand sold returned destroyed forwarded_qty forwarded_to_name received_qty delivery_note`.
+`duplicate: True` on a repeated delivery. `raw` keys: `sold on_shelf held returned forwarded_qty forwarded_to_name received_qty batch_seen sold_source block_test`.
 Codes: `over_count negative not_integer bad_number recipient_overdocumented delivery_note_required delivery_note_mismatch
 no_inbound_edge forward_missing_name forward_self forward_changed forward_restate recall_closed unknown_party unknown_recall
 receipt_sender_ambiguous` (a party with several senders must name the one it counts: `received_from`). `raw` may also carry `forwards: [{to_name | to_party_id, qty}]` (several destinations) and `received_from` (DESIGN_V2 §9).
@@ -177,7 +175,7 @@ Auth: `/tools/*` and `/sim/*` need header `X-Tool-Secret: <TOOL_SECRET>` (consta
 
 | Endpoint | Body / reply |
 |---|---|
-| `POST /tools/submit_count` | Body: `attempt_id party_id system__conversation_id system__call_sid on_hand sold returned destroyed forwarded_qty forwarded_to_name received_qty delivery_note` (+ optional `source`, only honoured with the tool secret: "sim"). Steps: log `tool_events` (kind tool_call) first; attempt must exist and match party; `mark_connected`; party pending/contacting → reached; if `challenges_used >= MAX_CHALLENGES` reply `{accepted:false, stop:true, message}` without booking and set `escalation:"human"`; else `submit_claim(require_delivery_note=attempt.context.ask_delivery_note == "yes")`; feed lines. Reply: `{accepted, message, reason?, reported_total?, shipped_in?, duplicate?, challenges_left, stop}`. HTTP 200 always for well-formed calls (the agent reads the JSON). |
+| `POST /tools/submit_count` | Body: `attempt_id party_id system__conversation_id system__call_sid sold on_shelf held returned forwarded_qty forwarded_to_name received_qty batch_seen sold_source block_test` (+ optional `source`, only honoured with the tool secret: "sim"). Steps: log `tool_events` (kind tool_call) first; attempt must exist and match party; `mark_connected`; party pending/contacting → reached; if `challenges_used >= MAX_CHALLENGES` reply `{accepted:false, stop:true, message}` without booking and set `escalation:"human"`; else `submit_claim(require_delivery_note=attempt.context.ask_delivery_note == "yes")`; feed lines. Reply: `{accepted, message, reason?, reported_total?, shipped_in?, duplicate?, challenges_left, stop}`. HTTP 200 always for well-formed calls (the agent reads the JSON). |
 | `POST /hooks/post_call` | Verify HMAC; log tool_events (kind post_call, payload without audio); `post_call_transcription` → `complete(attempt, "completed")`, party transcript summary on the attempt (`transcript`: list of {role, message}, `call_duration_secs`); `call_initiation_failure` → `busy`/`unknown` → `failed`, `no-answer` → `no_answer`; `post_call_audio` ignored. Attempt id from `data.conversation_initiation_client_data.dynamic_variables.attempt_id`, fallback: lookup by conversation_id. Always 200 after a valid signature. |
 | `GET /form/{token}` / `POST /form/{token}` | Mobile-first HTML form. POST fields as the tool. Uses the party's live attempt if any, else opens a `form` attempt (`channel: "form"`, `dial_confirmed: True`, state connected) and completes it on acceptance. Shows the same accept/reject message, the two numbers, and the raw Atlas error. `GET /form/{token}/qr.svg` (segno). |
 | `POST /admin/recalls` | `{scenario, all_sim?, sim_parties?, mode?, followups?, memory?, recall_id?}` → start_recall. |
@@ -216,8 +214,8 @@ does not kill a simulated call, exactly like a real phone call), and in-process 
 {
   "now": "ISO", "recall": {"_id","batch_code","product","brand","hazard","units_total","status","mode","options","opened_at","closed_at"} | null,
   "recalls": [{"_id","status","batch_code"}],
-  "metrics": {"checks_completed":[a,b],"units_documented":[a,b],"units_recovered":[a,b],"open_units":n,"disputed_units":n,"mass_balance":n,"units_total":n},
-  "parties": [{"party_id","name","tier","channel","state","shipped_in","on_hand","sold","returned","destroyed","forwarded","unresolved",
+  "metrics": {"checks_completed":[a,b],"tins_located":[a,b],"held_or_returned":[a,b],"open_units":n,"disputed_units":n,"mass_balance":n,"units_total":n},
+  "parties": [{"party_id","name","tier","channel","state","shipped_in","sold","on_shelf","held","returned","forwarded","unresolved",
               "discovered_by","escalation","live_attempt":{"_id","state","purpose","seq"}|null,"attempts":n,"memory":{...}|null}],
   "edges": [{"from_party","to_party","sender_qty","recipient_qty","corroborated_qty","disputed_qty","state"}],
   "feed": [{"at","kind","text","level","source","party_id","detail"}],      // newest first, ≤ 60
@@ -249,11 +247,11 @@ Assert the mass balance after every ledger write in ledger tests.
 6. **Grace period before abandoning** (`INDOUBT_GRACE_S`): ElevenLabs may still be creating the Twilio call; abandoning too early would redial.
 7. **Ownership + heartbeats**: a worker only resolves another worker's in-doubt attempts after that worker's heartbeat is stale — two workers can run at once.
 8. **Level-triggered safety net**: a periodic reconcile beside the change stream, so a lost or expired resume token cannot strand a party.
-9. **Simulated calls outlive the worker.** The simulator is hosted by the API process, so the kill demo's fallback (Corner Properties simulated) behaves like a real call: the claim lands while the worker is down.
-10. **Demo pacing is data.** `mode: demo` honours `demo_hold`; `followups: manual` keeps the dispute open until the closing-gate beat (the spec's automatic follow-ups would otherwise resolve it in two seconds, and a follow-up to Corner Properties would ring the teammate's phone a second time during the kill beat).
+9. **Simulated calls outlive the worker.** The simulator is hosted by the API process, so the kill demo's fallback (Corner Mart simulated) behaves like a real call: the claim lands while the worker is down.
+10. **Demo pacing is data.** `mode: demo` honours `demo_hold`; `followups: manual` keeps the dispute open until the closing-gate beat (the spec's automatic follow-ups would otherwise resolve it in two seconds, and a follow-up to Corner Mart would ring the teammate's phone a second time during the kill beat).
 11. **Failpoints can be scoped** to a party or channel, so a simulated party's dial cannot trip the demo failpoint.
 12. **Admin endpoints are authenticated** (the API is on a public host).
-13. **forwards_to memory applies only to the episode's own party** (seed kit finding 7); `over_reported` may be inherited.
+13. **forwards_to memory applies only to the episode's own party** (an earlier finding); `over_reported` may be inherited.
 
 ## 11. Interfaces added after the vendor check (see vendor_reference.md)
 

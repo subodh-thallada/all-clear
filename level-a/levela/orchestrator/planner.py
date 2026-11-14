@@ -115,7 +115,7 @@ def snapshot(db, recall_id: str, sim_now: float) -> dict:
         "reverify": once + [
             {"$lookup": {"from": "operations", "as": "rows", "pipeline": [
                 {"$match": {"recall_id": recall_id, "state": "needs_reverify", "kind": {"$in": list(ORDER_SYSTEM_KINDS)}}},
-                {"$group": {"_id": "$order system", "n": {"$sum": 1}}}]}},
+                {"$group": {"_id": "$order_system", "n": {"$sum": 1}}}]}},
             {"$lookup": {"from": "adapters", "as": "verified", "pipeline": [
                 {"$match": {"status": "active", "canary.passed": True}}, {"$project": {"_id": 0, "order_system": 1}}]}},
             {"$project": {"_id": 0, "rows": 1, "verified": 1}}],
@@ -317,7 +317,7 @@ class Planner:
         if tools.count("escalate"):
             parts.append(f"{tools.count('escalate')} escalated")
         if summary["repairs"]:
-            parts.append(f"repair requested for order system {', '.join(summary['repairs'])}")
+            parts.append(f"repair requested for {', '.join(feed.orders_label(o) for o in summary['repairs'])}")
         slots = snap["slots"]
         tail = f"oldest due {simclock.fmt(snap['oldest_due'])}, {slots['free']} of {slots['max_live']} call slots free"
         feed.emit(self.db, "planner", f"planner: {'; '.join(parts)}. {tail[0].upper()}{tail[1:]}",

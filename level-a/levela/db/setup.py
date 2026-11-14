@@ -1,6 +1,6 @@
 """Collections, validators, indexes and the vector index. Safe to re-run.
 
-What is installed is defined in levela.db.schema, which the preflight
+What is set up is defined in levela.db.schema, which the preflight
 compares a live database with, so the two can never drift.
 
 Atlas detail: `collMod` needs the dbAdmin role, which the default

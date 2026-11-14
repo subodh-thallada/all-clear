@@ -12,18 +12,20 @@ simulated call, just as it would not hang up a real phone (DESIGN.md 10.9).
 
 Two ways to play a party:
 
-  scripted  `scenario.sim[party_id][key]` (DESIGN.md section 7, the four-party
-            slice). A reply waits `delay_s * sim_time_scale` after the
+  scripted  `scenario.sim[party_id][key]` (spec "Scenario for the demo", the
+            four-party slice). A reply waits `delay_s * sim_time_scale` after the
             previous one (the first after the call starts); in demo mode a
             `demo_hold` reply waits for `worker_state sim_release:<recall>:<party>`;
             a `must_follow: X` reply waits until X has an accepted claim. No
             call outlasts `max_call_s` (ElevenLabs' default maximum
             conversation length): a party still waiting then hangs up and the
             post-call goes out with what was said.
-  profile   (V2 section 8, the long run) when the party has no script for
-            the call's purpose but has `scenario.sim_truth[party_id]`:
+  profile   (spec "Long run", "Scenario at scale") when the party has no
+            script for the call's purpose but has `scenario.sim_truth[party_id]`:
             providers.profiles.respond() decides the reply from the party's
-            behaviour profile and ground truth. Turns are paced by the run's
+            behaviour profile, its ground truth and its removal script (tins on
+            the shelf until staff pull them 4 to 12 simulated hours after the
+            store first heard of the recall). Turns are paced by the run's
             simulated clock (about a simulated minute each, so a call lasts
             ~3 simulated minutes). No answer or busy becomes a
             call_initiation_failure; a callback request goes to
@@ -37,8 +39,12 @@ Two ways to play a party:
 Party-initiated events (PartyEvents) run in simulated time on one scheduler
 thread, kept in Atlas so they survive a restart and fire once: the
 submission a party makes after a form link reaches it (POST /sim/form_link),
-a reviser's correction through its form, and the distributor rep's report
-for the unreachable party once it has been escalated (POST /tools/report).
+a reviser's correction through its form, the distributor rep's report for
+the unreachable party once it has been escalated (POST /tools/report), and
+Summit Foods' node's reports (the `own_copy` profile): in a single-node run
+the simulator plays Summit's node and books each report through
+levela.node.report.book_report, or through the ordinary claim path with
+source `agent` until that module exists.
 
 Faults (tests and crash schedules), passed to place_call as a dict:
   duplicate_webhook  post every tool body twice, back to back
@@ -149,7 +155,7 @@ class _Poster:
 
     def post_form(self, token: str, fields: dict) -> int:
         """POST /form/{token}, form-encoded, as a phone's browser would send it."""
-        content = urlencode({k: str(v) for k, v in fields.items()}).encode("utf-8")
+        content = urlencode({k: _form_value(v) for k, v in fields.items() if v is not None}).encode("utf-8")
         try:
             resp = self._post(self._base + FORM_PATH + quote(token, safe=""), content=content,
                               headers={"Content-Type": "application/x-www-form-urlencoded"})
@@ -173,6 +179,13 @@ class _Poster:
         if not isinstance(reply, dict):
             return {"error": f"HTTP {resp.status_code}: the reply is not a JSON object", "status": resp.status_code}
         return reply
+
+
+def _form_value(value) -> str:
+    """A form field as a phone's browser sends it: yes/no for a check."""
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    return str(value)
 
 
 class HttpPoster(_Poster):
@@ -301,10 +314,11 @@ class SimNetwork:
                     "note": "no behaviour profile: a person answers this party's link"}
         self.start()
         now = _sim_now(self.db, recall_id)
-        plan = profiles.form_plan(entry["profile"], entry["truth"], entry.get("params"), now)
+        plan = profiles.form_plan(entry["profile"], entry["truth"], entry.get("params"), now,
+                                  heard_at=heard_at(self.db, recall_id, party_id))
         event, created = self.events.schedule(
             recall_id, party_id, "form", plan.submit_at if plan else None, plan.fields if plan else None,
-            token=token, state=PENDING if plan else IGNORED)
+            token=token, state=PENDING if plan else IGNORED, delivered_at=now)
         due = event.get("due_at")
         if created:
             text = (f"{party['name']} (simulated) got the form link and will fill it in at {fmt(due)}" if plan
@@ -403,6 +417,14 @@ class SimNetwork:
         callback request. A turn takes about a simulated minute. A reply
         that says stop (the challenge cap) ends the call there."""
         ended = False
+        if reply.note:
+            if self._pause(clock):
+                return _STOPPED
+            feed.emit(self.db, "sim_reply", f'{call.name} (simulated): "{reply.note}"', recall_id=call.recall_id,
+                      party_id=call.party_id, attempt_id=call.attempt_id, source="sim",
+                      detail={"note": reply.note, "call_sid": call.sid})
+            transcript.append(_turn("user", reply.note, call.elapsed()))
+            self._update_row(call, None, push={"replies": {"at": utcnow(), "say": reply.note}})
         for body, say in reply.claim_turns():
             if self._pause(clock):
                 return _STOPPED
@@ -445,7 +467,7 @@ class SimNetwork:
         (this call included), whether it picked up before, and the questions
         open on it."""
         rows = list(self.db.sim_calls.find({"recall_id": call.recall_id, "party_id": call.party_id},
-                                           {"reply_kind": 1}))
+                                           {"reply_kind": 1, "sim_at": 1}))
         earlier = [r.get("reply_kind") for r in rows if r["_id"] != call.sid]
         party = self.db.parties.find_one({"recall_id": call.recall_id, "party_id": call.party_id},
                                         {"ladder_step": 1}) or {}
@@ -456,7 +478,8 @@ class SimNetwork:
             open_questions=tuple(self._questions(call)),
             sender_name=call.variables.get("sender_name") or "",
             reached_before=any(k in (profiles.ANSWER, profiles.CALLBACK) for k in earlier),
-            callbacks_before=sum(k == profiles.CALLBACK for k in earlier))
+            callbacks_before=sum(k == profiles.CALLBACK for k in earlier),
+            heard_at=heard_at(self.db, call.recall_id, call.party_id, rows=[r for r in rows if r["_id"] != call.sid]))
 
     def _questions(self, call: _Call) -> list[dict]:
         """The questions the agent asks on this call ({id, text, answer_type}).
@@ -661,10 +684,11 @@ _BODY_IDS = ("attempt_id", "party_id", "system__conversation_id", "system__call_
 
 def _script_key(purpose: str, scripts: dict) -> str:
     """The script a call plays: the purpose's own script when the party has
-    one (a fix check scripted as the installer's visit), else the initial
-    script, replayed (a fix check before the visit hears the same answer).
-    A question call has no script, so a party with a ground truth answers it
-    from its profile."""
+    one (a removal check scripted as the staff's pull), else the initial
+    script, replayed (a removal check before the pull hears the same answer:
+    Corner Mart's 25 tins stay on the shelf in the long run). A question call
+    has no script, so a party with a ground truth answers it from its
+    profile."""
     if purpose in ("dispute_followup", "ask_question") or purpose in scripts:
         return purpose
     return "initial"
@@ -678,6 +702,20 @@ def _count(value) -> int | None:
 
 def _sim_now(db, recall_id: str) -> float:
     return get_clock(db, recall_id).sim_now(server_now(db.client))
+
+
+def heard_at(db, recall_id: str, party_id: str, *, rows: list | None = None) -> float | None:
+    """The simulated hour a simulated store first heard of the recall: its
+    first answered call (or callback request), or a form link it opened.
+    None: nobody has reached it yet. Its removal script counts from here."""
+    if rows is None:
+        rows = list(db.sim_calls.find({"recall_id": recall_id, "party_id": party_id}, {"reply_kind": 1, "sim_at": 1}))
+    hours = [float(r["sim_at"]) for r in rows
+             if r.get("reply_kind") in (profiles.ANSWER, profiles.CALLBACK) and r.get("sim_at") is not None]
+    form = db.worker_state.find_one({"_id": event_id(recall_id, party_id, "form")}, {"delivered_at": 1, "state": 1})
+    if form and form.get("state") != IGNORED and form.get("delivered_at") is not None:
+        hours.append(float(form["delivered_at"]))
+    return min(hours) if hours else None
 
 
 def _tool_body(call: _Call, reply: dict) -> dict:
@@ -726,12 +764,16 @@ def _agent_noted(result: dict) -> str:
 EVENT_KIND = "sim_event"
 PENDING, FIRING, DONE, FAILED, IGNORED = "pending", "firing", "done", "failed", "ignored"
 REP_RECHECK_H = 1.0              # the rep checks for an escalation once a simulated hour
+AGENT_RECHECK_H = 1.0            # Summit's node waits for its party to appear in our ledger
 RETRY_H = 0.5                    # a submission the API did not take is tried again after this
 MAX_TRIES = 5
 STALE_FIRING_S = 60.0            # a firing event older than this was left by a dead process
 RECALL_REFRESH_S = 5.0           # how often the scheduler looks for newly opened long-run recalls
 MIN_WAIT_S = 0.01
-BUCKETS = ("in_stock", "installed", "fixed", "returned")
+BUCKETS = profiles.BUCKETS
+AGENT_REPORT = "agent_report"
+SUMMIT_NODE = "summit"           # Summit Foods' node id (scenarios/summit.json)
+PARENT_NODE = "maple-farm"       # our node id (Settings.node_id's default)
 
 
 def event_id(recall_id: str, party_id: str, kind: str) -> str:
@@ -739,11 +781,14 @@ def event_id(recall_id: str, party_id: str, kind: str) -> str:
 
 
 class PartyEvents:
-    """Party-initiated events in simulated time (V2 section 8).
+    """Party-initiated events in simulated time (spec "Long run").
 
     Kinds: `form` (a party submits through its form link), `revise` (a
     reviser's correction through its form), `rep` (the distributor's rep
-    reports for the unreachable party once an escalate_rep operation exists).
+    reports for the unreachable party once an escalate_rep operation exists),
+    `agent_report` (Summit Foods' node: one event that books its newest due
+    report, then re-arms itself for the next one, so reports land in seq
+    order and a late start books the newest totals, not the backlog).
 
     Each event is one worker_state document `sim_event:<recall>:<party>:<kind>`
     inserted with $setOnInsert, so a re-delivered trigger never schedules it
@@ -779,12 +824,14 @@ class PartyEvents:
             thread.join(timeout)
 
     def schedule(self, recall_id: str, party_id: str, kind: str, due_at: float | None, fields: dict | None, *,
-                 token: str | None = None, by: dict | None = None, state: str = PENDING) -> tuple[dict, bool]:
+                 token: str | None = None, by: dict | None = None, state: str = PENDING,
+                 delivered_at: float | None = None) -> tuple[dict, bool]:
         """Insert the event unless it exists. Returns (the event, created)."""
         key = event_id(recall_id, party_id, kind)
         doc = {"kind": EVENT_KIND, "type": kind, "recall_id": recall_id, "party_id": party_id,
                "due_at": None if due_at is None else round(float(due_at), 4), "fields": fields, "token": token,
-               "by": by, "state": state, "tries": 0, "created_at": utcnow()}
+               "by": by, "state": state, "tries": 0, "created_at": utcnow(),
+               "delivered_at": None if delivered_at is None else round(float(delivered_at), 4)}
         res = self.db.worker_state.update_one({"_id": key}, {"$setOnInsert": doc}, upsert=True)
         if res.upserted_id is not None:
             self._wake.set()
@@ -826,7 +873,8 @@ class PartyEvents:
 
     def _arm_rep_reports(self) -> None:
         """One `rep` event per unreachable party of every open long-run recall,
-        due at its rep_reports_at (the report itself waits for the escalation)."""
+        due at its rep_reports_at (the report itself waits for the escalation),
+        and one `agent_report` event per own_copy party, due at its first report."""
         if self._armed_at is not None and time.monotonic() - self._armed_at < RECALL_REFRESH_S:
             return
         self._armed_at = time.monotonic()
@@ -837,6 +885,10 @@ class PartyEvents:
                 continue
             scenario = self._scenario(recall.get("scenario_id")) or {}
             for party_id, entry in (scenario.get("sim_truth") or {}).items():
+                reports = profiles.own_copy_reports(entry["profile"], entry.get("params"))
+                if reports:
+                    self.schedule(recall["_id"], party_id, AGENT_REPORT, reports[0]["at"], {"booked_seq": 0})
+                    continue
                 at = profiles.rep_report_at(entry["profile"], entry.get("params"))
                 if at is None:
                     continue
@@ -852,7 +904,7 @@ class PartyEvents:
             {"$set": {"state": FIRING, "fired_at": utcnow()}}, return_document=ReturnDocument.AFTER)
         if claimed is None:
             return
-        handler = self._report if claimed["type"] == "rep" else self._submit_form
+        handler = {"rep": self._report, AGENT_REPORT: self._agent_report}.get(claimed["type"], self._submit_form)
         try:
             outcome = handler(claimed, clock.sim_now(server_now(self.db.client)))
         except PyMongoError:
@@ -909,10 +961,140 @@ class PartyEvents:
             return _retry(event, now, reply["error"])
         return _closed(DONE, op_id=op["_id"], reply=reply)
 
+    def _agent_report(self, event: dict, now: float) -> dict:
+        """Summit Foods' node (single-node runs): book its newest due report,
+        then re-arm for the next. Waits until East's account list has put the
+        party in our ledger."""
+        recall = self.db.recalls.find_one({"_id": event["recall_id"]}, {"scenario_id": 1, "batch_code": 1}) or {}
+        entry = ((self._scenario(recall.get("scenario_id")) or {}).get("sim_truth") or {}).get(event["party_id"])
+        reports = profiles.own_copy_reports((entry or {}).get("profile"), (entry or {}).get("params"))
+        if not reports:
+            return _closed(DONE, skipped="no reports for this party")
+        party = self._party(event)
+        if party is None:
+            return {"state": PENDING, "due_at": round(now + AGENT_RECHECK_H, 4)}
+        booked = int((event.get("fields") or {}).get("booked_seq") or 0)
+        idx = profiles.report_due(reports, now)
+        result = None
+        if idx is not None and reports[idx]["seq"] > booked:
+            report = {**reports[idx], "recall": event["recall_id"]}
+            result = book_agent_report(self.db, recall, {**party, "party_id": event["party_id"]}, report)
+            if not result.get("accepted") and not result.get("duplicate"):
+                if result.get("error"):
+                    return _retry(event, now, result["error"])
+                log.info("simulated node report %s for %s refused: %s", report["seq"], party.get("name"), result)
+            booked = report["seq"]
+        later = [r for r in reports if r["seq"] > booked]
+        if not later:
+            return _closed(DONE, booked_seq=booked, reply=result)
+        return {"state": PENDING, "due_at": round(float(later[0]["at"]), 4), "fields": {"booked_seq": booked},
+                "tries": 0, "last_reply": result}
+
     def _party(self, event: dict) -> dict | None:
         return self.db.parties.find_one({"recall_id": event["recall_id"], "party_id": event["party_id"]},
-                                       {"name": 1, "form_token": 1, "state": 1, "forwarded": 1,
-                                        **{b: 1 for b in BUCKETS}})
+                                       {"name": 1, "form_token": 1, "state": 1, "forwarded": 1, "account": 1,
+                                        "link_id": 1, **{b: 1 for b in BUCKETS}})
+
+
+def book_agent_report(db, recall: dict, party: dict, report: dict) -> dict:
+    """Book one of Summit's node's reports in our ledger: through WS5's
+    levela.node.report.book_report when it exists, else through the ordinary
+    claim path with source `agent` (the report's buckets and the checks its
+    own records stand for), and its `sub.state` once it reports closed."""
+    recall_id, party_id = recall.get("_id") or report["recall"], party["party_id"]
+    b = report["buckets"]
+    feed.emit(db, "sim_reply", f"{party.get('name') or party_id} report {report['seq']} (simulated node): "
+                               f"{b['on_shelf']} on a shelf, {b['held']} held, {b['sold']} sold, "
+                               f"{b['returned']} returned, {b['unresolved']} not located. "
+                               f"Buyers told {report['buyers']['told']} of {report['buyers']['identified']}",
+              recall_id=recall_id, party_id=party_id, source="sim", system="agent",
+              detail={"seq": report["seq"], "state": report["state"]})
+    try:
+        from ..node.report import book_report  # noqa: PLC0415 - WS5's module; optional until it lands
+    except ImportError:
+        book_report = None
+    try:
+        if book_report is not None:
+            report = {**report, "link": _pair_link(db, recall, party, report)}
+            _ensure_handoff(db, recall_id, party_id, report)
+            return dict(book_report(db, recall_id=recall_id, party_id=party_id, report=report))
+        from ..ledger.claims import submit_claim  # noqa: PLC0415 - the claim path imports the simulator's callers
+        out = submit_claim(db.client, db, recall_id=recall_id, party_id=party_id,
+                           attempt_id=f"agent-report:{recall_id}:{party_id}:{report['seq']}", source="agent",
+                           raw=profiles.report_claim(report, recall.get("batch_code")), now=utcnow())
+    except PyMongoError as exc:
+        return {"accepted": False, "error": f"{type(exc).__name__}: {exc}"}
+    out = dict(out or {})
+    if out.get("accepted") or out.get("duplicate"):
+        _set_sub(db, recall_id, party_id, report)
+    return out
+
+
+def _pair_link(db, recall: dict, party: dict, report: dict) -> str:
+    """The parent-side link Summit's node reports on. In a single-node run
+    nobody paired the two nodes, so the simulator, playing Summit, sets the
+    pairing up once (as the two companies would) and points it at the party.
+    An existing pairing is kept, with its sequence numbers."""
+    from ..node import links  # noqa: PLC0415 - WS5's module, present whenever book_report is
+    link = links.get(db, report["link"]) or links.by_peer(db, "parent", SUMMIT_NODE)
+    if link is None:
+        account = party.get("account") or _account_of(recall, party)
+        link = links.ensure_link(db, links.link_doc(
+            link_id=report["link"], role="parent", peer_node=SUMMIT_NODE, peer_url="",
+            match={"system": "east", "account": account}, party_id=party["party_id"], status="active"))
+    if party.get("link_id") != link["_id"]:
+        links.attach_party(db, link, recall.get("_id") or report["recall"], party["party_id"])
+    return link["_id"]
+
+
+def _ensure_handoff(db, recall_id: str, party_id: str, report: dict) -> None:
+    """The handoff's booking, which a single-node run has no peer to read
+    back from: the simulator, playing Summit's node, answers the read-back
+    (the sub-recall taken, `units_received` tins) and WS5's book_handoff books
+    it under the same idempotency key a worker would use, so a worker that
+    tried the handoff finds it verified and never sends it again."""
+    from types import SimpleNamespace  # noqa: PLC0415
+
+    from ..node import handoff  # noqa: PLC0415 - WS5's module, present whenever book_report is
+    from ..systems import operations  # noqa: PLC0415
+    party = db.parties.find_one({"recall_id": recall_id, "party_id": party_id})
+    if party is None or party.get("handoff"):
+        return
+    ctx = SimpleNamespace(db=db, client=db.client, settings=SimpleNamespace(node_id=PARENT_NODE))
+    sim = _sim_now(db, recall_id)
+    op, _ = operations.open_op(db, handoff.intent(ctx, party, sim=sim))
+    if op["state"] in operations.FINAL_STATES:
+        return
+    seen = {"state": "taken", "received": int(report["units_received"]),
+            "sub_recall_id": f"{SUMMIT_NODE}:{op['idempotency_key']}"}
+    handoff.book_handoff(ctx, op, seen, sim)
+
+
+def _account_of(recall: dict, party: dict) -> str | None:
+    """The order system account id of a party, from its scenario."""
+    try:
+        scenario = load_scenario(recall.get("scenario_id")) if recall.get("scenario_id") else {}
+    except (OSError, ValueError):
+        return None
+    for system in (scenario.get("order_systems") or {}).values():
+        for row in system.get("accounts") or []:
+            if row.get("name") == party.get("name"):
+                return row["account"]
+    return None
+
+
+def _set_sub(db, recall_id: str, party_id: str, report: dict) -> None:
+    """The fallback's sub-recall fields on the party (book_report sets them
+    itself). Atlas refuses `closed` while a tin is on a shelf or unresolved."""
+    sub = {"sub.seq": report["seq"], "sub.state": report["state"],
+           "sub.parties_total": report["parties"]["total"], "sub.parties_open": report["parties"]["open"],
+           "sub.buyers": report["buyers"], "link_id": report.get("link")}
+    try:
+        db.parties.update_one({"recall_id": recall_id, "party_id": party_id,
+                               "$or": [{"sub.seq": {"$exists": False}}, {"sub.seq": {"$lt": report["seq"]}}]},
+                              {"$set": sub})
+    except PyMongoError as exc:
+        log.warning("simulated node: sub-recall fields for %s refused: %s", party_id, exc)
 
 
 def _stale(event: dict) -> bool:

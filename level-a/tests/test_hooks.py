@@ -87,7 +87,7 @@ def feed_texts(db, kind="post_call"):
 
 
 def test_transcription_completes_the_attempt_and_keeps_the_transcript(api, db, rid):
-    att = dialed(db, rid, "harbour-fire")
+    att = dialed(db, rid, "harbour-market")
     r = post(api, transcription(att))
     assert r.status_code == 200
     assert r.json() == {"ok": True, "matched": True, "attempt_id": att["_id"], "state": "completed", "changed": True}
@@ -102,20 +102,20 @@ def test_transcription_completes_the_attempt_and_keeps_the_transcript(api, db, r
     assert (done["call_duration_secs"], done["termination_reason"], done["summary"]) == (
         52, "end_call tool was called.", "Counts confirmed: 25/10/5.")
     [event] = db.tool_events.find({"kind": "post_call"})
-    assert (event["attempt_id"], event["recall_id"], event["party_id"]) == (att["_id"], rid, "harbour-fire")
+    assert (event["attempt_id"], event["recall_id"], event["party_id"]) == (att["_id"], rid, "harbour-market")
     assert (event["conversation_id"], event["call_sid"], event["source"]) == (att["conversation_id"],
                                                                                att["call_sid"], "sim")
     assert event["payload"]["type"] == "post_call_transcription"
-    assert feed_texts(db) == ["Call with Harbour Fire ended after 52 s"]
+    assert feed_texts(db) == ["Call with Harbour Market ended after 52 s"]
 
     again = post(api, transcription(att))          # a redelivery changes nothing
     assert again.status_code == 200 and again.json()["changed"] is False
-    assert feed_texts(db) == ["Call with Harbour Fire ended after 52 s"]
+    assert feed_texts(db) == ["Call with Harbour Market ended after 52 s"]
     assert db.tool_events.count_documents({"kind": "post_call"}) == 2
 
 
 def test_transcription_closes_an_in_doubt_attempt_and_fills_its_ids(api, db, rid):
-    att = opened(db, rid, "lakeside-systems")
+    att = opened(db, rid, "lakeside-foods")
     event = transcription(att, conversation_id="conv_while_down", call_sid="CAwhiledown")
     assert post(api, event).json()["state"] == "completed"
     done = db.attempts.find_one({"_id": att["_id"]})
@@ -124,20 +124,20 @@ def test_transcription_closes_an_in_doubt_attempt_and_fills_its_ids(api, db, rid
 
 
 def test_transcription_without_dynamic_variables_matches_by_conversation(api, db, rid):
-    att = dialed(db, rid, "queen-st-alarm")
+    att = dialed(db, rid, "queen-st-grocer")
     r = post(api, transcription(att, dynamic=False))
     assert r.json()["attempt_id"] == att["_id"]
     assert db.attempts.find_one({"_id": att["_id"]})["state"] == "completed"
 
 
 def test_failed_conversation_fails_the_attempt(api, db, rid):
-    att = dialed(db, rid, "harbour-fire")
+    att = dialed(db, rid, "harbour-market")
     assert post(api, transcription(att, status="failed")).json()["state"] == "failed"
-    assert feed_texts(db) == ["Call with Harbour Fire failed (end_call tool was called.)"]
+    assert feed_texts(db) == ["Call with Harbour Market failed (end_call tool was called.)"]
 
 
 def test_bad_signature_is_refused(api, db, rid):
-    att = dialed(db, rid, "harbour-fire")
+    att = dialed(db, rid, "harbour-market")
     event = transcription(att)
     assert post(api, event, secret="wrong").status_code == 401
     assert post(api, event, t=int(time.time()) - 31 * 60).status_code == 401
@@ -151,36 +151,36 @@ def test_bad_signature_is_refused(api, db, rid):
 
 
 def test_initiation_failure_matched_by_conversation_id(api, db, rid):
-    att = dialed(db, rid, "harbour-fire")
+    att = dialed(db, rid, "harbour-market")
     r = post(api, initiation_failure("no-answer", conversation_id=att["conversation_id"]))
     assert r.json()["state"] == "no_answer"
     done = db.attempts.find_one({"_id": att["_id"]})
     assert (done["state"], done["outcome_reason"]) == ("no_answer", "no-answer")
-    assert feed_texts(db) == ["Call to Harbour Fire was not answered"]
+    assert feed_texts(db) == ["Call to Harbour Market was not answered"]
 
 
 def test_initiation_failure_matched_by_call_sid(api, db, rid):
-    att = dialed(db, rid, "lakeside-systems")
+    att = dialed(db, rid, "lakeside-foods")
     r = post(api, initiation_failure("unknown", call_sid=att["call_sid"]))
     assert (r.json()["attempt_id"], r.json()["state"]) == (att["_id"], "failed")
 
 
 def test_initiation_failure_matched_by_the_dialled_number(api, db, rid):
-    number = phone(db, rid, "queen-st-alarm")
-    earlier = opened(db, rid, "queen-st-alarm")
+    number = phone(db, rid, "queen-st-grocer")
+    earlier = opened(db, rid, "queen-st-grocer")
     complete(db, earlier["_id"], "no_answer")
-    live = opened(db, rid, "queen-st-alarm")               # in doubt: no ids saved at all
-    dialed(db, rid, "harbour-fire")                       # live, but to another number
+    live = opened(db, rid, "queen-st-grocer")               # in doubt: no ids saved at all
+    dialed(db, rid, "harbour-market")                       # live, but to another number
     r = post(api, initiation_failure("busy", to=number))
     assert (r.json()["attempt_id"], r.json()["state"]) == (live["_id"], "failed")
     assert db.attempts.find_one({"_id": earlier["_id"]})["state"] == "no_answer"
-    assert feed_texts(db) == ["Call to Queen St Alarm failed: busy"]
+    assert feed_texts(db) == ["Call to Queen St Grocer failed: busy"]
     saved = db.attempts.find_one({"_id": live["_id"]})
     assert (saved["conversation_id"], saved["call_sid"]) == ("conv_unknown", "CAunknown")
 
 
 def test_audio_is_logged_without_the_audio_and_ignored(api, db, rid):
-    att = dialed(db, rid, "harbour-fire")
+    att = dialed(db, rid, "harbour-market")
     event = {"type": "post_call_audio", "data": {"agent_id": "agent_test", "conversation_id": att["conversation_id"],
                                                   "full_audio": "UklGRiQAAABXQVZF" * 64}}
     r = post(api, event)
@@ -191,7 +191,7 @@ def test_audio_is_logged_without_the_audio_and_ignored(api, db, rid):
 
 
 def test_unknown_attempt_is_acknowledged_and_flagged(api, db, rid):
-    ghost = {"_id": "att_00000000000000", "party_id": "harbour-fire", "conversation_id": "conv_ghost",
+    ghost = {"_id": "att_00000000000000", "party_id": "harbour-market", "conversation_id": "conv_ghost",
              "call_sid": "CAghost"}
     r = post(api, transcription(ghost))
     assert r.status_code == 200 and r.json() == {"ok": True, "matched": False}
@@ -244,7 +244,7 @@ def test_an_unset_webhook_secret_refuses_the_public_dev_value(client, db, rid, s
     anyone could sign a webhook that closes a live call's attempt."""
     host = TestClient(create_app(replace(settings, webhook_secret=Settings.from_env(env={}).webhook_secret),
                                  client=client, sim_network=object()))
-    att = dialed(db, rid, "harbour-fire")
+    att = dialed(db, rid, "harbour-market")
     r = post(host, transcription(att, status="failed"), secret=DEV_SECRETS["webhook_secret"])
     assert r.status_code == 401
     assert db.attempts.find_one({"_id": att["_id"]})["state"] == "dialed"

@@ -6,7 +6,7 @@ importing the Twilio number, so the agent the judges hear is the agent in git.
 
 | File | What it is |
 |---|---|
-| `prompt.md` | The system prompt: call flow, number read-back, how to act on each tool reply, question-only calls, open questions, call backs, voicemail / screening / refusal / noise handling, guardrails. |
+| `prompt.md` | The system prompt: three scripts chosen by the dynamic variable `party_type` (store, plant, buyer), number read-back, how to act on each tool reply, question-only calls, open questions, call backs, voicemail / screening / refusal / noise handling, guardrails. |
 | `first_message.txt` | The opening line, spoken as soon as the call connects. Says it is the automated recall line for `{{company}}` and that the call is a simulation. |
 | `tool_submit_count.json` | The `POST /v1/convai/tools` body for the `submit_count` webhook tool: the counts the model fills, the four ids bound from dynamic variables, the `X-Tool-Secret` header from a workspace secret, a 20 s timeout. |
 | `tool_submit_answer.json` | The `submit_answer` webhook tool (`POST /tools/submit_answer`): the model fills `question_id` and `value` (strings) after reading the answer back; the same four ids are bound. |
@@ -23,21 +23,35 @@ variables, filled per call from the worker's
 
 ## The one rule this folder must keep
 
-The agent never knows how many panels a party should have. Nothing here contains
+The agent never knows how many tins a party should have. Nothing here contains
 `shipped_in`, a delivered count or a delivery note number (the sample values and
 examples are numbers no scenario uses), and the worker never sends one. The
 agent hears about a mismatch only from the tool reply, after Atlas has refused
 the write, so every challenge on the call originates in the database.
-`tests/test_agent_config.py` enforces this.
+`tests/test_agent_config.py` enforces this, and `scripts/provision_agent.py`
+refuses a prompt that contains `shipped_in`.
 
 ## Dynamic variables
 
 The worker sends all of these, always as strings, on every call (DESIGN.md §5,
 plus the question variables of the long run, spec "Questions as data"):
 
-`attempt_id party_id party_name batch_code batch_spoken brand product hazard unit tier
-purpose company sender_name told_qty ask_delivery_note followup_note
+`attempt_id party_id party_name party_type batch_code batch_spoken product hazard evidence unit
+receipt ask_checks purpose company sender_name told_qty ask_delivery_note followup_note
 ask_counts questions question_ids`
+
+- `party_type` picks the script: `store` (also `distributor` and `self`): the
+  counts one at a time (sold, on the shelf, held, returned, passed to another
+  store and its name) and, when `ask_checks` is `"yes"`, the three checks in the
+  spec's words; `plant`: the evidence (the defect in `hazard`, the batch, and
+  `evidence`, for example "three customer complaints, from three different
+  stores"), then the open questions, each recorded with `submit_answer`; `buyer`:
+  the recall's instruction (the product, the batch, do not use it, bring it back
+  for a refund) and nothing else.
+- `evidence` is new with the food recall: the worker (WS6) should send it for the
+  plant's call. When it is blank the prompt falls back to the three complaints.
+- The agent never answers a health question and never gives health advice, in
+  any script.
 
 The tools also bind `system__conversation_id` and `system__call_sid`, which
 ElevenLabs provides on Twilio calls. `sender_name`, `told_qty` and
@@ -46,8 +60,8 @@ ElevenLabs provides on Twilio calls. `sender_name`, `told_qty` and
 - `ask_counts` is `"no"` when the party's counts are already on the books: the
   call is a question-only call, and the prompt then never asks for counts.
 - `questions` lists the party's open questions, each starting with its id, for
-  example `q-07: Did you also receive batch ZX-5521? (answer: yes or no, and how
-  many panels).` It is empty when there are none. The agent asks each one, reads
+  example `q-07: Did you also receive batch B-4480? (answer: yes or no, and how
+  many tins).` It is empty when there are none. The agent asks each one, reads
   the answer back and records it with `submit_answer`; the API removes the id
   from the party's `open_questions`.
 - `question_ids` is the comma-separated list of those ids (the agent does not
@@ -69,7 +83,7 @@ auth token).
 ```sh
 cd level-a
 python scripts/provision_agent.py --dry-run      # print every request body, send nothing
-python scripts/provision_agent.py                # create or update everything
+python scripts/provision_agent.py                # update the existing agent, tools and webhook
 ```
 
 The script is idempotent: run it again after any change to this folder, and
@@ -86,9 +100,12 @@ whenever `PUBLIC_BASE_URL` changes (a new tunnel URL). In order, it:
    **The webhook's signing secret is printed once and stored nowhere.** Put it
    in `ELEVEN_WEBHOOK_SECRET` in `.env` and in the API host's environment. It
    warns if `ELEVEN_WEBHOOK_ID` points at a different URL (a stale tunnel);
-4. creates the agent "All Clear recall line", or PATCHes it (`ELEVEN_AGENT_ID`,
-   else found by name), with `prompt.md`, `first_message.txt`, the three tool ids and
-   the webhook override (events `transcript`, `call_initiation_failure`);
+4. PATCHes the existing agent (`ELEVEN_AGENT_ID`, else the one agent named "All
+   Clear recall line") with `prompt.md`, `first_message.txt`, the three tool ids and
+   the webhook override (events `transcript`, `call_initiation_failure`). It never
+   creates an agent unless `--create-agent` is given, so a missing id cannot make
+   a duplicate. It refuses an English agent whose TTS model is not
+   `eleven_flash_v2` or `eleven_turbo_v2`;
 5. picks the phone number: `ELEVEN_PHONE_ID`, or the only Twilio number;
 6. prints the `.env` lines to set: `ELEVEN_AGENT_ID`, `ELEVEN_PHONE_ID`,
    `ELEVEN_WEBHOOK_ID`.
@@ -102,8 +119,10 @@ webhook secret), and it never writes a file.
 
 ```sh
 python -m levela api                       # in another terminal; reachable at PUBLIC_BASE_URL
-python scripts/call_once.py --watch        # rings PHONE_HARBOUR
-python scripts/call_once.py --to +1... --var tier=downstream --var "sender_name=Queen St Alarm"
+python scripts/call_once.py --watch        # rings PHONE_HARBOUR (Harbour Market, store script)
+python scripts/call_once.py --to +1... --var receipt=yes --var "sender_name=Queen St Grocer"
+python scripts/call_once.py --to +1... --var party_type=plant --var ask_counts=no \
+  --var "questions=q-01: Which other batches ran with the same fault? (answer: a few words)." --var question_ids=q-01
 ```
 
 `call_once.py` sends exactly the variables the worker sends for a direct party's
@@ -115,7 +134,7 @@ polls Twilio every 2 s and prints the status timeline. The agent's
 `request_callback` on the smoke call is logged and refused the same way. Pass
 `--attempt` with a live attempt's id (and `--var party_id=...` for its party)
 to book for real. To hear a question-only call, add
-`--var ask_counts=no --var "questions=q-07: Did you also receive batch ZX-5521? (answer: yes or no)." --var question_ids=q-07`.
+`--var ask_counts=no --var "questions=q-07: Did you also receive batch B-4480? (answer: yes or no)." --var question_ids=q-07`.
 
 ## Unverified (from `docs/vendor_reference.md` and this build)
 
@@ -134,9 +153,9 @@ Each item has a check. Run the checks tonight.
   you see.
 - **`system__call_sid` in tool calls**: documented for Twilio calls only. Check
   that `tool_events.call_sid` is filled after a real call.
-- **`eleven_flash_v2_5` for an English agent**: if agent creation rejects the TTS
-  model for English, switch `tts.model_id` to `eleven_flash_v2` and run the
-  script again.
+- **TTS model for an English agent**: ElevenLabs accepts only `eleven_flash_v2`
+  or `eleven_turbo_v2` for an English agent, so `agent_config.json` names
+  `eleven_flash_v2` and the script checks it before sending.
 - **List endpoints the script relies on for idempotency**: `GET
   /v1/convai/secrets` (`{secrets:[{secret_id,name}]}`), `GET
   /v1/workspace/webhooks` (`{webhooks:[{webhook_id,webhook_url}]}`; a 404 is
@@ -176,7 +195,8 @@ Write each result down, with the phone and carrier used.
    the digit read-back gets wrong, and whether the "no, that's wrong" correction
    recovers each one.
 4. **The agent speaks a canned rejection.** Run the API and the worker, start
-   `recall_1` with `PHONE_HARBOUR` set, answer as Harbour Fire and over-count.
+   `recall_1` with `PHONE_HARBOUR` set, answer as Harbour Market and say 60 tins
+   for its 40.
    The agent must say both numbers from the tool reply and ask again. After two
    challenges it must stop.
 5. **Call screening does not block it.** Try with iOS "Silence Unknown Callers"

@@ -130,6 +130,8 @@ class Scheduler:
         if not (force or self._claim_hour(rid, hour)):
             return {"recall_id": rid, "sim": sim, "checked": False, "fired": fired}
         given = questions.fan_out_all(self.db, rid, sim)
+        from ..monitoring import link as store_link    # WS4: connectors of stores named since the last hour
+        store_link.tick(self.db, rid, client=self.client)
         try:
             result = self.check_invariants(rid, sim)
         except Exception as exc:  # noqa: BLE001 - shown on the wall; the next simulated hour checks again

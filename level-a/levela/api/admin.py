@@ -32,6 +32,10 @@ SLICE = "slice"
 
 
 class StartRecall(BaseModel):
+    """Start a food recall from a scenario (scenarios/recall_1.json: Maple Farm
+    milk powder 800 g, batch B-4471). A recall started here is a person's
+    decision from a notice (`source: manual`); one opened from complaints goes
+    through POST /admin/signals/{id}/approve instead (WS4)."""
     scenario: str
     all_sim: bool = False
     sim_parties: list[str] = []
@@ -91,6 +95,12 @@ def start_recall(body: StartRecall, request: Request) -> dict:
         rid = body.recall_id or scenario["recall"]["_id"]
         raise HTTPException(status_code=409, detail=f"recall {rid} already exists; reset first or pass "
                                                     "another recall_id") from None
+    out["plant"] = _ensure_plant(st.db, out["recall_id"])
+    listed = {s["party_id"] for s in out["parties"]}
+    for extra in st.db.parties.find({"recall_id": out["recall_id"], "party_id": {"$nin": sorted(listed)},
+                                     "form_token": {"$type": "string"}},
+                                    {"party_id": 1, "channel": 1, "form_token": 1}):
+        out["parties"].append({k: extra.get(k) for k in ("party_id", "channel", "form_token")})
     hold_change = (out["mode"] == "demo") if body.hold_order_system_change is None else body.hold_order_system_change
     run = _hold_order_system_changes(st.db, out["recall_id"]) if hold_change else runs.get_run(st.db, out["recall_id"])
     base = st.settings.webhook_base
@@ -98,6 +108,27 @@ def start_recall(body: StartRecall, request: Request) -> dict:
                       "qr_url": f"{base}/form/{s['form_token']}/qr.svg"} for s in out["parties"]]
     out["run"] = _run_summary(run)
     return jsonable(out)
+
+
+def _ensure_plant(db, recall_id: str) -> dict | None:
+    """The recall's first action is the call to the plant (spec "Calling the
+    plant"): its party (tier 0, type plant, due at once) is created when the
+    recall opens, by WS4's levela.monitoring.plant. Until that module lands,
+    or when the scenario names no plant, the recall starts without one."""
+    try:
+        from ..monitoring.plant import ensure_plant_party
+    except ImportError:
+        return None
+    recall = db.recalls.find_one({"_id": recall_id})
+    if recall is None:
+        return None
+    try:
+        party = ensure_plant_party(db, recall)
+    except Exception as exc:  # noqa: BLE001 - a recall must start even if the plant call cannot be set up
+        log.warning("plant party for %s not created: %s", recall_id, exc)
+        feed.emit(db, "error", f"Plant party not created: {exc}", level="bad", source="admin", recall_id=recall_id)
+        return None
+    return {"party_id": party.get("party_id"), "name": party.get("name")} if isinstance(party, dict) else None
 
 
 def _hold_order_system_changes(db, recall_id: str) -> dict | None:
@@ -162,7 +193,7 @@ def reset(request: Request) -> dict:
 @router.post("/close")
 def close(body: RecallRef, request: Request) -> dict:
     """Atlas's close gate decides. A refusal wakes the planner (spec "The
-    planner": it runs when a close is refused), so the open panels are re-ranked
+    planner": it runs when a close is refused), so the open tins are re-ranked
     now rather than at its next six-hour pass."""
     db = request.app.state.db
     _require_recall(db, body.recall_id)

@@ -229,10 +229,14 @@ def save_failure_episode(db, run, failure_cls: str, note: str, *, sim_now: float
     for the brief, never searched by similarity."""
     if failure_cls not in FAILURE_CLASSES:
         raise ValueError(f"unknown failure class {failure_cls!r}")
-    doc = {"_id": f"ep_{run.id}", "kind": "failure", "failure_class": failure_cls, "recall_id": run.recall_id,
+    from ..memory.govern import governed
+
+    created = utcnow()
+    doc = {"_id": f"ep_{run.id}", **governed("failure", party_id=run.party_id, now=created),
+           "failure_class": failure_cls, "recall_id": run.recall_id,
            "party_id": run.party_id, "run_id": run.id, "worker": run.worker, "run_kind": run.kind,
-           "summary": f"{note} ({fmt(sim_now)})", "tags": [failure_cls], "entities": {}, "valid": True,
-           "sim": round(float(sim_now), 4), "created_at": utcnow()}
+           "summary": f"{note} ({fmt(sim_now)})", "tags": [failure_cls], "entities": {},
+           "sim": round(float(sim_now), 4), "created_at": created}
     try:
         db.episodes.insert_one(doc)
     except DuplicateKeyError:

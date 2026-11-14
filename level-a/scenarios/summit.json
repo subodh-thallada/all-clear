@@ -1,0 +1,452 @@
+{
+  "scenario_id": "summit",
+  "synthetic": true,
+  "seed": 20261114,
+  "about": "Summit Foods' own records for its sub-recall of Maple Farm milk powder 800 g, batch B-4471. Invented. Never sent to the parent node.",
+  "node": {
+    "node_id": "summit",
+    "name": "Summit Foods",
+    "business_phone": "555-0400"
+  },
+  "parent": {
+    "node_id": "maple-farm",
+    "link_id": "ln-summit",
+    "party_id": "summit-foods",
+    "match": {
+      "system": "east",
+      "account": "EAST-SUMMIT"
+    }
+  },
+  "product": "Maple Farm milk powder 800 g",
+  "barcode": "0 62345 18803 5",
+  "batch_code": "B-4471",
+  "received": 120,
+  "depot": {
+    "party_id": "summit-depot",
+    "name": "Summit Foods depot",
+    "type": "self",
+    "tier": 1,
+    "received": 120,
+    "held": 18,
+    "returned": 22,
+    "delivered": 80,
+    "staff": {
+      "role": "depot lead",
+      "phone": "555-0101"
+    }
+  },
+  "stores": [
+    {
+      "store_id": "summit-riverside",
+      "party_id": "summit-riverside",
+      "name": "Summit Foods Riverside",
+      "type": "store",
+      "tier": 2,
+      "store_system_id": "ss-summit-riverside",
+      "received": 16,
+      "sold": 7,
+      "on_shelf_at_recall": 9,
+      "profile": "over_reporter",
+      "manager": {
+        "role": "store manager",
+        "phone": "555-0111"
+      },
+      "pull_at": 14.0,
+      "late_pull": {
+        "qty": 9,
+        "at": 225.0
+      },
+      "all_pulled_claim_at": 130.3
+    },
+    {
+      "store_id": "summit-hillview",
+      "party_id": "summit-hillview",
+      "name": "Summit Foods Hillview",
+      "type": "store",
+      "tier": 2,
+      "store_system_id": "ss-summit-hillview",
+      "received": 14,
+      "sold": 6,
+      "on_shelf_at_recall": 8,
+      "profile": "no_answer",
+      "manager": {
+        "role": "store manager",
+        "phone": "555-0112"
+      },
+      "pull_at": 18.0,
+      "late_pull": null,
+      "all_pulled_claim_at": null
+    },
+    {
+      "store_id": "summit-old-mill",
+      "party_id": "summit-old-mill",
+      "name": "Summit Foods Old Mill",
+      "type": "store",
+      "tier": 2,
+      "store_system_id": "ss-summit-old-mill",
+      "received": 14,
+      "sold": 5,
+      "on_shelf_at_recall": 9,
+      "profile": "straight",
+      "manager": {
+        "role": "store manager",
+        "phone": "555-0113"
+      },
+      "pull_at": 22.0,
+      "late_pull": null,
+      "all_pulled_claim_at": null
+    },
+    {
+      "store_id": "summit-bayfront",
+      "party_id": "summit-bayfront",
+      "name": "Summit Foods Bayfront",
+      "type": "store",
+      "tier": 2,
+      "store_system_id": "ss-summit-bayfront",
+      "received": 12,
+      "sold": 5,
+      "on_shelf_at_recall": 7,
+      "profile": "straight",
+      "manager": {
+        "role": "store manager",
+        "phone": "555-0114"
+      },
+      "pull_at": 26.0,
+      "late_pull": null,
+      "all_pulled_claim_at": null
+    },
+    {
+      "store_id": "summit-parkdale",
+      "party_id": "summit-parkdale",
+      "name": "Summit Foods Parkdale",
+      "type": "store",
+      "tier": 2,
+      "store_system_id": "ss-summit-parkdale",
+      "received": 12,
+      "sold": 4,
+      "on_shelf_at_recall": 8,
+      "profile": "straight",
+      "manager": {
+        "role": "store manager",
+        "phone": "555-0115"
+      },
+      "pull_at": 30.0,
+      "late_pull": null,
+      "all_pulled_claim_at": null
+    },
+    {
+      "store_id": "summit-elm-st",
+      "party_id": "summit-elm-st",
+      "name": "Summit Foods Elm St",
+      "type": "store",
+      "tier": 2,
+      "store_system_id": "ss-summit-elm-st",
+      "received": 12,
+      "sold": 4,
+      "on_shelf_at_recall": 8,
+      "profile": "straight",
+      "manager": {
+        "role": "store manager",
+        "phone": "555-0116"
+      },
+      "pull_at": 34.0,
+      "late_pull": null,
+      "all_pulled_claim_at": null
+    }
+  ],
+  "buyers": [
+    {
+      "_id": "buyer-01",
+      "purchase_id": "sp-003",
+      "store_id": "summit-riverside",
+      "contact": "555-0301",
+      "bought_at": -68.84,
+      "qty": 1,
+      "reachable": true
+    },
+    {
+      "_id": "buyer-02",
+      "purchase_id": "sp-004",
+      "store_id": "summit-riverside",
+      "contact": "555-0302",
+      "bought_at": -107.5,
+      "qty": 1,
+      "reachable": true
+    },
+    {
+      "_id": "buyer-03",
+      "purchase_id": "sp-005",
+      "store_id": "summit-riverside",
+      "contact": "555-0303",
+      "bought_at": -70.61,
+      "qty": 1,
+      "reachable": true
+    },
+    {
+      "_id": "buyer-04",
+      "purchase_id": "sp-006",
+      "store_id": "summit-riverside",
+      "contact": "555-0304",
+      "bought_at": -62.39,
+      "qty": 1,
+      "reachable": true
+    },
+    {
+      "_id": "buyer-05",
+      "purchase_id": "sp-008",
+      "store_id": "summit-hillview",
+      "contact": "555-0305",
+      "bought_at": -61.32,
+      "qty": 1,
+      "reachable": false
+    },
+    {
+      "_id": "buyer-06",
+      "purchase_id": "sp-011",
+      "store_id": "summit-hillview",
+      "contact": "555-0306",
+      "bought_at": -60.05,
+      "qty": 1,
+      "reachable": false
+    },
+    {
+      "_id": "buyer-07",
+      "purchase_id": "sp-012",
+      "store_id": "summit-hillview",
+      "contact": "555-0307",
+      "bought_at": -86.7,
+      "qty": 1,
+      "reachable": true
+    },
+    {
+      "_id": "buyer-08",
+      "purchase_id": "sp-014",
+      "store_id": "summit-old-mill",
+      "contact": "555-0308",
+      "bought_at": -54.3,
+      "qty": 1,
+      "reachable": true
+    },
+    {
+      "_id": "buyer-09",
+      "purchase_id": "sp-015",
+      "store_id": "summit-old-mill",
+      "contact": "555-0309",
+      "bought_at": -98.06,
+      "qty": 1,
+      "reachable": true
+    },
+    {
+      "_id": "buyer-10",
+      "purchase_id": "sp-016",
+      "store_id": "summit-old-mill",
+      "contact": "555-0310",
+      "bought_at": -32.4,
+      "qty": 1,
+      "reachable": false
+    },
+    {
+      "_id": "buyer-11",
+      "purchase_id": "sp-017",
+      "store_id": "summit-old-mill",
+      "contact": "555-0311",
+      "bought_at": -64.8,
+      "qty": 1,
+      "reachable": true
+    },
+    {
+      "_id": "buyer-12",
+      "purchase_id": "sp-020",
+      "store_id": "summit-bayfront",
+      "contact": "555-0312",
+      "bought_at": -31.12,
+      "qty": 1,
+      "reachable": true
+    },
+    {
+      "_id": "buyer-13",
+      "purchase_id": "sp-021",
+      "store_id": "summit-bayfront",
+      "contact": "555-0313",
+      "bought_at": -52.7,
+      "qty": 1,
+      "reachable": true
+    },
+    {
+      "_id": "buyer-14",
+      "purchase_id": "sp-023",
+      "store_id": "summit-bayfront",
+      "contact": "555-0314",
+      "bought_at": -28.68,
+      "qty": 1,
+      "reachable": true
+    },
+    {
+      "_id": "buyer-15",
+      "purchase_id": "sp-026",
+      "store_id": "summit-parkdale",
+      "contact": "555-0315",
+      "bought_at": -135.09,
+      "qty": 1,
+      "reachable": false
+    },
+    {
+      "_id": "buyer-16",
+      "purchase_id": "sp-027",
+      "store_id": "summit-parkdale",
+      "contact": "555-0316",
+      "bought_at": -19.24,
+      "qty": 1,
+      "reachable": true
+    },
+    {
+      "_id": "buyer-17",
+      "purchase_id": "sp-028",
+      "store_id": "summit-elm-st",
+      "contact": "555-0317",
+      "bought_at": -27.47,
+      "qty": 1,
+      "reachable": true
+    },
+    {
+      "_id": "buyer-18",
+      "purchase_id": "sp-029",
+      "store_id": "summit-elm-st",
+      "contact": "555-0318",
+      "bought_at": -79.79,
+      "qty": 1,
+      "reachable": true
+    },
+    {
+      "_id": "buyer-19",
+      "purchase_id": "sp-030",
+      "store_id": "summit-elm-st",
+      "contact": "555-0319",
+      "bought_at": -127.08,
+      "qty": 1,
+      "reachable": true
+    }
+  ],
+  "anonymous_purchases": [
+    {
+      "purchase_id": "sp-001",
+      "store_id": "summit-riverside",
+      "bought_at": -35.25,
+      "qty": 1
+    },
+    {
+      "purchase_id": "sp-002",
+      "store_id": "summit-riverside",
+      "bought_at": -83.0,
+      "qty": 1
+    },
+    {
+      "purchase_id": "sp-007",
+      "store_id": "summit-riverside",
+      "bought_at": -118.56,
+      "qty": 1
+    },
+    {
+      "purchase_id": "sp-009",
+      "store_id": "summit-hillview",
+      "bought_at": -104.13,
+      "qty": 1
+    },
+    {
+      "purchase_id": "sp-010",
+      "store_id": "summit-hillview",
+      "bought_at": -5.66,
+      "qty": 1
+    },
+    {
+      "purchase_id": "sp-013",
+      "store_id": "summit-hillview",
+      "bought_at": -108.31,
+      "qty": 1
+    },
+    {
+      "purchase_id": "sp-018",
+      "store_id": "summit-old-mill",
+      "bought_at": -92.32,
+      "qty": 1
+    },
+    {
+      "purchase_id": "sp-019",
+      "store_id": "summit-bayfront",
+      "bought_at": -74.13,
+      "qty": 1
+    },
+    {
+      "purchase_id": "sp-022",
+      "store_id": "summit-bayfront",
+      "bought_at": -123.66,
+      "qty": 1
+    },
+    {
+      "purchase_id": "sp-024",
+      "store_id": "summit-parkdale",
+      "bought_at": -136.14,
+      "qty": 1
+    },
+    {
+      "purchase_id": "sp-025",
+      "store_id": "summit-parkdale",
+      "bought_at": -42.17,
+      "qty": 1
+    },
+    {
+      "purchase_id": "sp-031",
+      "store_id": "summit-elm-st",
+      "bought_at": -115.61,
+      "qty": 1
+    }
+  ],
+  "items": [
+    {
+      "item_id": "SF-10233",
+      "description": "Maple Farm milk powder 800 g",
+      "barcode": "0 62345 18803 5"
+    },
+    {
+      "item_id": "SF-10234",
+      "description": "Maple Farm milk powder 400 g",
+      "barcode": "0 62345 18804 2"
+    },
+    {
+      "item_id": "SF-10235",
+      "description": "Maple Farm skim milk powder 800 g",
+      "barcode": "0 62345 18807 3"
+    },
+    {
+      "item_id": "SF-11870",
+      "description": "Summit Select whole milk powder 800 g",
+      "barcode": "0 71234 55102 9"
+    },
+    {
+      "item_id": "SF-13110",
+      "description": "Hillcrest milk powder 800 g",
+      "barcode": "0 58810 20031 7"
+    },
+    {
+      "item_id": "SF-12002",
+      "description": "Maple Farm hot chocolate mix 800 g",
+      "barcode": "0 62345 19100 4"
+    }
+  ],
+  "matched_item": "SF-10233",
+  "expected": {
+    "received": 120,
+    "sold": 31,
+    "held_final": 67,
+    "returned": 22,
+    "on_shelf_day5": 9,
+    "held_day5": 58,
+    "buyers": {
+      "identified": 19,
+      "told": 15,
+      "unreachable": 4,
+      "anonymous_sales": 12
+    },
+    "parties_total": 7
+  }
+}

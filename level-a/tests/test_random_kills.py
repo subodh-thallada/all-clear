@@ -1,8 +1,11 @@
 """Random kills: the supervisor (V2 section 11), spec test 22 (ten kills
-during a fast long run) and spec test 31 (the same with eight workers).
+during a fast long run) and an extension of test 22 with eight workers (not a numbered spec test).
+The four-worker run is also spec test 23 (leases: no party ever has two live
+attempts, which is invariant 1, checked every simulated hour; the run ends as
+in test 16).
 
 The supervisor tests drive scripts/supervisor.py's Supervisor with intervals
-of a fraction of a second and a stand-in child process. Tests 22 and 31 run
+of a fraction of a second and a stand-in child process. Both kill runs run
 the whole system: the API (a real HTTP server in this process, hosting the
 simulator and the invariant scheduler), the two mock order systems and the worker
 as separate processes, and the supervisor killing the worker with
@@ -132,10 +135,10 @@ def _kills_run(client, db, settings, test_uri, monkeypatch, workers: int, kills:
 @pytest.mark.slow
 @pytest.mark.timeout(900)
 def test_22_ten_random_kills_during_a_fast_long_run(client, db, settings, test_uri, monkeypatch):
-    _kills_run(client, db, settings, test_uri, monkeypatch, workers=1)
+    _kills_run(client, db, settings, test_uri, monkeypatch, workers=4)
 
 
 @pytest.mark.slow
 @pytest.mark.timeout(900)
-def test_31_eight_workers_with_random_kills(client, db, settings, test_uri, monkeypatch):
+def test_22_eight_workers_with_random_kills(client, db, settings, test_uri, monkeypatch):
     _kills_run(client, db, settings, test_uri, monkeypatch, workers=8)

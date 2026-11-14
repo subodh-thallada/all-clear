@@ -24,7 +24,7 @@ from pymongo.errors import PyMongoError
 from .. import __version__
 from ..config import Settings
 from ..db.client import get_client
-from . import admin, admin_run, form, hooks, order_admin, sim, tools, wall
+from . import admin, admin_run, audit, form, hooks, node, order_admin, sim, store, tools, wall
 from .scheduler import Scheduler
 
 log = logging.getLogger("levela.api")
@@ -84,7 +84,7 @@ def create_app(settings: Settings | None = None, *, sim_network=None, client=Non
     st.http = http or order_admin.LazyHttp()
     st.scheduler = Scheduler(settings, client, st.db, http=st.http)
 
-    for module in (tools, hooks, form, admin, admin_run, sim, wall):
+    for module in (tools, hooks, form, admin, admin_run, sim, store, node, audit, wall):
         app.include_router(module.router)
     wall.mount_static(app)
 

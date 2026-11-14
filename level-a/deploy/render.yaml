@@ -52,6 +52,10 @@ services:
         sync: false
       - key: ADMIN_TOKEN
         sync: false
+      # The HMAC secret shared with Summit Foods' node for the /agent endpoints
+      # (the same value as the laptop's .env); never stored in Atlas.
+      - key: AGENT_LINK_SECRET
+        sync: false
       # ---- ElevenLabs and Twilio
       - key: ELEVEN_API_KEY
         sync: false

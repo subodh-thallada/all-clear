@@ -14,8 +14,12 @@ run updates in place and never creates duplicates:
 3. the HMAC post-call webhook, unless ELEVEN_WEBHOOK_ID is set or one already
    posts to this URL. A new webhook's signing secret is printed once, here, and
    written nowhere;
-4. the agent (ELEVEN_AGENT_ID, else found by name, then PATCHed) with
-   prompt.md, first_message.txt, the three tool ids and the webhook override;
+4. the agent that already exists (ELEVEN_AGENT_ID, else the one agent found
+   by name), PATCHed with prompt.md, first_message.txt, the three tool ids and
+   the webhook override. It is never created unless --create-agent is given,
+   so a missing id cannot make a duplicate. An English agent must use TTS
+   model eleven_flash_v2 or eleven_turbo_v2, and the prompt must never contain
+   shipped_in: both are checked before anything is sent;
 5. the phone number: ELEVEN_PHONE_ID, or the only Twilio number imported.
 
 It ends by printing the .env lines to set. --dry-run prints every request
@@ -53,6 +57,12 @@ TOOL_FILES = {
     "submit_answer": "tool_submit_answer.json",
     "request_callback": "tool_request_callback.json",
 }
+# ElevenLabs accepts only these TTS models for an English agent.
+ENGLISH_TTS_MODELS = ("eleven_flash_v2", "eleven_turbo_v2")
+# Words the prompt must never contain: the agent learns of a mismatch only
+# from the database's reply (spec "Handling a claim").
+FORBIDDEN_PROMPT_WORDS = ("shipped_in",)
+DRY_RUN_AGENT_ID = "<ELEVEN_AGENT_ID>"
 # {{UPPER_CASE}} marks a value this script fills in. Lower-case {{names}} are
 # ElevenLabs dynamic variables, resolved per call, and pass through untouched.
 PLACEHOLDER = re.compile(r"\{\{([A-Z][A-Z0-9_]*)\}\}")
@@ -171,12 +181,29 @@ def agent_body(tool_ids: Mapping[str, str], webhook_id: str) -> dict:
     """The agent create/update body. `tool_ids` maps every tool in TOOL_FILES
     to its workspace id; render() refuses a template that names one not given."""
     template = json.loads(load_agent_file("agent_config.json"))
-    return render(template, {
-        "PROMPT": load_agent_file("prompt.md").strip(),
+    prompt = load_agent_file("prompt.md").strip()
+    for word in FORBIDDEN_PROMPT_WORDS:
+        if word in prompt:
+            raise ProvisionError(f"agent/prompt.md contains {word!r}; the agent must never see it")
+    body = render(template, {
+        "PROMPT": prompt,
         "FIRST_MESSAGE": load_agent_file("first_message.txt").strip(),
         "POST_CALL_WEBHOOK_ID": webhook_id,
         **{tool_id_placeholder(name): tool_id for name, tool_id in tool_ids.items()},
     })
+    check_tts(body)
+    return body
+
+
+def check_tts(body: dict) -> None:
+    """An English agent must name an English TTS model; ElevenLabs refuses
+    the update otherwise."""
+    conv = body.get("conversation_config") or {}
+    language = (conv.get("agent") or {}).get("language") or "en"
+    model = (conv.get("tts") or {}).get("model_id")
+    if language == "en" and model not in ENGLISH_TTS_MODELS:
+        raise ProvisionError(f"an English agent must use TTS model {' or '.join(ENGLISH_TTS_MODELS)}, "
+                             f"not {model!r} (agent/agent_config.json)")
 
 
 # ---- one function per workspace object ---------------------------------------
@@ -267,12 +294,19 @@ def find_agent(api, name: str) -> str | None:
     return found[0] if found else None
 
 
-def ensure_agent(api, body: dict, agent_id: str | None) -> str:
+def ensure_agent(api, body: dict, agent_id: str | None, *, allow_create: bool = False) -> str:
+    """PATCH the existing agent. Without ELEVEN_AGENT_ID it is found by name;
+    with neither, it is created only when allow_create says so (never by
+    default: the agent and the imported number already exist)."""
     agent_id = agent_id or find_agent(api, body["name"])
     if agent_id:
         api.request("PATCH", f"/v1/convai/agents/{agent_id}", body=body)
         log.info("updated agent %r (%s)", body["name"], agent_id)
         return agent_id
+    if not allow_create:
+        raise ProvisionError(f"no agent to update: ELEVEN_AGENT_ID is not set and no agent is named "
+                             f"{body['name']!r}. Set ELEVEN_AGENT_ID to the existing agent (this script never "
+                             "creates a duplicate), or pass --create-agent for a brand-new workspace")
     agent_id = api.request("POST", "/v1/convai/agents/create", body=body)["agent_id"]
     log.info("created agent %r (%s)", body["name"], agent_id)
     return agent_id
@@ -304,7 +338,8 @@ def pick_phone(api, wanted: str | None) -> tuple[str | None, str | None]:
 
 # ---- the run ------------------------------------------------------------------
 
-def provision(api, settings: Settings, *, base_url: str, webhook_id: str | None = None) -> dict:
+def provision(api, settings: Settings, *, base_url: str, webhook_id: str | None = None,
+              allow_create: bool = False, dry_run: bool = False) -> dict:
     """Converge the workspace on agent/*. Returns the ids, a webhook secret if
     one was created now, and the problems still to fix by hand."""
     secret_id = ensure_tool_secret(api, settings.tool_secret)
@@ -315,7 +350,8 @@ def provision(api, settings: Settings, *, base_url: str, webhook_id: str | None 
         problems.append("ELEVEN_WEBHOOK_SECRET is not set, so the API will refuse every post-call "
                         "webhook: set it to the secret shown when the webhook was created, or "
                         "delete the webhook in the ElevenLabs dashboard and run again")
-    agent_id = ensure_agent(api, agent_body(tool_ids, webhook_id), settings.eleven_agent_id or None)
+    agent_id = settings.eleven_agent_id or (DRY_RUN_AGENT_ID if dry_run and not allow_create else None)
+    agent_id = ensure_agent(api, agent_body(tool_ids, webhook_id), agent_id, allow_create=allow_create)
     phone_id, phone_problem = pick_phone(api, settings.eleven_phone_id or None)
     if phone_problem:
         problems.append(phone_problem)
@@ -349,7 +385,7 @@ def env_lines(result: dict) -> list[str]:
              f"ELEVEN_WEBHOOK_ID={result['webhook_id']}"]
     if result["webhook_secret"]:
         lines += ["", "New post-call webhook signing secret. ElevenLabs shows it only now and this "
-                  "script parties it nowhere.",
+                  "script writes it nowhere.",
                   "Put it in level-a/.env and in the API host's environment, never in a tracked file:",
                   f"ELEVEN_WEBHOOK_SECRET={result['webhook_secret']}"]
     return lines
@@ -362,6 +398,9 @@ def parse_args(argv):
                    help="print every request body instead of sending it")
     p.add_argument("--base-url", default=None,
                    help="public https URL of the API (default: PUBLIC_BASE_URL)")
+    p.add_argument("--create-agent", action="store_true",
+                   help="create the agent when ELEVEN_AGENT_ID is unset and none has its name "
+                        "(a brand-new workspace only; by default the existing agent is updated)")
     p.add_argument("-v", "--verbose", action="store_true")
     return p.parse_args(argv)
 
@@ -397,7 +436,8 @@ def main(argv=None, *, http: httpx.Client | None = None, env: Mapping[str, str] 
         api = Api(http, secrets=secrets)
     try:
         result = provision(api, settings, base_url=base_url,
-                           webhook_id=environ.get("ELEVEN_WEBHOOK_ID") or None)
+                           webhook_id=environ.get("ELEVEN_WEBHOOK_ID") or None,
+                           allow_create=args.create_agent, dry_run=args.dry_run)
     except ProvisionError as exc:
         log.error("%s", exc)
         return 1

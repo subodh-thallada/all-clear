@@ -25,7 +25,7 @@ from levela.orchestrator.worker import WorkerPool
 from levela.providers import FakeVoice
 
 RID = "RCL-2026-017"
-PENDING = ["harbour-fire", "lakeside-systems", "queen-st-alarm", "party-a", "party-b"]
+PENDING = ["harbour-market", "lakeside-foods", "queen-st-grocer", "party-a", "party-b"]
 HISTORY = ["Bloor Alarm", "Annex Fire", "Danforth Market", "Leslieville Pantry"]
 LEDGER = ("parties", "attempts", "operations", "claims", "edges", "tool_events", "task_runs", "traces", "episodes")
 
@@ -83,12 +83,12 @@ def test_timers_survive_a_kill_each_fires_once_and_the_restart_reads_only_what_i
     clock = simclock.get_clock(db, RID, max_age_s=0)
     now = clock.sim_now(simclock.server_now(client))
     due_at = {sid: now + 40 + i for i, sid in enumerate(PENDING)}         # 2.0 to 2.2 real seconds ahead
-    stubs = [stub_party(RID, sid, sid, None, "claim:queen-st-alarm", utcnow(), next_action_at=due_at[sid])
+    stubs = [stub_party(RID, sid, sid, None, "claim:queen-st-grocer", utcnow(), next_action_at=due_at[sid])
              for sid in PENDING[3:]]
     # A long history the restart must not read: settled parties and far timers.
-    stubs += [{**stub_party(RID, f"old-{i}", name, None, "claim:queen-st-alarm", utcnow()),
+    stubs += [{**stub_party(RID, f"old-{i}", name, None, "claim:queen-st-grocer", utcnow()),
                "state": "reconciled", "next_action_at": None} for i, name in enumerate(HISTORY)]
-    stubs += [stub_party(RID, f"later-{i}", f"Later {i}", None, "claim:queen-st-alarm", utcnow(),
+    stubs += [stub_party(RID, f"later-{i}", f"Later {i}", None, "claim:queen-st-grocer", utcnow(),
                          next_action_at=now + 5000) for i in range(3)]
     db.parties.insert_many(stubs)
     for sid in PENDING[:3]:

@@ -12,7 +12,7 @@ from levela.db.seed import load_scenario, start_recall
 from levela.orchestrator import attempts as A
 from levela.orchestrator.attempts import AttemptRefused
 
-RID, SID = "RCL-2026-017", "harbour-fire"
+RID, SID = "RCL-2026-017", "harbour-market"
 LIVE = ["intent", "dialed", "connected"]
 CLOSING = ["completed", "no_answer", "failed"]
 
@@ -95,7 +95,7 @@ def test_a_pinned_seq_that_was_taken_is_refused(db, recall):
 
 def test_other_parties_are_independent(db, recall):
     _open(db)
-    other = _open(db, party_id="lakeside-systems")
+    other = _open(db, party_id="lakeside-foods")
     assert other["seq"] == 1
 
 

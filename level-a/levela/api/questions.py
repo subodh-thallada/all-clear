@@ -43,16 +43,16 @@ from pymongo.errors import DuplicateKeyError
 from .. import feed
 
 ANSWER_TYPES = ("yes_no_count", "yes_no", "count", "text")
-TIERS = (1, 2, 3)
+TIERS = (0, 1, 2, 3)     # 0 is the plant (spec "Calling the plant": its three questions are data too)
 MAX_TEXT = 300
 ID_ATTEMPTS = 8
 PER_CALL = 3            # questions asked on one call: the call stays short and the brief stays fixed-size
 
 # How the agent is told to collect each kind of answer.
 HOW_TO_ANSWER = {
-    "yes_no_count": "yes or no, and how many panels",
+    "yes_no_count": "yes or no, and how many tins",
     "yes_no": "yes or no",
-    "count": "a number of panels",
+    "count": "a number of tins",
     "text": "a few words",
 }
 _YES = {"yes", "y", "yeah", "yep", "true"}
@@ -229,12 +229,16 @@ def list_questions(db, recall_id: str) -> list[dict]:
 
 
 def counts_on_books(party: dict) -> bool:
-    """Every panel at the party is explained by its own accepted claim."""
+    """Every tin at the party is explained by its own accepted claim."""
     return party.get("state") in ("claimed", "reconciled") and party.get("unresolved") == 0
 
 
 def ask_counts(party: dict) -> bool:
-    """A party whose counts are on the books is asked its open questions only."""
+    """A party whose counts are on the books is asked its open questions only.
+    So is the plant: its call is the evidence and its three questions, never
+    a store's counts (spec "Calling the plant")."""
+    if party.get("type") == "plant":
+        return False
     return not counts_on_books(party)
 
 
@@ -242,7 +246,7 @@ def call_variables(db, party: dict, *, take_counts: bool | None = None, session=
     """The question part of a call's dynamic variables (all strings, as
     ElevenLabs requires), in the form agent/prompt.md reads them:
 
-        questions     "q-02: Did you also receive batch L-4480? (answer: yes or no, and how many panels)."
+        questions     "q-02: Did you also receive batch B-4480? (answer: yes or no, and how many tins)."
         question_ids  "q-02"
         ask_counts    "yes" | "no"
 
@@ -250,7 +254,7 @@ def call_variables(db, party: dict, *, take_counts: bool | None = None, session=
     the caller's decision when it has one (the harness: a question-only run
     takes no counts); otherwise the party's own books decide."""
     asked = asked_on_next_call(db, party, session=session)
-    counts = ask_counts(party) if take_counts is None else bool(take_counts)
+    counts = ask_counts(party) if take_counts is None else (bool(take_counts) and party.get("type") != "plant")
     return {
         "questions": " ".join(f"{q['question_id']}: {q['text']} "
                               f"(answer: {HOW_TO_ANSWER.get(q.get('answer_type'), HOW_TO_ANSWER['text'])})."
@@ -276,18 +280,18 @@ def _yes_no(value) -> str:
 
 def _count(value) -> int:
     if isinstance(value, bool):
-        raise QuestionError("bad_answer", "the count must be a whole number of panels")
+        raise QuestionError("bad_answer", "the count must be a whole number of tins")
     if isinstance(value, int) and value >= 0:
         return value
     if isinstance(value, float) and value.is_integer() and value >= 0:
         return int(value)
     if isinstance(value, str) and value.strip().replace(",", "").isdigit():
         return int(value.strip().replace(",", ""))
-    raise QuestionError("bad_answer", "the count must be a whole number of panels")
+    raise QuestionError("bad_answer", "the count must be a whole number of tins")
 
 
 def _yes_no_count(value) -> dict:
-    """{"answer": "yes"|"no", "count": n|None} from a dict, "yes, 12 panels", "no", or a bare count."""
+    """{"answer": "yes"|"no", "count": n|None} from a dict, "yes, 12 tins", "no", or a bare count."""
     if isinstance(value, dict):
         answer = _yes_no(value.get("answer"))
         count = None if value.get("count") in (None, "") else _count(value.get("count"))
@@ -318,19 +322,19 @@ def normalize(answer_type: str, value):
     return text
 
 
-def _panels(n: int, unit: str) -> str:
+def _units(n: int, unit: str) -> str:
     plural = f"{unit}es" if unit.endswith(("s", "x", "ch", "sh")) else f"{unit}s"
     return f"{n} {unit if n == 1 else plural}"
 
 
-def answer_text(answer_type: str, value, unit: str = "panel") -> str:
-    """'yes, 12 panels' - the answer as the screen shows it."""
+def answer_text(answer_type: str, value, unit: str = "tin") -> str:
+    """'yes, 12 tins' - the answer as the screen shows it."""
     if answer_type == "yes_no_count":
         if value["answer"] == "no":
             return "no"
-        return "yes" if value["count"] is None else f"yes, {_panels(value['count'], unit)}"
+        return "yes" if value["count"] is None else f"yes, {_units(value['count'], unit)}"
     if answer_type == "count":
-        return _panels(value, unit)
+        return _units(value, unit)
     if answer_type == "text":
         return f'"{value}"'
     return str(value)

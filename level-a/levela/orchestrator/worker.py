@@ -45,9 +45,9 @@ Memory before first contact (recall option memory). A suspect_party action
 creates the named party as a stub due at once, one priority above the party
 that remembered it, and that party is released with a short head start
 (SUSPECT_HEAD_START_S of real time) so the suspect is contacted first: in
-recall 2, Corner Properties' attempt starts before Queen St Alarm's claim. That
-needs a second worker thread when Corner Properties' reply waits for Queen St
-Alarm's claim; with one thread the suspect's run holds until its budget
+recall 2, Corner Mart's attempt starts before Queen St Grocer's claim. That
+needs a second worker thread when Corner Mart's reply waits for Queen St
+Grocer's claim; with one thread the suspect's run holds until its budget
 ends. ask_delivery_note is recorded on parties.memory, where the call's
 dynamic variables read it.
 
@@ -79,6 +79,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from pymongo.errors import PyMongoError
 
@@ -382,6 +383,8 @@ class WorkerPool:
         if look_again is not None:
             self._release(party, token, look_again)
             return "recheck"
+        if party.get("channel") == "agent":
+            return self._act_for_agent(worker_id, party, token, recall, clock)
         if self._first_contact_needs_memory(recall, party) and self._memory_first(recall, party, token, clock):
             self._release(party, token, self._sim_now(clock) + clock.sim_hours(SUSPECT_HEAD_START_S))
             return "suspects"
@@ -395,6 +398,42 @@ class WorkerPool:
                           outcome={"outcome": "failed", "at": self._sim_now(clock)})
             return "error"
         return "executed"
+
+    def _act_for_agent(self, worker_id: str, party: dict, token: dict, recall: dict, clock: simclock.Clock) -> str:
+        """WS5's hook: a party answered by another node's agent (channel
+        "agent") is handed off, or chased when its report is overdue, by
+        levela.node.worker.act; it is never phoned. act() writes the party's
+        own timer, and the release under the fence keeps it."""
+        try:
+            from ..node import worker as node_worker
+        except ImportError:
+            self._release(party, token, None)
+            return "agent"
+        sim_now = self._sim_now(clock)
+        ctx = SimpleNamespace(settings=self.settings, client=self.client, db=self.db, http=self._agent_http(),
+                              failpoints=self.failpoints, recall=recall, clock=clock)
+        try:
+            node_worker.act(ctx, party, voice=self.providers.get("voice"), sim=sim_now)
+        except Exception as exc:  # noqa: BLE001 - one unreachable node must not hold the party's lease forever
+            retry_at = sim_now + max(ERROR_RETRY_H, clock.sim_hours(MIN_RECHECK_S))
+            self._report_error(worker_id, exc, party=party, retry_at=retry_at, what="sub-recall")
+            self._release(party, token, retry_at)
+            return "error"
+        row = self.db.parties.find_one({"_id": party["_id"]}, {"next_action_at": 1}) or {}
+        next_at = row.get("next_action_at")
+        if next_at is not None and next_at <= sim_now:
+            next_at = sim_now + clock.sim_hours(MIN_RECHECK_S)     # never a hot loop on one party
+        self._release(party, token, next_at)
+        return "agent"
+
+    def _agent_http(self):
+        """The httpx client that reaches other nodes, built on first use."""
+        with self._cache_lock:
+            if getattr(self, "_http", None) is None:
+                import httpx
+
+                self._http = httpx.Client(timeout=5.0)
+            return self._http
 
     def context(self, recall: dict, clock: simclock.Clock):
         """The HarnessContext for one run (V2 section 6)."""

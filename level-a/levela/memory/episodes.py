@@ -1,5 +1,8 @@
 """Episodes: what happened on one contact attempt, kept for the next recall.
 
+A contact episode is governed (levela.memory.govern): its `scope` is the
+party it is about, it carries `expires_at`, and it can be invalidated.
+
 When an attempt reaches a final state the worker calls
 write_episode_for_attempt(). The episode keeps the party's profile, a one-
 or two-sentence summary, tags and entities, and an embedding of the profile.
@@ -30,16 +33,17 @@ from ..config import FINAL_ATTEMPT_STATES
 from ..ledger.claims import ClaimError, counts
 from ..ledger.transfers import resolve_party
 from .embed import EMBED_ERRORS
+from .govern import governed
 
 log = logging.getLogger(__name__)
 
 # Every tag an episode can carry, in the order they are written.
 TAGS = ("answered", "no_answer", "failed", "abandoned", "counts_matched", "over_reported", "forwards_to",
-        "received_transfer", "disputed", "panels_returned", "awaiting_fix", "fixed", "needs_human")
+        "received_transfer", "disputed", "tins_sold", "tins_returned", "still_on_shelf", "held", "needs_human")
 # The only two tags the memory policy acts on (memory.retrieve.policy).
 ACTIONABLE_TAGS = frozenset({"forwards_to", "over_reported"})
 _STATE_TAG = {"completed": "answered", "no_answer": "no_answer", "failed": "failed", "abandoned": "abandoned"}
-_BUCKET_WORDS = (("in_stock", "in stock"), ("installed", "installed"), ("fixed", "fixed"), ("returned", "returned"))
+_BUCKET_WORDS = (("sold", "sold"), ("on_shelf", "on the shelf"), ("held", "held"), ("returned", "returned"))
 
 
 def utcnow() -> datetime:
@@ -59,7 +63,7 @@ def summarize(attempt: dict, claims: list, party: dict, edges: list, *, director
 
     claims: this attempt's claims in the order they were made.
     edges: the recall's transfers; only those touching this party are used.
-    directory: the recall's directory, so a party spoken as "the corner properties"
+    directory: the recall's directory, so a party spoken as "the corner mart"
         is remembered by its directory name, the name a later recall resolves.
     party_names: party_id -> name for the parties on those edges.
     """
@@ -82,19 +86,21 @@ def summarize(attempt: dict, claims: list, party: dict, edges: list, *, director
         tags.add("over_reported")
     if final is not None:
         partner = names.canonical(accepted[-1]["raw"].get("forwarded_to_name"))
-        if final["forwarded_qty"] > 0 and partner:
+        if (final.get("forwarded_qty") or 0) > 0 and partner:
             tags.add("forwards_to")
             entities["forwards_to"] = partner
-        if (final["received_qty"] or 0) > 0:
+        if (final.get("received_qty") or 0) > 0:
             tags.add("received_transfer")
             if sender:
                 entities["received_from"] = sender
-        if final["returned"] > 0:
-            tags.add("panels_returned")
-        if final["installed"] > 0:
-            tags.add("awaiting_fix")
-        if final["fixed"] > 0:
-            tags.add("fixed")
+        if (final.get("sold") or 0) > 0:
+            tags.add("tins_sold")
+        if (final.get("returned") or 0) > 0:
+            tags.add("tins_returned")
+        if (final.get("on_shelf") or 0) > 0:
+            tags.add("still_on_shelf")
+        if (final.get("held") or 0) > 0:
+            tags.add("held")
     if any(e.get("state") == "disputed" for e in inbound + outbound):
         tags.add("disputed")
     if party.get("escalation") == "human":
@@ -157,18 +163,18 @@ def _quantities(raw: dict) -> dict | None:
 
 
 def _describe(raw: dict, names: _Names, sender: str | None) -> str:
-    """'25 received from Queen St Alarm and 25 on hand', '40 forwarded to Corner Properties'."""
+    """'25 received from Queen St Grocer and 25 on the shelf', '40 forwarded to Corner Mart'."""
     q = _quantities(raw)
     if q is None:
         return "counts that could not be read"
     parts = []
-    if q["received_qty"] is not None:
+    if q.get("received_qty") is not None:
         parts.append(f"{q['received_qty']} received" + (f" from {sender}" if sender else ""))
-    parts += [f"{q[key]} {words}" for key, words in _BUCKET_WORDS if q[key]]
-    if q["forwarded_qty"]:
+    parts += [f"{q[key]} {words}" for key, words in _BUCKET_WORDS if q.get(key)]
+    if q.get("forwarded_qty"):
         partner = names.canonical(raw.get("forwarded_to_name"))
         parts.append(f"{q['forwarded_qty']} forwarded" + (f" to {partner}" if partner else ""))
-    return _join(parts) if parts else "no panels held"
+    return _join(parts) if parts else "no tins"
 
 
 def _counts_sentence(accepted, rejected, names: _Names, sender) -> str:
@@ -284,10 +290,12 @@ def write_episode_for_attempt(db, embedder, attempt: dict, now=None) -> dict | N
         log.warning("episode for %s not written yet: embedding failed: %s", att["_id"], exc)
         return None
 
+    created = now or utcnow()
     doc = {
         "_id": ep_id, "recall_id": rid, "party_id": sid, "attempt_id": att["_id"],
         "party_profile": party["profile"], "summary": summary, "tags": tags, "entities": entities,
-        "valid": True, "kind": "contact", "embedding": vector, "embedding_model": embedder.name, "created_at": now or utcnow(),
+        **governed("contact", party_id=sid, now=created),
+        "embedding": vector, "embedding_model": embedder.name, "created_at": created,
     }
     try:
         db.episodes.insert_one(doc)
@@ -316,3 +324,31 @@ def _announce(db, party: dict, doc: dict) -> None:
               recall_id=doc["recall_id"], party_id=doc["party_id"], attempt_id=doc["attempt_id"],
               source="worker", detail={"episode_id": doc["_id"], "summary": doc["summary"],
                                        "tags": [t for t in doc["tags"] if t in ACTIONABLE_TAGS]})
+
+
+# ----------------------------------------------------- other kinds of episode
+
+def write_episode(db, embedder, *, kind: str, text: str, summary: str, scope: str | None = None,
+                  party_id: str | None = None, recall_id: str | None = None, episode_id_: str | None = None,
+                  fields: dict | None = None, now=None, ttl=None, expires_at=None) -> dict | None:
+    """Write one governed episode of any kind (WS4's `complaint`, WS5's
+    `item`, ...), embedded by `text`, so memory.retrieve.retrieve(kind=...)
+    finds it. `scope` defaults to the kind's (fleet for complaint, adapter
+    and item; the party for contact and failure). Returns the document, or
+    None when the embedder is unreachable or the id exists already."""
+    try:
+        vector = embedder.embed([text])[0]
+    except EMBED_ERRORS as exc:
+        log.warning("%s episode not written: embedding failed: %s", kind, exc)
+        return None
+    created = now or utcnow()
+    doc = {**(fields or {}), "recall_id": recall_id, "party_id": party_id, "summary": summary, "text": text,
+           **governed(kind, scope=scope, party_id=party_id, now=created, ttl=ttl, expires_at=expires_at),
+           "embedding": vector, "embedding_model": embedder.name, "created_at": created}
+    if episode_id_:
+        doc["_id"] = episode_id_
+    try:
+        db.episodes.insert_one(doc)
+    except DuplicateKeyError:
+        return None
+    return doc

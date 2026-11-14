@@ -17,6 +17,13 @@ $vectorSearch runs exact (ENN): the corpus is a few hundred vectors and the
 answer must not depend on approximate candidates. A plain mongod has no
 search process, so retrieval falls back to scoring the same vectors in
 Python, reported as mode "local" so the wall never claims Atlas did it.
+
+Governed (levela.memory.govern, spec test 42): every retrieval is of one
+`kind` ("contact", "complaint", "adapter", "item", ...) and reads only valid,
+unexpired episodes in the fleet's scope or the caller's own `scope`. The
+same filter document is the `$vectorSearch` pre-filter and the local find(),
+so both paths obey it. A party's contact episodes are scoped to the party:
+one store's habits are never retrieved for another.
 """
 from __future__ import annotations
 
@@ -29,6 +36,7 @@ from pymongo.errors import OperationFailure
 from ..db.schema import VECTOR_INDEX
 from ..ledger.transfers import slugify
 from .embed import EMBED_ERRORS, cosine
+from .govern import admissible
 
 log = logging.getLogger(__name__)
 
@@ -39,8 +47,15 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def retrieve(db, embedder, profile: str, k: int = 3, mode: str = "auto") -> tuple[list[dict], str]:
-    """Top-k valid episodes by profile similarity: (hits, "atlas" | "local").
+def retrieve(db, embedder, profile: str, k: int = 3, mode: str = "auto", *, kind: str = "contact",
+             scope=None, now: datetime | None = None, extra: dict | None = None) -> tuple[list[dict], str]:
+    """Top-k admissible episodes by similarity to `profile`: (hits, "atlas" | "local").
+
+    `kind` picks the episodes ("contact" by default; WS4 reads "complaint",
+    WS5 "item"). `scope` is the caller's own scope (a party id, a vendor
+    scope, or a list of them): fleet episodes are always readable, another
+    party's never. `now` is the expiry cut-off (default: now). `extra` adds
+    equality filters on other filter fields of the index.
 
     Each hit is the episode without its embedding, plus `score` on Atlas's
     cosine scale, (1 + cosine) / 2, whichever path scored it. Only episodes
@@ -52,9 +67,10 @@ def retrieve(db, embedder, profile: str, k: int = 3, mode: str = "auto") -> tupl
     with the writes).
     """
     _require_mode(mode)
+    flt = {**admissible(kind, scope=scope, now=now), **(extra or {})}
     if mode != "local":
         try:
-            found = _atlas(db, embedder.embed([profile])[0], k)
+            found = _atlas(db, embedder.embed([profile])[0], k, flt)
         except OperationFailure as exc:
             if mode == "atlas":
                 raise
@@ -63,15 +79,15 @@ def retrieve(db, embedder, profile: str, k: int = 3, mode: str = "auto") -> tupl
             hits = [_without_vector(h) for h in found if h.get("embedding_model") == embedder.name]
             if hits or mode == "atlas":
                 return hits, "atlas"
-    return _local(db, embedder, profile, k), "local"
+    return _local(db, embedder, profile, k, flt), "local"
 
 
-def _atlas(db, query: list[float], k: int) -> list[dict]:
-    """$vectorSearch over valid contact episodes, exact (ENN). Raises
+def _atlas(db, query: list[float], k: int, flt: dict) -> list[dict]:
+    """$vectorSearch over admissible episodes, exact (ENN). Raises
     OperationFailure where there is no search process or no index."""
     return list(db.episodes.aggregate([
         {"$vectorSearch": {"index": VECTOR_INDEX, "path": "embedding", "queryVector": query, "exact": True,
-                           "limit": k, "filter": {"valid": True, "kind": "contact"}}},
+                           "limit": k, "filter": flt}},
         {"$set": {"score": {"$meta": "vectorSearchScore"}}},
     ]))
 
@@ -85,8 +101,8 @@ def _without_vector(episode: dict) -> dict:
     return {key: value for key, value in episode.items() if key != "embedding"}
 
 
-def _local(db, embedder, profile: str, k: int) -> list[dict]:
-    """Exact cosine in Python over episodes embedded by this same model.
+def _local(db, embedder, profile: str, k: int, flt: dict) -> list[dict]:
+    """Exact cosine in Python over admissible episodes embedded by this same model.
 
     A vector from another model (or the same model at another output size)
     lives in a different space: its score would rank nothing, so it is never
@@ -94,8 +110,7 @@ def _local(db, embedder, profile: str, k: int) -> list[dict]:
     """
     query = embedder.embed([profile])[0]
     scored = []
-    for ep in db.episodes.find({"valid": True, "kind": "contact", "embedding_model": embedder.name,
-                                "embedding": {"$exists": True}}):
+    for ep in db.episodes.find({**flt, "embedding_model": embedder.name, "embedding": {"$exists": True}}):
         vector = ep.pop("embedding")
         if len(vector) != len(query):
             continue
@@ -113,9 +128,9 @@ def policy(hits: list[dict], party: dict) -> list[dict]:
       {"action": "ask_delivery_note", "episode_id", "from_party"}
       {"action": "call_hour", "hour", "episode_id", "from_party"}
 
-    suspect_party needs the party's own episode (similar
-    profiles inherit tags, and an inherited forwards_to names another party's
-    partner). ask_delivery_note may be inherited, but only a tier 1 party has
+    suspect_party needs the party's own episode (retrieval reads only the
+    party's own scope and the fleet's, and a forwards_to from anywhere else
+    would name another party's partner). ask_delivery_note may be inherited, but only a tier 1 party has
     a shipment record, so only a tier 1 party has a delivery note to check.
     call_hour, like suspect_party, needs the party's own episode with an
     answered call (entities.answered_hour): the most similar one wins.
@@ -196,10 +211,10 @@ def check_party(db, embedder, party: dict, *, k: int = 3, mode: str = "auto", no
         return {**record, "reason": "party has no profile"}
     try:
         # Memory is past experience: episodes written during this same recall
-        # are left out (a slice party would otherwise inherit "ask for the
-        # delivery note" from Harbour Fire's over-count minutes earlier).
-        # They are dropped after the search, so ask for a few spare hits.
-        hits, how = retrieve(db, embedder, party["profile"], k=k + SAME_RECALL_SPARE, mode=mode)
+        # are left out (they are dropped after the search, so ask for a few
+        # spare hits). Governed: the party's own scope and the fleet's only.
+        hits, how = retrieve(db, embedder, party["profile"], k=k + SAME_RECALL_SPARE, mode=mode,
+                             kind="contact", scope=party.get("party_id"), now=now)
     except EMBED_ERRORS as exc:
         log.warning("memory check for %s skipped: embedding failed: %s", party.get("party_id"), exc)
         return {**record, "reason": f"embedding failed: {exc}"}
@@ -231,7 +246,8 @@ def contacts_to_full_discovery(db, recall_id: str) -> int:
 
 
 def wait_until_searchable(db, embedder, profile: str, episode_id: str, timeout_s: float = 60, *,
-                          k: int = 10, mode: str = "auto", interval_s: float = 1.0) -> bool:
+                          k: int = 10, mode: str = "auto", interval_s: float = 1.0, kind: str = "contact",
+                          scope=None) -> bool:
     """Poll retrieve() until `episode_id` is among the hits for `profile`.
 
     Atlas Vector Search indexes a write a moment after it commits (seed kit
@@ -242,7 +258,7 @@ def wait_until_searchable(db, embedder, profile: str, episode_id: str, timeout_s
     """
     deadline = time.monotonic() + timeout_s
     while True:
-        hits, how = retrieve(db, embedder, profile, k=k, mode=mode)
+        hits, how = retrieve(db, embedder, profile, k=k, mode=mode, kind=kind, scope=scope)
         if any(h["_id"] == episode_id for h in hits):
             log.debug("episode %s searchable (%s)", episode_id, how)
             return True

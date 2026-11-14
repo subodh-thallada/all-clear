@@ -54,6 +54,7 @@ from ..clock import EPOCH, server_now
 from ..config import AGENT_DIR
 from ..db.schema import VECTOR_INDEX
 from ..memory.embed import EMBED_ERRORS, cosine, get_embedder
+from ..memory.govern import admissible, governed
 from . import adapters, canary, operations
 from .contract import CANONICAL, GROUPS, INTEGER_FIELDS, ContractError
 from .order_client import OrderSystemError, OrderSystemTimeout
@@ -516,7 +517,7 @@ def remember(db, embedder, adapter: dict, failure: dict, *, from_version: int, r
         return None
     changes = [f"{f} -> {adapter['mapping'][f]}" for f in CANONICAL if adapter["mapping"][f] != f]
     doc = {
-        "_id": f"ep-{secrets.token_hex(4)}", "kind": "adapter", "valid": True, "recall_id": recall_id,
+        "_id": f"ep-{secrets.token_hex(4)}", **governed("adapter", now=now), "recall_id": recall_id,
         "order_system": adapter["order_system"], "system_vendor": adapter.get("vendor"), "failure_text": text,
         "from_version": from_version, "version": adapter["version"], "adapter_id": adapter["_id"],
         "source": adapter["source"], "paths": adapter["paths"], "steps": adapter["steps"],
@@ -537,15 +538,17 @@ def find_episode(db, embedder, failure_text: str, *, vendor: str | None, from_ve
     """The best `adapter` episode for this failure from the same vendor and
     the same old version: (episode or None, "atlas" | "local").
 
-    $vectorSearch with the filter {kind: "adapter", valid: true}; a cluster
-    without the search index (or one that has not caught up) is scored in
-    Python over the same vectors, and reported as "local"."""
+    $vectorSearch with the governed filter (memory.govern.admissible: kind
+    adapter, valid, fleet scope, not expired); a cluster without the search
+    index (or one that has not caught up) is scored in Python over the same
+    vectors with the same filter, and reported as "local"."""
     query = embedder.embed([failure_text])[0]
+    flt = admissible("adapter")
     hits, how = [], "atlas"
     try:
         hits = list(db.episodes.aggregate([
             {"$vectorSearch": {"index": VECTOR_INDEX, "path": "embedding", "queryVector": query, "exact": True,
-                               "limit": k, "filter": {"kind": "adapter", "valid": True}}},
+                               "limit": k, "filter": flt}},
             {"$set": {"score": {"$meta": "vectorSearchScore"}}},
             {"$unset": "embedding"},
         ]))
@@ -554,7 +557,7 @@ def find_episode(db, embedder, failure_text: str, *, vendor: str | None, from_ve
     hits = [h for h in hits if h.get("embedding_model") == embedder.name]
     if not hits:
         how = "local"
-        for ep in db.episodes.find({"kind": "adapter", "valid": True, "embedding_model": embedder.name}):
+        for ep in db.episodes.find({**flt, "embedding_model": embedder.name}):
             vector = ep.pop("embedding", None) or []
             if len(vector) == len(query):
                 hits.append({**ep, "score": (1.0 + cosine(query, vector)) / 2.0})

@@ -9,9 +9,11 @@ reports all take.
                                 distributor's rep, a form submission relayed
                                 by the simulator, an order system read
 
-The agent never knows shipped_in or the affected software versions. It
-learns of a mismatch only from the submit_count reply, which names the two
-values that disagree, so every challenge it speaks originates in Atlas. The
+The agent never knows shipped_in or the affected batches. It learns of a
+mismatch only from the submit_count reply, which names the two values that
+disagree (`values`, and the same pair as `two_values`), with a one-line
+`reason`, so every challenge it speaks originates in Atlas. The raw Atlas
+validation error goes to the feed, verbatim, under the rejection line. The
 agent's tools always answer HTTP 200 for a well-formed call because the agent
 reads the JSON, not the status code.
 
@@ -53,11 +55,13 @@ router = APIRouter()
 # Body keys that are the claim itself (the rest identify the call). `forwards`
 # is the multi-destination form of forwarded_qty/forwarded_to_name (V2 §9);
 # `received_from` names the sender of a receipt for a party with several;
-# model_seen, version_seen and sounder_test are a building owner's three checks.
-CLAIM_KEYS = ("in_stock", "returned", "installed", "fixed", "forwarded_qty", "forwarded_to_name",
-              "received_qty", "received_from", "model_seen", "version_seen", "sounder_test", "delivery_note",
+# batch_seen, sold_source and block_test are a store's three checks (spec
+# "Checks, stored on the recall").
+CLAIM_KEYS = ("sold", "on_shelf", "held", "returned", "forwarded_qty", "forwarded_to_name",
+              "received_qty", "received_from", "batch_seen", "sold_source", "block_test", "delivery_note",
               "forwards")
-BUCKET_LABELS = (("in_stock", "in stock"), ("installed", "installed"), ("fixed", "fixed"), ("returned", "returned"))
+BUCKET_LABELS = (("sold", "sold"), ("on_shelf", "on the shelf"), ("held", "held"), ("returned", "returned"))
+CHECK_KEYS = ("batch_seen", "sold_source", "block_test")
 # Rejections after which the call has nothing left to do: asking again cannot
 # change the answer on this call. forward_changed / forward_restate mean the
 # receiving party already counted a transfer the party now leaves out, and
@@ -222,7 +226,7 @@ def book_claim(client, db, attempt: dict, raw: dict, *, source: str, now: dateti
 
 def receives_transfers(db, party: dict | None) -> bool:
     """Whether a party has a receipt to give: any party some sender reported
-    forwarding panels to, whatever its tier. A party below tier 1 is asked
+    forwarding tins to, whatever its tier. A party below tier 1 is asked
     even before its sender reports (the ledger then answers no_inbound_edge)."""
     if party is None:
         return False
@@ -232,7 +236,7 @@ def receives_transfers(db, party: dict | None) -> bool:
 
 
 def _without_idle_receipt(db, raw: dict, party: dict | None) -> dict:
-    """A tier 1 party that nobody forwarded panels to has no transfer to
+    """A tier 1 party that nobody forwarded tins to has no transfer to
     confirm. An LLM that fills the optional received_qty with 0 must not turn
     its counts into a receipt (the ledger would refuse it as no_inbound_edge
     and end the call). A tier 1 party with an inbound edge keeps its receipt,
@@ -263,7 +267,9 @@ def _tool_reply(db, attempt: dict, party: dict | None, result: dict) -> dict:
     reply = {
         "accepted": result["accepted"], "message": message, "reason": result.get("reason"),
         "reported_total": result.get("reported_total"), "shipped_in": result.get("shipped_in"),
-        "values": result.get("values"), "duplicate": result.get("duplicate"),
+        "values": result.get("values"), "pair": result.get("pair"),
+        "two_values": None if result["accepted"] else two_values(result),
+        "duplicate": result.get("duplicate"),
         "challenges_left": max(0, MAX_CHALLENGES - used), "stop": stop,
     }
     return {k: v for k, v in reply.items() if v is not None}
@@ -308,6 +314,8 @@ def handle_answer(state, body: dict, *, now: datetime | None = None) -> dict:
                 "message": f"Not recorded: {exc.message}. Read the question back and ask again."}
     if not out["duplicate"]:
         _announce_answer(db, party, attempt, question, out, sim)
+        from ..monitoring import plant as plant_      # WS4: the plant's answers are checked at once
+        plant_.on_answer(db, party)
     left = out["questions_left"]
     rest = f" {left} more question{'s' if left != 1 else ''} to ask." if left else " No more questions."
     reply = {"accepted": True, "message": "Recorded." + rest, "questions_left": left}
@@ -315,7 +323,7 @@ def handle_answer(state, body: dict, *, now: datetime | None = None) -> dict:
 
 
 def _announce_answer(db, party: dict, attempt: dict, question: dict, out: dict, sim: float) -> None:
-    unit = (db.recalls.find_one({"_id": party["recall_id"]}, {"unit": 1}) or {}).get("unit") or "panel"
+    unit = (db.recalls.find_one({"_id": party["recall_id"]}, {"unit": 1}) or {}).get("unit") or "tin"
     said = questions.answer_text(question["answer_type"], out["value"], unit)
     verb = "corrected" if out["corrected"] else "answered"
     feed.emit(db, "answer_recorded", f"{party['name']} {verb} {question['question_id']}: {said}", level="good",
@@ -403,17 +411,17 @@ class Report(BaseModel):
     party_id: str
     source: Literal["rep", "form", "order_system"]
     evidence_id: str = Field(min_length=1)
-    in_stock: Any = None
-    installed: Any = None
-    fixed: Any = None
+    sold: Any = None
+    on_shelf: Any = None
+    held: Any = None
     returned: Any = None
     forwarded_qty: Any = None
     forwarded_to_name: str | None = None
     received_qty: Any = None
     received_from: str | None = None
-    model_seen: str | None = None
-    version_seen: Any = None
-    sounder_test: Any = None
+    batch_seen: str | None = None
+    sold_source: str | None = None
+    block_test: Any = None
     delivery_note: str | None = None
     forwards: list[dict] | None = None
 
@@ -452,7 +460,8 @@ def handle_report(state, body: Report, party: dict, *, now: datetime | None = No
             verified.append(body.evidence_id)
         if body.source == "form":
             evidence.verify_form_links(db, party, result["claim_id"], sim)
-    keys = ("accepted", "message", "claim_id", "duplicate", "code", "reason", "reported_total", "shipped_in", "values")
+    keys = ("accepted", "message", "claim_id", "duplicate", "code", "reason", "reported_total", "shipped_in", "values",
+            "pair")
     return {**{k: result[k] for k in keys if result.get(k) is not None}, "verified": verified}
 
 
@@ -470,26 +479,73 @@ def _announce_report(db, party: dict, body: Report, raw: dict) -> None:
 # ---- feed lines -------------------------------------------------------------
 
 def describe_counts(raw: dict, forwarded_to: str | None = None) -> str:
-    """'30 in stock, 10 returned': the non-zero buckets of a booked claim,
-    plus a receipt, the transfers and the check answers when the claim has them."""
-    c = counts(raw)
+    """'50 sold, 30 held': the non-zero buckets of a booked claim, plus a
+    receipt, the transfers and the check answers when the claim has them."""
+    c = _counts(raw)
     sender = text(raw.get("received_from"))
     parts = ([f"received {c['received_qty']}" + (f" from {sender}" if sender else "")]
-             if c["received_qty"] is not None else [])
-    parts += [f"{c[key]} {label}" for key, label in BUCKET_LABELS if c[key]]
+             if c.get("received_qty") is not None else [])
+    parts += [f"{c[key]} {label}" for key, label in BUCKET_LABELS if c.get(key)]
     forwards = [f for f in raw.get("forwards") or [] if isinstance(f, dict)]
     if forwards:
-        parts += [f"{f.get('qty')} forwarded to {f.get('to_name') or f.get('to_party_id')}" for f in forwards]
-    elif c["forwarded_qty"]:
-        parts.append(f"{c['forwarded_qty']} forwarded to {forwarded_to or raw.get('forwarded_to_name')}")
-    ck = checks(raw)
-    if "model_seen" in ck:
-        parts.append(f"model {ck['model_seen']}")
-    if "version_seen" in ck:
-        parts.append(f"display {ck['version_seen']}")
-    if "sounder_test" in ck:
-        parts.append(f"sounder {'yes' if ck['sounder_test'] else 'no'}")
-    return ", ".join(parts) or "no panels in stock, installed, fixed or returned"
+        parts += [f"{f.get('qty')} passed to {f.get('to_name') or f.get('to_party_id')}" for f in forwards]
+    elif c.get("forwarded_qty"):
+        parts.append(f"{c['forwarded_qty']} passed to {forwarded_to or raw.get('forwarded_to_name')}")
+    ck = _checks(raw)
+    if ck.get("batch_seen") is not None:
+        parts.append(f"batch {ck['batch_seen']}")
+    if ck.get("sold_source") is not None:
+        parts.append("sold counted from the till" if ck["sold_source"] == "till_report"
+                     else f"sold from {ck['sold_source']}")
+    if ck.get("block_test") is not None:
+        parts.append(f"till refused the sale: {'yes' if ck['block_test'] else 'no'}")
+    return ", ".join(parts) or "no tins sold, on the shelf, held or returned"
+
+
+def _counts(raw: dict) -> dict:
+    """The ledger's reading of the numbers, with the raw values as a fallback
+    for any key it does not return (a feed line is never worth a KeyError)."""
+    try:
+        c = dict(counts(raw))
+    except (ClaimError, TypeError, ValueError):
+        c = {}
+    for key in (*(k for k, _ in BUCKET_LABELS), "forwarded_qty", "received_qty"):
+        if key not in c and isinstance(raw.get(key), int) and not isinstance(raw.get(key), bool):
+            c[key] = raw[key]
+    return c
+
+
+def _checks(raw: dict) -> dict:
+    """The check answers, normalised by the ledger when it knows them."""
+    try:
+        ck = dict(checks(raw))
+    except (ClaimError, TypeError, ValueError):
+        ck = {}
+    for key in CHECK_KEYS:
+        if key not in ck and raw.get(key) is not None:
+            value = raw[key]
+            if key == "block_test" and isinstance(value, str):
+                value = value.strip().lower() in ("yes", "y", "true", "1")
+            ck[key] = value
+    return ck
+
+
+def two_values(result: dict) -> list[dict] | None:
+    """The two values that disagree, as [{"field", "value"}, {"field", "value"}],
+    from the ledger's `values` (a dict of two, or a pair) or from
+    reported_total / shipped_in."""
+    values = result.get("values")
+    if isinstance(values, dict) and values:
+        return [{"field": k, "value": v} for k, v in list(values.items())[:2]]
+    if isinstance(values, (list, tuple)) and len(values) >= 2:
+        out = []
+        for i, v in enumerate(values[:2]):
+            out.append(v if isinstance(v, dict) and "value" in v else {"field": f"value_{i + 1}", "value": v})
+        return out
+    if result.get("reported_total") is not None and result.get("shipped_in") is not None:
+        return [{"field": "reported", "value": result["reported_total"]},
+                {"field": "shipped_in", "value": result["shipped_in"]}]
+    return None
 
 
 def announce(db, result: dict, *, attempt: dict, party: dict | None, raw: dict,
@@ -520,9 +576,15 @@ def _claim_lines(db, result: dict, attempt: dict, name: str, raw: dict):
 
 
 def _rejection_line(result: dict, name: str):
+    """The raw Atlas error is the line's detail, verbatim, and its errmsg is
+    in the text: "REJECTED by Atlas: Document failed validation on parties.
+    reported 60, shipped_in 40" (spec "What must be visible on screen")."""
     err = result.get("atlas_error")
-    if err is not None and result.get("values"):
-        return ("claim_rejected", f"{name} - Rejected by Atlas: {result.get('reason')}", "bad", err, None)
+    if err is not None:
+        errmsg = str(err.get("errmsg") or "Document failed validation").rstrip(".")
+        where = "" if " on " in errmsg else " on parties"
+        return ("claim_rejected", f"{name} - REJECTED by Atlas: {errmsg}{where}. {result.get('reason')}", "bad",
+                err, None)
     detail = err if err is not None else {"code": result.get("code"), "reason": result.get("reason")}
     return ("claim_rejected", f"{name} - rejected: {result.get('reason')}", "bad" if err else "warn", detail, None)
 
@@ -565,17 +627,17 @@ def _edge_line(edge: dict, names: dict):
     if state == "withdrawn":
         # A transfer the sender took back before the recipient counted it.
         gone = f"; {recipient} is no longer in the run (nothing else named it)" if edge.get("removed") else ""
-        return ("info", f"Transfer withdrawn: {sender} no longer reports sending {edge['sender_qty']} panels to "
+        return ("info", f"Transfer withdrawn: {sender} no longer reports sending {edge['sender_qty']} tins to "
                 f"{recipient}{gone}", "warn", detail, None)
     if before is None:
-        return ("edge_opened", f"Transfer opened: {sender} -> {recipient}, {edge['sender_qty']} panels "
+        return ("edge_opened", f"Transfer opened: {sender} -> {recipient}, {edge['sender_qty']} tins "
                 f"awaiting {recipient}'s count", "info", detail, None)
     if state == before:
         return None
     if state == "disputed":
         return ("edge_disputed", f"Transfer disputed: {sender} says {edge['sender_qty']}, {recipient} says "
-                f"{edge['recipient_qty']} - {edge['disputed_qty']} panels disputed", "bad", detail, None)
+                f"{edge['recipient_qty']} - {edge['disputed_qty']} tins disputed", "bad", detail, None)
     if state == "corroborated":
         return ("edge_corroborated", f"Transfer corroborated: {sender} and {recipient} agree on "
-                f"{edge['corroborated_qty']} panels", "good", detail, None)
+                f"{edge['corroborated_qty']} tins", "good", detail, None)
     return None

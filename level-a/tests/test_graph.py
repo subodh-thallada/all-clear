@@ -9,6 +9,7 @@ from levela.db.seed import load_scenario, start_recall
 from levela.ledger.claims import submit_claim
 from levela.ledger.graph import downstream, tiers
 from levela.ledger.transfers import stub_party
+from support import HELD_EVIDENCE as HELD
 from support import PRODUCT
 
 RID = "RCL-2026-017"
@@ -16,16 +17,16 @@ RID = "RCL-2026-017"
 
 @pytest.fixture
 def chain(client, db, assert_balance):
-    """queen -> corner-properties -> dundas-lofts -> spadina-works, queen -> bloor-alarm,
-    lakeside -> spadina-works (a shorter second path), and a memory suspect."""
+    """queen -> corner-mart -> dundas-mini-mart -> spadina-deli, queen -> bloor-foods,
+    lakeside -> spadina-deli (a shorter second path), and a memory suspect."""
     start_recall(client, db, load_scenario("recall_1"), all_sim=True, emit=False)
     claims = [
-        ("queen-st-alarm", {"in_stock": 60, "forwards": [{"to_name": "Corner Properties", "qty": 40},
-                                                                    {"to_name": "Bloor Alarm", "qty": 20}]}),
-        ("corner-properties", {"received_qty": 40, "in_stock": 10, "forwards": [{"to_name": "Dundas Lofts", "qty": 30}]}),
-        ("dundas-lofts", {"received_qty": 30, "in_stock": 5, "forwarded_qty": 25,
-                           "forwarded_to_name": "Spadina Works"}),
-        ("lakeside-systems", {"in_stock": 20, "returned": 55, "forwards": [{"to_name": "Spadina Works", "qty": 5}]}),
+        ("queen-st-grocer", {"held": 60, **HELD, "forwards": [{"to_name": "Corner Mart", "qty": 40},
+                                                                    {"to_name": "Bloor Foods", "qty": 20}]}),
+        ("corner-mart", {"received_qty": 40, "held": 10, **HELD, "forwards": [{"to_name": "Dundas Mini Mart", "qty": 30}]}),
+        ("dundas-mini-mart", {"received_qty": 30, "held": 5, **HELD, "forwarded_qty": 25,
+                           "forwarded_to_name": "Spadina Deli"}),
+        ("lakeside-foods", {"held": 20, **HELD, "returned": 55, "forwards": [{"to_name": "Spadina Deli", "qty": 5}]}),
     ]
     for i, (party_id, raw) in enumerate(claims):
         res = submit_claim(client, db, recall_id=RID, party_id=party_id, attempt_id=f"att_g{i}", source="sim",
@@ -38,15 +39,15 @@ def chain(client, db, assert_balance):
 
 
 def test_downstream_walks_every_branch_to_any_depth(db, chain):
-    assert downstream(db, RID, "queen-st-alarm") == [
-        ("bloor-alarm", 1), ("corner-properties", 1), ("dundas-lofts", 2), ("spadina-works", 3)]
-    assert downstream(db, RID, "corner-properties") == [("dundas-lofts", 1), ("spadina-works", 2)]
-    assert downstream(db, RID, "spadina-works") == []
+    assert downstream(db, RID, "queen-st-grocer") == [
+        ("bloor-foods", 1), ("corner-mart", 1), ("dundas-mini-mart", 2), ("spadina-deli", 3)]
+    assert downstream(db, RID, "corner-mart") == [("dundas-mini-mart", 1), ("spadina-deli", 2)]
+    assert downstream(db, RID, "spadina-deli") == []
 
 
 def test_tiers_take_the_shortest_path_from_the_shipment_list(db, chain):
     assert tiers(db, RID) == {
-        "harbour-fire": 0, "queen-st-alarm": 0, "lakeside-systems": 0,
-        "bloor-alarm": 1, "corner-properties": 1, "spadina-works": 1, "dundas-lofts": 2,
+        "harbour-market": 0, "queen-st-grocer": 0, "lakeside-foods": 0,
+        "bloor-foods": 1, "corner-mart": 1, "spadina-deli": 1, "dundas-mini-mart": 2,
         "suspect-party": None,
     }

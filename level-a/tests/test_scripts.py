@@ -30,8 +30,13 @@ REPO = ROOT.parent
 MAKEFILE = ROOT / "Makefile"
 SCRIPTS = ROOT / "scripts"
 DESIGN_V2 = (ROOT / "docs" / "DESIGN_V2.md").read_text(encoding="utf-8")
-REQUIRED_TARGETS = {"setup-db", "seed", "api", "worker", "order_systems", "supervisor", "test", "test-slow", "reset",
-                    "demo", "demo-4", "dryrun", "preflight", "provision", "kill-demo", "long-run"}
+REQUIRED_TARGETS = {"setup-db", "api", "worker", "order-systems", "supervisor", "test", "test-slow", "reset",
+                    "demo", "demo-4", "preflight", "provision", "kill-demo", "long-run", "status",
+                    "summit", "store-script"}
+# Targets that run another workstream's script, guarded by `test -f` so they
+# print a clear message while that script is not in the tree.
+GUARDED = {"summit": "scripts/start_summit.sh", "store-script": "scripts/store_script.py",
+           "scan-names": "scripts/scan_names.py"}
 # Variables set on the command line in the second pass over the recipes.
 SET_VARIABLES = {"RECALL": "RCL-TEST-1", "SPEED": "15"}
 
@@ -129,33 +134,42 @@ def _check_parsed(parser, argv: list[str], usage: str) -> None:
     assert not missing, f"`{usage}` accepts no {sorted(missing)} and DESIGN_V2 promises none"
 
 
-def _check_command(argv: list[str]) -> None:
-    """One recipe command maps to a real CLI entry point and its options."""
+def _check_command(argv: list[str], guarded: frozenset[str] = frozenset()) -> None:
+    """One recipe command maps to a real CLI entry point and its options.
+    `guarded` holds the scripts the recipe checks with `test -f` first."""
     prog, rest = argv[0], argv[1:]
     if prog == "python" and rest[:2] == ["-m", "levela"]:
         _check_parsed(_levela_parser(), rest[2:], f"python -m levela {rest[2]}")
-    elif prog == "python" and rest[:2] == ["-m", "seedkit"]:
-        from seedkit.__main__ import main as seedkit_main
-        _check_parsed(_parser_of(seedkit_main), rest[2:], "python -m seedkit")
     elif prog == "python" and rest[:2] == ["-m", "pytest"]:
         marker = rest[rest.index("-m", 2) + 1]
         assert marker in ("slow", "not slow")
     elif prog == "python" and rest[0].startswith("scripts/"):
-        _check_script(rest[0], rest[1:])
+        _check_script(rest[0], rest[1:], guarded)
     elif prog == "bash":
         script = ROOT / rest[0]
-        assert script.is_file(), rest[0]
+        if not script.is_file():
+            assert rest[0] in guarded, f"{rest[0]} is not on disk and its recipe does not check for it"
+            return
         text = script.read_text(encoding="utf-8")
         for option in (a for a in rest[1:] if a.startswith("--")):
             assert f"{option})" in text, f"{rest[0]} has no {option} option"
+    elif prog == "test":
+        # The guard: `test -f scripts/x || { echo "..."; exit 1; }`.
+        assert rest[0] == "-f" and rest[1].startswith("scripts/") and rest[2] == "||", argv
+        assert "echo" in rest and "exit" in rest, f"the guard for {rest[1]} must say why and fail"
     else:
         assert prog == "awk", f"unexpected command {argv}"
 
 
-def _check_script(path: str, argv: list[str]) -> None:
+def _check_script(path: str, argv: list[str], guarded: frozenset[str] = frozenset()) -> None:
     name = path.removeprefix("scripts/").removesuffix(".py")
     if name == "demo":
         demo.parse_args(argv)
+    elif path in guarded:
+        # Another workstream's script, behind a `test -f` guard: once it is
+        # here, its parser must accept what the recipe passes.
+        if (SCRIPTS / f"{name}.py").is_file():
+            _check_parsed(_parser_of(_load_script(name).main), argv, f"python {path}")
     elif (SCRIPTS / f"{name}.py").is_file():
         _check_parsed(_parser_of(_load_script(name).main), argv, f"python {path}")
     else:
@@ -182,20 +196,40 @@ def test_every_recipe_is_a_real_cli_call(overrides):
     text, _, rules = _makefile()
     values = _variables(text, overrides)
     for target, lines in rules.items():
+        guarded = frozenset(re.findall(r"^@?test -f (scripts/\S+) \|\|", "\n".join(lines), re.M))
         for line in lines:
             argv = [a for a in shlex.split(_expand(line.lstrip("@"), values))
                     if not re.match(r"^[A-Z_]+=", a)]                      # VAR=value prefixes
-            _check_command(argv)
+            _check_command(argv, guarded)
 
 
 def test_targets_run_what_the_runbook_says():
-    _, _, rules = _makefile()
-    assert rules["seed"] == ["$(PYTHON) -m levela load-history"]
+    text, _, rules = _makefile()
     assert "--scenario recall_long --mode demo" in rules["demo"][0]
     assert "--scenario recall_1 --mode demo" in rules["demo-4"][0]
     assert rules["test"] == ['$(PYTHON) -m pytest -q -m "not slow"']
     assert rules["test-slow"] == ["$(PYTHON) -m pytest -q -m slow"]
     assert [ln.split()[1] for ln in rules["long-run"]] == ["scripts/demo.py", "scripts/supervisor.py"]
+    assert rules["order-systems"] == ['PYTHON="$(PYTHON)" bash scripts/start_order_systems.sh']
+    assert rules["summit"][1] == 'PYTHON="$(PYTHON)" bash scripts/start_summit.sh'
+    assert rules["store-script"][1] == "$(PYTHON) scripts/store_script.py $(STORE_ARGS)"
+    assert rules["scan-names"][1] == "$(PYTHON) scripts/scan_names.py $(SCAN_ARGS)"
+    # The seed kit is not used (spec "First checks on the sandbox"): no target loads it.
+    assert "seedkit" not in text and "load-history" not in text
+
+
+@pytest.mark.parametrize("target", sorted(GUARDED))
+def test_a_guarded_target_says_what_is_missing(tmp_path, target):
+    """`make summit` and `make store-script` run another workstream's script.
+    Where it is not there yet (here: an empty directory), the guard prints
+    which script is missing and fails, instead of a bare "No such file"."""
+    _, _, rules = _makefile()
+    guard = rules[target][0]
+    assert guard.startswith(f"@test -f {GUARDED[target]} ||")
+    res = subprocess.run([_bash(), "-c", guard.lstrip("@")], cwd=tmp_path, capture_output=True, text=True,
+                         timeout=30)
+    assert res.returncode == 1
+    assert GUARDED[target] in res.stdout and "not in this tree yet" in res.stdout
 
 
 # ---- shell and PowerShell scripts -------------------------------------------------
@@ -395,16 +429,17 @@ def _wall(**over) -> dict:
     state = {
         "now": NOW,
         "recall": {"_id": "RCL-TEST-1", "status": "open", "batch_code": "B-4471", "units_total": 2400,
-                   "product": "Granola Bars"},
+                   "product": "Maple Farm milk powder 800 g"},
         "run": {"sim_label": "d6 14:00", "day": 6, "days_total": 10, "seconds_per_sim_hour": 30, "paused": False,
                 "parties": {"total": 40, "at_start": 5, "found": 35}, "checked": [31, 40], "steps": 412,
                 "kills": 9, "duplicates": 0, "tokens_per_decision": 1850, "model_calls": 3,
                 "invariants": {"passed": [True] * 4, "ok": True, "at_label": "d6 14:00"},
                 "supervisor": {"paused": False}, "saboteur": {"on": False}},
-        "metrics": {"checks_completed": [31, 40], "units_documented": [2115, 2400],
-                    "units_recovered": [1340, 2400], "open_units": 285, "disputed_units": 15,
+        "metrics": {"checks_completed": [31, 40], "tins_located": [2115, 2400],
+                    "held_or_returned": [1340, 2400], "open_units": 285, "disputed_units": 15,
                     "mass_balance": 2400, "units_total": 2400},
-        "parties": [{"party_id": "harbour-fire", "hold_for_demo": True, "live_attempt": None}],
+        "headline": "NOT ALL CLEAR: 285 tins open (246 not located, 24 still on a shelf, 15 disputed)",
+        "parties": [{"party_id": "harbour-market", "hold_for_demo": True, "live_attempt": None}],
         "edges": [], "feed": [], "failpoints": {}, "calls": {"total": 0, "by_party": {}},
         "systems": [{"system": "phone", "attempts": 58, "accepted_claims": 29},
                     {"system": "North orders", "adapter_version": 1, "adapter_source": "builtin",
@@ -460,7 +495,8 @@ def test_close_beat_presses_close_and_sees_the_refusal():
     assert code == 0, out
     assert api.posts == [("/admin/close", {"recall_id": "RCL-TEST-1"})]
     assert "ok       Atlas refused the close" in out and "close refused: 285 open units" in out
-    assert 'Say: "Fifteen panels are unexplained' in out
+    assert 'Say: "Thirty-nine tins are still open, so Atlas will not let us say all clear."' in out
+    assert "ok       the headline says NOT ALL CLEAR with the tins open" in out
 
 
 def test_a_line_from_before_the_beat_does_not_count():
@@ -478,12 +514,12 @@ def test_check_only_does_not_act_and_counts_what_is_on_the_wall():
     assert api.posts == []
 
 
-def test_judge_pauses_kills_and_releases_harbour_fire_and_lakeside_only():
+def test_judge_pauses_kills_and_releases_harbour_market_and_lakeside_only():
     def release(body, api):
-        if body["party_id"] == "harbour-fire":
-            api.state["parties"] = [{"party_id": "harbour-fire", "hold_for_demo": False,
+        if body["party_id"] == "harbour-market":
+            api.state["parties"] = [{"party_id": "harbour-market", "hold_for_demo": False,
                                     "live_attempt": {"_id": "att_1", "state": "dialed"}}]
-            api.state["feed"] = [_line("claim_accepted", party_id="lakeside-systems")]
+            api.state["feed"] = [_line("claim_accepted", party_id="lakeside-foods")]
         return {"unheld": [body["party_id"]]}
 
     def pause(body, api):
@@ -493,8 +529,8 @@ def test_judge_pauses_kills_and_releases_harbour_fire_and_lakeside_only():
     code, out = _demo(api, ["judge"])
     assert code == 0, out
     assert [(p, b.get("party_id"), b.get("paused")) for p, b in api.posts] == [
-        ("/admin/supervisor", None, True), ("/admin/release", "harbour-fire", None),
-        ("/admin/release", "lakeside-systems", None)]
+        ("/admin/supervisor", None, True), ("/admin/release", "harbour-market", None),
+        ("/admin/release", "lakeside-foods", None)]
 
 
 def test_kill_arm_refuses_while_a_worker_is_alive():
@@ -504,8 +540,8 @@ def test_kill_arm_refuses_while_a_worker_is_alive():
     assert "Stop the supervisor first" in out
 
 
-@pytest.mark.parametrize("argv, released", [(["kill-arm"], ["corner-properties", "queen-st-alarm"]),
-                                            (["kill-arm", "--no-release"], ["corner-properties"])])
+@pytest.mark.parametrize("argv, released", [(["kill-arm"], ["corner-mart", "queen-st-grocer"]),
+                                            (["kill-arm", "--no-release"], ["corner-mart"])])
 def test_kill_arm_arms_before_it_releases(argv, released):
     def arm(body, api):
         api.state["failpoints"] = {body["name"]: {"party_id": body["party_id"]}}
@@ -513,19 +549,19 @@ def test_kill_arm_arms_before_it_releases(argv, released):
     api = FakeApi(_wall(), workers=[{"name": "old", "alive": False}], on_post={"/admin/failpoint": arm})
     code, out = _demo(api, argv)
     assert code == 0, out
-    assert api.posts[0] == ("/admin/failpoint", {"name": "after_dial_request", "party_id": "corner-properties"})
+    assert api.posts[0] == ("/admin/failpoint", {"name": "after_dial_request", "party_id": "corner-mart"})
     assert [b["party_id"] for p, b in api.posts[1:]] == released
     assert all(p == "/admin/release" for p, _ in api.posts[1:])
 
 
 def test_kill_evidence_must_follow_the_failpoint():
     """A resume line from an earlier restart proves nothing about this kill."""
-    resumed, adopted = demo.after_fire("worker_resumed"), demo.after_fire("attempt_adopted", party_id="corner-properties")
-    fired = _line("failpoint_fired", at=NOW, party_id="corner-properties")
+    resumed, adopted = demo.after_fire("worker_resumed"), demo.after_fire("attempt_adopted", party_id="corner-mart")
+    fired = _line("failpoint_fired", at=NOW, party_id="corner-mart")
     before = demo.View(_wall(), [_line("worker_resumed", at=EARLIER), fired])
     assert not resumed(before, before)
     after = demo.View(_wall(), [fired, _line("worker_resumed", at=LATER),
-                                _line("attempt_adopted", at=LATER, party_id="corner-properties")])
+                                _line("attempt_adopted", at=LATER, party_id="corner-mart")])
     assert resumed(after, after) and adopted(after, after)
     assert not resumed(demo.View(_wall(), [_line("worker_resumed")]), before)     # never fired
 
@@ -551,23 +587,70 @@ def test_memory_beat_needs_an_adapter_from_an_episode_and_no_model_call():
     assert code == 1 and "MISSING  no model call for the second repair" in out
 
 
+def _corner(held: int, on_shelf: int) -> dict:
+    return {"party_id": "corner-mart", "held": held, "on_shelf": on_shelf, "hold_for_demo": False,
+            "live_attempt": None}
+
+
+@pytest.mark.parametrize("after, code", [
+    ({"parties": [_corner(1, 24)],
+      "feed": [_line("store_event", text="Corner Mart stock record: 1 tin moved to held (event ev-0042)",
+                     party_id="corner-mart", detail={"kind": "quarantine", "event_id": "ev-0042"}),
+               _line("store_event", text="Corner Mart till refused a sale: recalled batch, not for sale",
+                     party_id="corner-mart", detail={"kind": "blocked_sale", "event_id": "ev-0043"})]}, 0),
+    ({"parties": [_corner(0, 25)],
+      "feed": [_line("store_event", party_id="corner-mart", detail={"kind": "blocked_sale"}),
+               _line("store_event", party_id="harbour-market", detail={"kind": "quarantine"})]}, 1),
+], ids=["quarantined-then-refused", "no-tin-moved"])
+def test_store_beat_needs_the_quarantine_a_held_tin_and_the_refused_scan(after, code):
+    """Spec "In the run", live: the teammate presses Move one tin to quarantine,
+    then Scan a tin at the till on the SIMULATED store page. The beat does
+    not act; it sees one tin at Corner Mart move to held (its own stock
+    record) and the till refuse the sale. A refused scan alone is not enough."""
+    api = FakeApi(_wall(parties=[_corner(0, 25)]))
+    first = True
+
+    def handle(request):
+        nonlocal first
+        if request.url.path == "/wall/state" and not first:
+            api.state.update(after)
+        first = False
+        return api.handle(request)
+    lines: list[str] = []
+    ticks = count(0, 100) if code else count(0, 0.5)
+    with httpx.Client(transport=httpx.MockTransport(handle), base_url=ENV["API_BASE_URL"]) as http:
+        got = demo.main(["--recall-id", "RCL-TEST-1", "store"], http=http, env=ENV, out=lines.append,
+                        sleep=lambda s: None, clock=lambda: next(ticks))
+    out = "\n".join(lines)
+    assert got == code, out
+    assert api.posts == []
+    if code:
+        assert "MISSING  one tin at Corner Mart moved to held by its stock record" in out
+        assert "MISSING  the quarantine event is in the feed" in out          # another store's does not count
+    else:
+        assert "ok       the till refused the sale (blocked_sale)" in out
+        assert 'Say: "A phone answer is a claim. This is the store\'s own stock record' in out
+
+
 def test_start_posts_the_recall_and_prints_the_forms():
     def started(body, api):
         return {"recall_id": "RCL-2026-020", "mode": "demo", "options": {},
                 "run": {"sim_start_label": "d0 09:00", "seconds_per_sim_hour": 15, "order_system_change_at": {}},
-                "parties": [{"party_id": "harbour-fire", "channel": "voice", "form_url": "https://x/form/t"}]}
+                "parties": [{"party_id": "harbour-market", "channel": "voice", "form_url": "https://x/form/t"}]}
     api = FakeApi(_wall(), on_post={"/admin/recalls": started})
-    code, out = _demo(api, ["start", "--speed", "15", "--sim-party", "corner-properties"])
+    code, out = _demo(api, ["start", "--speed", "15", "--sim-party", "corner-mart"])
     assert code == 0, out
     assert api.posts == [("/admin/recalls", {"scenario": "recall_long", "mode": "demo", "all_sim": False,
-                                             "seconds_per_sim_hour": 15.0, "sim_parties": ["corner-properties"]})]
+                                             "seconds_per_sim_hour": 15.0, "sim_parties": ["corner-mart"]})]
     assert "started RCL-2026-020" in out and "by hand" in out and "https://x/form/t" in out
 
 
 def test_status_shows_the_numbers_the_wall_shows():
     lines = "\n".join(demo.status_lines(_wall()))
     for text in ("Parties 40 (5 at the start, 35 found)", "Kills survived 9", "Duplicate effects 0",
-                 "Invariants: 4 of 4 hold", "Documented 2,115 of 2,400", "North orders", "Steps 412"):
+                 "Invariants: 4 of 4 hold", "Tins located 2,115 of 2,400", "Held or returned 1,340 of 2,400",
+                 "Checks completed 31 of 40", "North orders", "Steps 412",
+                 "NOT ALL CLEAR: 285 tins open"):
         assert text in lines, text
     assert "No run-time recall" in demo.status_lines({"recall": None})[0]
 
@@ -602,8 +685,11 @@ def test_a_missed_poll_does_not_end_the_beat():
 
 def test_every_beat_and_extra_has_evidence_to_check():
     commands = [b.command for b in demo.BEATS]
-    assert commands == ["run", "judge", "caught", "kill-arm", "kill", "order_system", "memory", "close", "wrap"]
-    assert [b.at for b in demo.BEATS] == ["0:00", "0:15", "0:35", "1:00", "1:05", "1:45", "2:20", "2:35", "2:50"]
+    assert commands == ["run", "judge", "caught", "kill-arm", "kill", "order-system", "memory", "store", "close",
+                        "wrap"]
+    # The spec's nine beats; the system change is split in two commands (North, then East from memory).
+    assert [b.at for b in demo.BEATS] == ["0:00", "0:15", "0:35", "0:55", "1:00", "1:40", "2:00", "2:15", "2:30",
+                                          "2:45"]
     for beat in demo.BEATS + demo.EXTRAS:
         assert beat.expect and beat.room
         demo.parse_args([beat.command] + (["text"] if beat.command == "question" else []))
@@ -637,13 +723,13 @@ def test_ci_runs_both_pythons_on_a_mongodb_replica_set():
     runs = {s.get("name"): s for s in steps if "run" in s}
     commands = "\n".join(s["run"] for s in runs.values())
     assert "pip install -r requirements-dev.txt" in commands
-    assert 'python -m seedkit --uri "$LEVELA_TEST_URI" dryrun' in commands
     assert 'python -m pytest -q -m "not slow"' in commands
+    assert 'bash -n "$f"' in commands
     slow = next(s for s in runs.values() if "-m slow" in s["run"])
     assert slow["timeout-minutes"] == 20
-    assert any(str(s.get("uses", "")).startswith("actions/setup-node") for s in steps)
-    assert "node --check levela/wall/wall.js" in commands
-    assert (ROOT / "requirements-dev.txt").is_file() and (ROOT / "levela" / "wall" / "wall.js").is_file()
+    assert (ROOT / "requirements-dev.txt").is_file()
+    # The seed kit is not used, and the old wall script is gone: CI runs neither.
+    assert "seedkit" not in commands and "wall.js" not in commands
 
 
 def _env_example_keys() -> tuple[set[str], set[str]]:
@@ -733,17 +819,29 @@ def test_dockerfile_runs_the_api_as_a_non_root_user_without_secrets():
     for source in re.findall(r"^COPY (\S+) ", text, re.M):
         assert (ROOT / source).exists(), source
     assert "python -m levela api --host 0.0.0.0" in text and "/healthz" in text
+    # The planner and the repairer read their prompts from agent/; no seed kit ships.
+    assert "COPY agent ./agent" in text and "seedkit" not in code and "data" not in re.findall(r"^COPY (\S+) ", text, re.M)
     ignore = (ROOT / "deploy" / "Dockerfile.dockerignore").read_text(encoding="utf-8").splitlines()
     assert ".env" in ignore
 
 
-def test_gitattributes_keeps_scripts_lf_and_the_history_still_verifies():
+def test_gitattributes_keeps_scripts_lf():
     rules = (REPO / ".gitattributes").read_text(encoding="utf-8").splitlines()
     for line in ("* text=auto", "*.sh text eol=lf", "Makefile text eol=lf", "*.py text eol=lf",
                  "*.json text eol=lf", "*.pdf binary"):
         assert line in rules, line
-    from seedkit.load import DATA_DIR, digest, read_history
-    manifest, docs = read_history()                   # refuses files that do not match the manifest
-    assert sum(len(v) for v in docs.values()) == sum(manifest["counts"].values())
-    lf = (DATA_DIR / "parties.json").read_bytes().replace(b"\r\n", b"\n")
-    assert digest(lf) == digest(lf.replace(b"\n", b"\r\n")) == manifest["sha256"]["parties"]
+    for name in SHELL_SCRIPTS:
+        assert b"\r\n" not in (SCRIPTS / name).read_bytes(), name
+
+
+def test_the_seed_kit_is_not_used():
+    """Spec "First checks on the sandbox": the seed kit written on Nov 13 is
+    not opened without a yes. It is not in the tree, and nothing the operator
+    runs (the Makefile, the CLI, CI, the image) loads it or its history."""
+    assert not (ROOT / "seedkit").exists() and not (ROOT / "data" / "history").exists()
+    choices = _levela_parser()._subparsers._group_actions[0].choices
+    assert "load-history" not in choices
+    for path in (MAKEFILE, ROOT / "levela" / "__main__.py", REPO / ".github" / "workflows" / "ci.yml",
+                 ROOT / "deploy" / "Dockerfile"):
+        text = re.sub(r"#.*", "", path.read_text(encoding="utf-8"))
+        assert "seedkit" not in text and "load-history" not in text and "data/history" not in text, path.name
