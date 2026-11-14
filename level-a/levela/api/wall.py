@@ -25,6 +25,16 @@ second and several screens may poll at once.
 Every simulated party carries `simulated: true` and `tag: "SIMULATED"`, and
 so does every feed line about one (spec "What must be visible on screen").
 
+The screen in web/ reads this JSON through web/src/data/live.js. Besides the
+fields above it reads, per party, a `lease` object (owner, token, remaining
+seconds), `in_flight`, `connected` and `live_attempt.since_s`; one `workers`
+row per worker thread with an `alive` flag (a thread whose process died at a
+failpoint or by the supervisor's kill is shown dead at once, its unexpired
+lease drains on screen); `run.adoptions`; `refusals`; a stable `id` per feed
+line and a `status` per order system. The table is in docs/BUILD_PLAN.md,
+"Screen contract (lead follow-up)", and tests/test_screen_contract.py holds
+the backend to it.
+
 /wall/state is public (the room's screen polls it without a key), so it
 carries nothing that acts as a credential: no party's form token or form URL.
 The token is the only thing POST /form/{token} asks for, so listing it here
@@ -77,6 +87,16 @@ PARTY_V2_FIELDS = ("tier", "found_via", "ladder_step", "next_action_at", "hold_f
 EDGE_FIELDS = ("from_party", "to_party", "sender_qty", "recipient_qty", "corroborated_qty", "disputed_qty", "state")
 FEED_FIELDS = ("at", "kind", "text", "level", "source", "party_id", "detail", "system", "sim_label")
 PHONE_SOURCES = ("voice", "sim", "rep")
+# Feed kinds that mean the database (or the tool gate) refused a write; the
+# screen counts them as refusals and marks each with the primitive that refused.
+REFUSAL_KINDS = {"claim_rejected": ("validator", "parties"), "close_refused": ("validator", "recalls"),
+                 "attempt_refused": ("unique index", "attempts"), "atlas_rejected": ("validator", "operations"),
+                 "adapter_rejected": ("canary", "adapters"), "gate_refused": ("gate", "task_runs"),
+                 "agent_report_rejected": ("validator", "parties")}
+REFUSALS_SHOWN = 200
+# A worker process is shown for this long after its last heartbeat when it died
+# without a clean stop (killed); a cleanly stopped process is not shown.
+DEAD_WORKER_SHOWN_S = 600
 SENT_LINK_STATES = ("sent", "verified", "needs_reverify")
 # Channels whose party is played by the simulator or a mock (spec "Scope": simulated).
 SIMULATED_CHANNELS = ("sim", "order_system")
@@ -201,7 +221,8 @@ def _rows(db, rid: str | None) -> dict:
         "parties": list(db.parties.find({"recall_id": rid}).sort([("created_at", 1), ("_id", 1)])),
         "edges": list(db.edges.find({"recall_id": rid}).sort([("created_at", 1), ("_id", 1)])),
         "attempts": list(db.attempts.find({"recall_id": rid}, {"party_id": 1, "state": 1, "purpose": 1, "seq": 1,
-                                                               "call_sid": 1, "channel": 1})),
+                                                               "call_sid": 1, "channel": 1, "intent_at": 1,
+                                                               "dialed_at": 1, "connected_at": 1, "adopted": 1})),
         "sim_calls": list(db.sim_calls.find({"recall_id": rid}, {"party_id": 1})),
         "run": db.runs.find_one({"_id": runs.run_id(rid)}),
         "claims": list(db.claims.aggregate([
@@ -260,20 +281,24 @@ def build_state(db, settings, recall_id: str | None = None) -> dict:
     adapters = {a["order_system"]: a for a in db.adapters.find({"status": "active", "order_system": {"$in": order_systems}},
                                                          {"order_system": 1, "version": 1, "source": 1})} if order_systems else {}
     bookkeeping = list(db.worker_state.find(
-        {"$or": [{"_id": {"$regex": "^(worker|badge):"}}, {"_id": {"$in": ["ablation", failpoints.DOC_ID]}}]},
+        {"$or": [{"_id": {"$regex": "^(worker|badge|repair):"}}, {"_id": {"$in": ["ablation", failpoints.DOC_ID]}}]},
         {"resume_token": 0}))
     by_party = defaultdict(list)
     for row in rows["attempts"]:
         by_party[row["party_id"]].append(row)
     numbers = _numbers(db, recall, parties, rows["edges"]) if rid else None
     sim_flags = {s["party_id"]: is_simulated(s, settings) for s in parties}
+    connected = {s.get("party_id") for s in rows.get("store_systems") or [] if s.get("party_id")}
+    repairing = {str(d["_id"]).removeprefix("repair:") for d in bookkeeping
+                 if str(d["_id"]).startswith("repair:") and d.get("until") and aware(d["until"]) > db_now}
     state = {
         "now": now,
         "recall": {"_id": rid, **{k: recall.get(k) for k in RECALL_FIELDS}} if recall else None,
         "recalls": [{"_id": r["_id"], "status": r["status"], "batch_code": r["batch_code"]} for r in runtime],
         "metrics": numbers,
         "headline": numbers["headline"] if numbers else "",
-        "parties": [_party_view(s, by_party[s["party_id"]], sim_flags[s["party_id"]]) for s in parties],
+        "parties": [_party_view(s, by_party[s["party_id"]], sim_flags[s["party_id"]], db_now=db_now,
+                                connected=s["party_id"] in connected) for s in parties],
         "edges": [{k: e.get(k) for k in EDGE_FIELDS} for e in rows["edges"]],
         "feed": [_feed_view(line, sim_flags) for line in feed.recent(db, rid)],
         "worker": _newest_worker(bookkeeping, now, settings),
@@ -282,11 +307,14 @@ def build_state(db, settings, recall_id: str | None = None) -> dict:
         "badges": [{"key": d["_id"].removeprefix("badge:"), "text": d.get("text")}
                    for d in bookkeeping if d["_id"].startswith("badge:")],
         "memory_ablation": _ablation(bookkeeping),
-        "run": _run_view(rows["run"], parties, numbers, db_now),
-        "systems": _systems(rows, parties, order_systems, adapters),
+        "run": _run_view(rows["run"], parties, numbers, db_now,
+                         adoptions=sum(1 for a in rows["attempts"] if a.get("adopted"))),
+        "systems": _systems(rows, parties, order_systems, adapters, repairing),
         "monitoring": _monitoring(rows, parties),
-        "workers": _workers(parties, rows["task_runs"], db_now),
+        "workers": _workers(parties, rows["task_runs"], db_now,
+                            processes=_processes(db, bookkeeping, now, settings)),
         "calls_in_flight": _calls_in_flight(rows["attempts"], settings),
+        "refusals": _refusals(db, rid),
     }
     state["screen"] = screen_lines(state)
     return jsonable(state)
@@ -369,7 +397,8 @@ def is_simulated(party: dict, settings) -> bool:
     return channel == "voice" and getattr(settings, "voice_provider", "sim") != "elevenlabs"
 
 
-def _party_view(party: dict, rows: list[dict], simulated: bool = False) -> dict:
+def _party_view(party: dict, rows: list[dict], simulated: bool = False, *, db_now: datetime | None = None,
+                connected: bool = False) -> dict:
     """One party as the public wall shows it. Fields are listed, never copied
     wholesale, so the form token stays off the wall (module docstring)."""
     live = max((a for a in rows if a["state"] in attempts.LIVE), key=lambda a: a["seq"], default=None)
@@ -377,7 +406,10 @@ def _party_view(party: dict, rows: list[dict], simulated: bool = False) -> dict:
     return {
         **{k: party.get(k) for k in PARTY_FIELDS},
         "escalation": party.get("escalation"),
-        "live_attempt": {k: live[k] for k in ("_id", "state", "purpose", "seq")} if live else None,
+        "live_attempt": _live_attempt_view(live, db_now) if live else None,
+        "lease": _lease_view(party, db_now),
+        "in_flight": party.get("in_flight"),
+        "connected": connected,
         "attempts": len(rows),
         "memory": party.get("memory"),
         **{k: party.get(k) for k in PARTY_V2_FIELDS},
@@ -389,8 +421,35 @@ def _party_view(party: dict, rows: list[dict], simulated: bool = False) -> dict:
     }
 
 
+def _since_s(at, db_now: datetime | None) -> float | None:
+    return round(max(0.0, (db_now - aware(at)).total_seconds()), 1) if at and db_now else None
+
+
+def _live_attempt_view(live: dict, db_now: datetime | None) -> dict:
+    """The party's call in flight. `since_s` counts from the moment the call
+    connected (from the dial, or the intent, before that): the screen starts
+    the call's clock from it."""
+    started = live.get("connected_at") if live["state"] == "connected" else None
+    started = started or live.get("dialed_at") or live.get("intent_at")
+    return {**{k: live.get(k) for k in ("_id", "state", "purpose", "seq")}, "attempt_id": live["_id"],
+            "since_s": _since_s(started, db_now)}
+
+
+def _lease_view(party: dict, db_now: datetime | None) -> dict:
+    """The lease as the screen draws it (spec lease.owner/until/token). The
+    owner is named only while the lease is live (lease_until ahead of the
+    database clock): a released lease has no owner, and a dead worker's
+    lease shows its seconds draining until another worker may adopt it."""
+    owner, until, token = party.get("lease_owner"), party.get("lease_until"), party.get("lease_epoch") or 0
+    remaining = (aware(until) - db_now).total_seconds() if owner and until is not None and db_now else None
+    live = remaining is not None and remaining > 0
+    return {"owner": owner if live else None, "token": token, "until": until if live else None,
+            "remaining_s": round(remaining, 1) if live else None, "expired": not live}
+
+
 def _feed_view(line: dict, sim_flags: dict) -> dict:
     out = {k: line.get(k) for k in FEED_FIELDS}
+    out["id"] = str(line["_id"]) if line.get("_id") is not None else None
     simulated = bool(sim_flags.get(line.get("party_id")))
     out["simulated"] = simulated
     out["tag"] = SIMULATED if simulated else None
@@ -429,7 +488,8 @@ def _invariants_view(run: dict) -> dict:
     return {"at": at, "at_label": clock.fmt(at) if isinstance(at, (int, float)) else None, "passed": passed, "ok": ok}
 
 
-def _run_view(run: dict | None, parties: list[dict], numbers: dict | None, db_now: datetime) -> dict | None:
+def _run_view(run: dict | None, parties: list[dict], numbers: dict | None, db_now: datetime, *,
+              adoptions: int = 0) -> dict | None:
     if run is None:
         return None
     c = Clock.from_doc(run.get("clock"))
@@ -447,6 +507,7 @@ def _run_view(run: dict | None, parties: list[dict], numbers: dict | None, db_no
         "parties": {"total": len(parties), "at_start": at_start, "found": max(0, len(parties) - at_start)},
         "checked": numbers["checks_completed"] if numbers else [0, len(parties)],
         "steps": run.get("steps", 0), "kills": run.get("kills", 0), "duplicates": run.get("duplicates", 0),
+        "adoptions": adoptions,
         "model_calls": run.get("model_calls", 0),
         "tokens_per_decision": tokens.get("last") if tokens.get("n") else None,
         "invariants": _invariants_view(run),
@@ -466,7 +527,8 @@ def _mm_ss(seconds: float) -> str:
     return f"{h}:{rest // 60:02d}:{rest % 60:02d}" if h else f"{rest // 60:02d}:{rest % 60:02d}"
 
 
-def _systems(rows: dict, parties: list[dict], order_systems: list[str], adapters: dict) -> list[dict]:
+def _systems(rows: dict, parties: list[dict], order_systems: list[str], adapters: dict,
+             repairing: set | frozenset = frozenset()) -> list[dict]:
     """One line per outside system the run talks to: the phone, the form, and
     each distributor order system with its active adapter."""
     claims = Counter()
@@ -505,6 +567,8 @@ def _systems(rows: dict, parties: list[dict], order_systems: list[str], adapters
             "paused": any(s.get("order_system_paused") for s in parties if s.get("order_system") == order_system),
         })
         line = out[-1]
+        # The screen's states: active (ok), contract_failed (operations paused), repairing (a repair holds the lock).
+        line["status"] = ("repairing" if order_system in repairing else "contract_failed" if line["paused"] else "ok")
         how = _adapter_label(adapter.get("source"))
         line["line"] = (f"adapter v{adapter.get('version') or 1}{f' ({how})' if how else ''}    "
                         f"{line['ops_verified']} operations verified"
@@ -616,21 +680,92 @@ def _pct(n: int, total: int) -> str:
     return f"{round(100 * n / total)}%" if total else "0%"
 
 
-def _workers(parties: list[dict], task_runs: list[dict], db_now: datetime) -> list[dict]:
-    """Live leases (lease_until ahead of the database clock), with the task
-    run the holder is executing when there is one."""
-    by_holder = {(tr.get("worker"), tr.get("party_id")): tr for tr in task_runs}
+def _processes(db, bookkeeping: list[dict], now: datetime, settings) -> list[dict]:
+    """The worker processes the screen shows, one per worker_state
+    "worker:<name>" document that lists its threads: alive ones, and ones
+    that died without a clean stop in the last DEAD_WORKER_SHOWN_S. A process
+    is dead at once when a failpoint fired in it, or the supervisor killed
+    its pid, after it started (both end the process); otherwise when its
+    heartbeat is older than worker_dead_after_s (deps.worker_view)."""
+    docs = [d for d in bookkeeping if str(d["_id"]).startswith("worker:") and d.get("workers")]
+    if not docs:
+        return []
+    names = [str(d["_id"]).removeprefix("worker:") for d in docs]
+    pids = [d.get("pid") for d in docs if d.get("pid") is not None]
+    deaths = _safe_find(db.feed, {"$or": [{"kind": "failpoint_fired", "detail.worker": {"$in": names}},
+                                          {"kind": "supervisor", "detail.pid": {"$in": pids},
+                                           "text": {"$regex": "^worker killed"}}]},
+                        {"kind": 1, "at": 1, "detail.worker": 1, "detail.pid": 1}, sort=[("at", -1)], limit=50)
     out = []
+    for doc, name in zip(docs, names):
+        view = worker_view(doc, now, settings) or {}
+        started = doc.get("started_at")
+        died = next((line["at"] for line in deaths
+                     if started and aware(line["at"]) >= aware(started)
+                     and ((line.get("detail") or {}).get("worker") == name
+                          or (line["kind"] == "supervisor" and (line.get("detail") or {}).get("pid") == doc.get("pid")))),
+                    None)
+        alive = bool(view.get("alive")) and died is None
+        beat = doc.get("heartbeat_at")
+        stopped_cleanly = bool(doc.get("stopped_at")) and died is None
+        recent = beat is not None and (now - aware(beat)).total_seconds() < DEAD_WORKER_SHOWN_S
+        if alive or (recent and not stopped_cleanly):
+            out.append({"name": name, "threads": list(doc.get("workers") or []), "alive": alive,
+                        "boot_id": doc.get("boot_id"), "heartbeat_age_s": view.get("heartbeat_age_s"),
+                        "died_at": died})
+    return out
+
+
+def _workers(parties: list[dict], task_runs: list[dict], db_now: datetime, *,
+             processes: list[dict] | None = None) -> list[dict]:
+    """One row per worker thread: every thread of the processes shown
+    (_processes), idle or busy, with its `alive` flag, plus any other holder
+    of a live lease (lease_until ahead of the database clock). A busy row
+    names the party it holds and the task run it is executing; the
+    saboteur's rows say so."""
+    by_holder = {(tr.get("worker"), tr.get("party_id")): tr for tr in task_runs}
+    leased = {}
     for s in parties:
         holder, until = s.get("lease_owner"), s.get("lease_until")
         if not holder or until is None or aware(until) <= db_now:
             continue
+        leased.setdefault(holder, s)
+    rows = {}
+    for proc in processes or []:
+        for tid in proc["threads"]:
+            rows[tid] = {"id": tid, "party_id": None, "name": None, "kind": None, "since_s": None,
+                         "lease_epoch": None, "alive": proc["alive"], "process": proc["name"],
+                         "boot_id": proc["boot_id"], "heartbeat_age_s": proc["heartbeat_age_s"],
+                         "saboteur": False}
+    for holder, s in leased.items():
         tr = by_holder.get((holder, s["party_id"])) or by_holder.get((holder, s["_id"])) or {}
         started = tr.get("started_at")
-        out.append({"id": holder, "party_id": s["party_id"], "name": s.get("name"), "kind": tr.get("kind"),
-                    "since_s": round((db_now - aware(started)).total_seconds(), 1) if started else None,
-                    "lease_epoch": s.get("lease_epoch")})
-    return sorted(out, key=lambda w: (w["id"], w["party_id"]))
+        row = rows.setdefault(holder, {"id": holder, "alive": True, "process": None, "boot_id": None,
+                                       "heartbeat_age_s": None})
+        row.update({"party_id": s["party_id"], "name": s.get("name"), "kind": tr.get("kind"),
+                    "since_s": _since_s(started, db_now),
+                    "lease_epoch": s.get("lease_epoch"),
+                    "saboteur": str(holder).rsplit("/", 1)[-1].startswith("saboteur")})
+    return sorted(rows.values(), key=lambda w: (str(w["id"]), str(w["party_id"] or "")))
+
+
+def _refusals(db, rid: str | None) -> list[dict]:
+    """Every write the database (or the tool gate) refused in this recall,
+    newest first: the screen counts them. Read from the feed, where each
+    refusal is logged with Atlas's raw error (a refused write leaves no
+    other document)."""
+    if not rid:
+        return []
+    rows = _safe_find(db.feed, {"recall_id": rid, "kind": {"$in": sorted(REFUSAL_KINDS)}},
+                      {"at": 1, "kind": 1, "party_id": 1, "system": 1, "text": 1, "sim_label": 1},
+                      sort=[("at", -1)], limit=REFUSALS_SHOWN)
+    out = []
+    for line in rows:
+        primitive, collection = REFUSAL_KINDS[line["kind"]]
+        out.append({"id": str(line["_id"]), "at": line.get("at"), "kind": line["kind"],
+                    "party_id": line.get("party_id"), "system": line.get("system"), "text": line.get("text"),
+                    "sim_label": line.get("sim_label"), "primitive": primitive, "collection": collection})
+    return out
 
 
 def _calls_in_flight(rows: list[dict], settings) -> dict:

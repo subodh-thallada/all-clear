@@ -36,13 +36,20 @@ def utcnow() -> datetime:
 
 # ---------------------------------------------------------------- signing
 
+class MissingLinkSecret(ValueError):
+    """This node has no secret for the pairing (neither LINK_SECRET_<PEER> nor
+    AGENT_LINK_SECRET), so nothing is sent: an /agent request is never unsigned.
+    A configuration gap, not an unreachable peer: the parent's worker waits and
+    says so once (orchestrator.worker), it does not walk the quiet ladder."""
+
+
 def _digest(secret: str, t: str, raw: bytes) -> str:
     return hmac.new(secret.encode("utf-8"), f"{t}.".encode("utf-8") + raw, hashlib.sha256).hexdigest()
 
 
 def sign(raw: bytes, secret: str, t: int | None = None) -> str:
     if not secret:
-        raise ValueError("no link secret configured: refusing to send an unsigned /agent request")
+        raise MissingLinkSecret("no link secret configured: refusing to send an unsigned /agent request")
     t = str(int(time.time()) if t is None else int(t))
     return f"t={t},v1={_digest(secret, t, raw)}"
 

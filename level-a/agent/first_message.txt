@@ -1,1 +1,1 @@
-Hello, this is the automated recall line for {{company}}. This call is a simulation. Am I speaking with {{party_name}}?
+Hey there, hope your day's going well! This is the automated recall line for {{company}}, just a quick call, and heads up, this call is a simulation. Am I speaking with {{party_name}}?

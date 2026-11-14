@@ -4,12 +4,13 @@ An episode scoped to one party is not retrieved for another. An expired
 episode is not retrieved. An invalidated complaint episode is not retrieved,
 and the classification that relied on it changes.
 
-No complaint classifier exists in levela.monitoring yet (WS4), so the last
-part is tested at the retrieval level: `nearest_defect` below is the
-smallest classifier that "relies on" memory (the defect of the nearest
-admissible complaint episode), exactly the evidence WS4's classifier cites.
-Every check runs on the local-scoring path and, where Vector Search exists,
-on `$vectorSearch` too: both take the same filter document.
+The last part is tested twice: at the retrieval level (`nearest_defect`
+below, the smallest classifier that "relies on" memory: the defect of the
+nearest admissible complaint episode), and end to end through WS4's
+classifier (levela.monitoring.classify: classify, record_finding, classify
+again). Every retrieval check runs on the local-scoring path and, where
+Vector Search exists, on `$vectorSearch` too: both take the same filter
+document.
 """
 from __future__ import annotations
 
@@ -114,6 +115,49 @@ def test_spec_42_an_invalidated_complaint_is_not_retrieved_and_the_classificatio
         hits, _ = mem.retrieve(db, EMB, LID, k=5, mode=mode, kind="complaint", now=NOW)
         assert wrong["_id"] not in {h["_id"] for h in hits}
         assert nearest_defect(db, LID, mode=mode) == ("seal_fault", right["_id"])
+
+
+def test_spec_42_end_to_end_an_invalidated_complaint_changes_the_next_classification(db):
+    """Spec 42, last clause, through WS4's classifier (levela.monitoring.classify,
+    local scoring: no Atlas here). A free-text complaint is classified a seal
+    fault citing three past complaints; a person's finding says it was a foreign
+    body, which invalidates those three. The next similar complaint does not
+    retrieve them, and its classification is no longer the seal fault they
+    gave (here: not confident, so the quality lead is asked)."""
+    from levela.db.schema_store import STORE_COLLECTIONS
+    from levela.db.setup import setup
+    from levela.monitoring import classify
+
+    setup(db, STORE_COLLECTIONS)
+    classify.seed_history(db, EMB)
+
+    def complaint(cid, text):
+        classify.receive(db, {"complaint_id": cid, "batch_code": "B-4471", "bought_at": "Spadina Fresh",
+                              "text": text})
+        return classify.classify(db, cid, embedder=EMB, mode="local")
+
+    text = "lid seal was broken and the powder was lumpy"
+    similar = "the lid seal was broken and the powder was lumpy and hard"
+    first = complaint("c-0021", text)
+    relied = first["evidence"]
+    assert first["defect"] == "seal_fault" and relied
+    assert db.episodes.count_documents({"_id": {"$in": relied}, "kind": "complaint", "valid": True}) == len(relied)
+    # Before any finding, the similar complaint would rest on the same memory.
+    control = complaint("c-0020", similar)
+    assert control["defect"] == "seal_fault" and set(relied) & set(control["evidence"])
+
+    finding = classify.record_finding(db, "c-0021", defect="foreign_body", by="quality-lead", embedder=EMB)
+    assert finding["invalidated"] == relied
+    assert db.episodes.count_documents({"_id": {"$in": relied}, "valid": False,
+                                        "invalidated_by": "finding:c-0021"}) == len(relied)
+
+    after = complaint("c-0022", similar)
+    assert not set(relied) & set(after["evidence"]), "an invalidated episode is never evidence"
+    assert not set(relied) & set(after["neighbours"]), "nor retrieved at all"
+    assert "e-c-0021" in after["neighbours"], "the finding is memory now"
+    assert after["defect"] != "seal_fault"
+    assert after["defect"] == "foreign_body" or (after.get("status") == "needs_person"
+                                                 and db.questions.find_one({"_id": after["question_id"]}))
 
 
 def test_spec_42_retrieval_is_by_kind(db):

@@ -110,6 +110,7 @@ CALL_ENDED = ("completed", "no_answer", "failed")      # a dialled call that is 
 RUN_OUTLIVED = ("running", "stopped", "refused")       # a run that ended (or died) without applying its call
 SABOTEUR_EVERY_S = 1.0         # real seconds between saboteur misdeeds while the switch is on
 SABOTEUR_SLOT = 5              # the saboteur is "w5" on the wall (the demo pool has four threads)
+NO_LINK_SECRET_KIND = "agent_no_link_secret"   # feed kind: an agent party waits for AGENT_LINK_SECRET
 
 
 def _order_system_kinds() -> list[str]:
@@ -406,6 +407,7 @@ class WorkerPool:
         own timer, and the release under the fence keeps it."""
         try:
             from ..node import worker as node_worker
+            from ..node.links import MissingLinkSecret
         except ImportError:
             self._release(party, token, None)
             return "agent"
@@ -414,6 +416,14 @@ class WorkerPool:
                               failpoints=self.failpoints, recall=recall, clock=clock)
         try:
             node_worker.act(ctx, party, voice=self.providers.get("voice"), sim=sim_now)
+        except MissingLinkSecret:
+            # A configuration gap, not a quiet agent: nothing was sent, the
+            # ladder stays where it is (a quiet agent would phone the business),
+            # one warning per party, and the usual retry.
+            retry_at = sim_now + max(ERROR_RETRY_H, clock.sim_hours(MIN_RECHECK_S))
+            self._warn_no_link_secret(party, sim_now)
+            self._release(party, token, retry_at)
+            return "agent"
         except Exception as exc:  # noqa: BLE001 - one unreachable node must not hold the party's lease forever
             retry_at = sim_now + max(ERROR_RETRY_H, clock.sim_hours(MIN_RECHECK_S))
             self._report_error(worker_id, exc, party=party, retry_at=retry_at, what="sub-recall")
@@ -425,6 +435,18 @@ class WorkerPool:
             next_at = sim_now + clock.sim_hours(MIN_RECHECK_S)     # never a hot loop on one party
         self._release(party, token, next_at)
         return "agent"
+
+    def _warn_no_link_secret(self, party: dict, sim_now: float) -> None:
+        """One warning line per party per run (the run is the recall's, so a
+        restarted pool does not repeat it); the lease makes the check and the
+        write one writer per party."""
+        rid, pid = party["recall_id"], party["party_id"]
+        log.info("%s: no link secret on this node; the sub-recall waits", pid)
+        if self.db.feed.find_one({"kind": NO_LINK_SECRET_KIND, "recall_id": rid, "party_id": pid}, {"_id": 1}):
+            return
+        feed.emit(self.db, NO_LINK_SECRET_KIND, f"{party.get('name') or pid}: no link secret on this node: the "
+                  "sub-recall waits", recall_id=rid, party_id=pid, level="warn", source="worker", system="agent",
+                  sim=sim_now, detail={"link_id": party.get("link_id"), "retry_h": ERROR_RETRY_H})
 
     def _agent_http(self):
         """The httpx client that reaches other nodes, built on first use."""

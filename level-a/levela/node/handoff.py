@@ -92,8 +92,13 @@ def _outcome(op: dict, action: str, **extra) -> dict:
 # ---------------------------------------------------------------- HTTP to the peer
 
 def _peer(ctx, op: dict) -> tuple[str, str]:
+    """(peer url, pairing secret). No secret raises links.MissingLinkSecret
+    before anything is sent or recorded: the operation stays where it was."""
     link = links.get(ctx.db, op["link_id"])
-    return link["peer_url"].rstrip("/"), links.link_secret(ctx.settings, link["peer_node"])
+    secret = links.link_secret(ctx.settings, link["peer_node"])
+    if not secret:
+        raise links.MissingLinkSecret("no link secret configured: refusing to send an unsigned /agent request")
+    return link["peer_url"].rstrip("/"), secret
 
 
 def _send(ctx, op: dict) -> dict:
@@ -144,6 +149,7 @@ def execute(ctx, op: dict, *, fresh: bool, sim: float | None = None) -> dict:
     if current["state"] in operations.FINAL_STATES:
         return _outcome(current, "duplicate")
     sim = _sim(ctx, current["recall_id"]) if sim is None else sim
+    _peer(ctx, current)     # no secret: MissingLinkSecret now, so the op is never marked sent unsent
     if not fresh:
         try:
             seen = _read_back(ctx, current)

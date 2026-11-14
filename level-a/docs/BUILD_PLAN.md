@@ -186,3 +186,50 @@ Each workstream appends here under its own heading only. One line per deviation 
 - Demo config: set `AGENT_LINK_SECRET` in `.env`. Without it the node worker raises "no link secret configured" for Summit (an error feed line) in single-node runs; a missing secret is not treated as a quiet agent, so the simulated long run is unchanged.
 - Merged with the team's main at 15:35: `web/` is now the team's workflow screen (section above). On the 89 files both sides changed, the tested version of this build was kept; the team's commits stay in history. Spec tests 8, 9, 14 need a real phone and 12, 15 are checked by hand.
 - Result on a local MongoDB 8.0 replica set: fast suite 884 passed, 7 skipped (Atlas-only or no PowerShell); slow suite 10 passed, 1 skipped.
+- Missing link secret (supersedes the demo-config line above): `node/links.MissingLinkSecret(ValueError)`; handoff checks the secret before it sends or marks anything (the op stays `intent`); `WorkerPool._act_for_agent` catches it, writes ONE `warn` line per party per recall (feed kind `agent_no_link_secret`, "<name>: no link secret on this node: the sub-recall waits") and releases with the usual 1 h retry; the quiet ladder never moves. Tests: `tests/test_loose_ends.py`.
+- Removal check vs an earlier due time (`ledger/claims._keep_earlier_timer`): a claim leaving tins on a shelf keeps the party's earlier `next_action_at` (overdue counts as due now) when it still owes other work (a disputed edge it is on, an inbound edge awaiting its receipt, an open question); `removal_check_at` is unchanged. Covers claims booked outside a harness run (form, rep); after a call the harness's release still takes `ladder.after`'s removal check, so `test_harness.py`'s dispute test keeps Corner Mart's 25 `held` (fix left to WS6: in `harness.next_timer`, bring `next_at` forward to now when it is later than now and `gather` says followup/ask_question). Tests: 4 in `test_claims.py`; Corner Mart's own dispute now keeps it due.
+- Spec 42's last clause end to end through `monitoring.classify` (local scoring): classify, `record_finding` invalidates the evidence, a similar complaint no longer retrieves it and goes to the quality lead instead of seal_fault. Test: `test_governed_memory.py::test_spec_42_end_to_end_an_invalidated_complaint_changes_the_next_classification`.
+- Harness release (`levela/harness/__init__.py` `next_timer`): a dispute follow-up owed now beats a later ladder timer such as the 4 h removal check (it is owed once, so no hot loop); open questions still only fill an empty ladder. `test_a_disputed_transfer_gets_one_followup_per_side` uses the slice's 25 on the shelf again; slow suite 10 passed.
+- Atlas Sandbox (run from the team laptop's clone at a6bf81d, server MongoDB 9.0.7, not 8.0): spec test 1 passes 7/7 (transactions, validators on insert and update, change stream, `$$NOW` in the claim filter, Atlas Search noted, vector index queryable); `python -m levela preflight` on the team database passes 63/63; its `episodes_vec` filter fields are expires_at, kind, scope, valid, as the code needs.
+
+### Screen contract (lead follow-up)
+
+What `web/src/data/live.js` reads from `GET /wall/state` (polled once a second, header `X-Admin-Token` when a key is set) and the admin calls its buttons make. `tests/test_screen_contract.py` runs the slice and holds `/wall/state` to this table; "added" = added to `levela/api/wall.py` for the screen (no field renamed or removed).
+
+| JSON path | live.js uses it for | Backend |
+|---|---|---|
+| `now` | feed line ages (`Date.parse`) | present |
+| `recall._id`, `batch_code`, `product`, `units_total`, `status` | top bar, words (tins vs panels: `/milk\|tin/` in product), admin `recall_id` | present |
+| `metrics.open_units`, `units_total`, `on_shelf`, `not_located`, `disputed_units`, `mass_balance`, `status`, `checks_completed`, `tins_located`, `held_or_returned` ([n, of]) | tins bar, counters, close card | present (`headline` is sent but live.js does not read it) |
+| `parties[]`: `party_id`, `name`, `type`, `tier`, `found_via`/`discovered_by`, `channel`, `simulated`, `shipped_in`, `sold`, `on_shelf`, `held`, `returned`, `forwarded`, `unresolved`, `state`, `ladder_step`, `next_action_at`, `hold_for_demo`, `priority`, `escalation` | store list, buckets, "Ready/Due" pills, the judge's-call button state | present |
+| `parties[].lease` {`owner`, `token`, `until`, `remaining_s`, `expired`} | lease bar, which worker holds whom, a dead worker's draining lease | **added** (owner only while `lease_until` is ahead of the database clock; `token` = `lease_epoch`) |
+| `parties[].in_flight`, `parties[].connected` | "In doubt" pill; connected-store mark | **added** (`connected`: a `store_systems` row is linked to the party) |
+| `parties[].live_attempt` {`_id`, `state`, `since_s`, `turns`} | call panel, worker "Dialing/On call" | `since_s` and `attempt_id` **added** (from `connected_at`, else `dialed_at`/`intent_at`); `turns` not sent (no transcript in the API) |
+| `parties[].phone_tail`, `reason`, `note`, `destroyed` | call panel tail, pill text | not sent (live.js has fallbacks; no phone digits on the public wall) |
+| `workers[]`: `id`, `party_id`, `lease_epoch`, `kind`, `alive`, `saboteur` | the four worker cards, crew dots, ghost of a killed worker | **changed**: one row per thread of every shown worker process (`worker_state` `workers` list), idle ones included, plus any other live-lease holder; **added** `alive` (process heartbeat younger than `worker_dead_after_s`, and false at once after a `failpoint_fired` in that process or a supervisor `worker killed` line for its pid), `saboteur`, `process`, `boot_id`, `heartbeat_age_s`. A cleanly stopped process is not listed; a killed one for 10 min |
+| `feed[]` (newest first): `id`, `at`, `kind`, `text`, `system`, `source`, `level` (`bad`/`good`), `party_id`, `sim_label`, `detail` | activity log, banner, dots on the workflow, slips ("60 ≠ 40" read from the text `reported 60, shipped_in 40`) | `id` **added** (the line's `_id`; ties broken by `_id`) |
+| feed kinds routed by (`KIND`, `REFUSED`, `SAY`, `ROUTES`, `labels.headline`) | which line is a refusal, a banner, a dot | all written by the backend except `attempt_refused` (the backend writes `gate_refused` with `detail.rule: "intent"`), `kill` (the backend writes kind `supervisor`, text `worker killed (n)`), `op_refused` (the backend writes `atlas_rejected`, collection operations): screen-side mapping, see below |
+| `run.sim_now`, `sim_label`, `day`, `days_total`, `real_elapsed_s`, `seconds_per_sim_hour`, `paused`, `steps`, `kills`, `duplicates`, `tokens_per_decision`, `invariants` {`at`, `passed`}, `parties.at_start`, `saboteur.on`, `checked` | top bar clock, counters, pause button | present |
+| `run.adoptions` | adoptions counter | **added** (attempts of the recall with `adopted`) |
+| `refusals[]` | refusal counter (`.length`) | **added**: feed lines of the recall whose kind is a refusal (`claim_rejected`, `close_refused`, `attempt_refused`, `atlas_rejected`, `adapter_rejected`, `gate_refused`, `agent_report_rejected`), newest 200, each with `primitive` and `collection` |
+| `systems[]`: `phone` {`attempts`, `accepted_claims`}; `North orders`/`East orders` {`adapter_version`, `adapter_source`, `status`, `paused`} | phone node; order-system cards | `status` **added**: `ok`, `contract_failed` (operations paused), `repairing` (a live `repair:<system>` lock) |
+| `systems[stores]`, `systems[agents]`, `monitoring` | not read (live.js line 378 hardcodes `stores`/`agents`) | present |
+| `calls_in_flight.real`, `failpoints` (armed, by name), `edges`, `transcripts` | capacity, failpoint button, edges | present (`transcripts` not sent) |
+
+Admin calls (all `POST`, JSON body, headers `Accept`, `Content-Type: application/json`, `X-Admin-Token`; a 404 from `/admin/release` is skipped by the screen). Every one answers 2xx with the key and 401 without it; no endpoint had to change.
+
+| Button | Requests |
+|---|---|
+| Call Harbour | `/admin/supervisor` {recall_id, paused: true, reason}; `/admin/release` {recall_id, party_id} for `harbour-market`, `lakeside-foods` |
+| Arm failpoint | `/admin/failpoint` {name: "after_dial_request"} or {name: null} (disarm) |
+| Arm the kill | `/admin/failpoint` {name: "after_dial_request", party_id: "corner-mart"}; `/admin/release` for `corner-mart`, `queen-st-grocer` |
+| Change order system | `/admin/order-system` {order_system: "north", action: "switch_v2"} |
+| Saboteur | `/admin/saboteur` {recall_id, on: true, seconds: 20} |
+| Close recall | `/admin/close` {recall_id} |
+| Pause / resume | `/admin/clock` {recall_id, action: "pause" \| "resume"} |
+
+Left to the screen (web/, not changed here):
+- `live.js` `KIND` (line 40): map `atlas_rejected` → `op_refused` and add it to `REFUSED` (line 49); map `gate_refused` with `detail.rule == "intent"` → `attempt_refused`; map a `supervisor` line whose text starts `worker killed` → `kill` (its text has no `w<n>`, so `labels.js` `kill` shows "Worker  was killed").
+- `labels.js` `claim_rejected` (line 55) expects `parties. <name> reported <n>, shipped_in <n>`; the backend line is `<name> - REJECTED by Atlas: Document failed validation on parties. reported 60, shipped_in 40` (WS3, spec "What the run looks like"), so the banner falls back to the raw text. `consignee_found` (line 59) looks for a quoted name; the backend writes `New party discovered: Corner Mart (named by Queen St Grocer)` (no quotes), so the banner says "a hidden store" (the party id is on the line).
+- `live.js` line 331 adds `disputed_units` into `notLocated`, so the screen shows 15 "not located" where the headline says 15 disputed.
+- Two worker processes both show as `W1` (`short()` keeps the trailing digits of `name/w1`); the demo runs one process with four threads, so this does not arise there.

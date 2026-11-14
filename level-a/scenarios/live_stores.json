@@ -1,0 +1,18 @@
+{
+  "_comment": "Live stores a caller may name on a real call (demo mode only). Each one is added to the recall's directory when its phone_env is set to an E.164 number in .env on the machine running the API; the number itself never goes in the repo. Unset, the name becomes an ordinary new party with no phone.",
+  "stores": [
+    {
+      "party_id": "ryans-store",
+      "name": "Ryan's Store",
+      "aliases": ["ryan's store", "ryans store", "ryan store", "ryan's", "ryans", "ryan's shop", "ryan's market",
+                  "ryan's grocery", "ryans grocery", "ryan's place"],
+      "type": "store",
+      "tier": 3,
+      "store_label": "Ryan's Store",
+      "connected": false,
+      "channel": "voice",
+      "phone_env": "PHONE_RYAN",
+      "profile": "Small independent grocery that buys a few cases from a nearby store when its own order runs short. Not on any shipment record. The owner answers a mobile phone."
+    }
+  ]
+}

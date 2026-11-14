@@ -314,8 +314,13 @@ class _PartyRun:
         planned = facts.run_doc.get("callback_at")
         if planned is not None and next_at is not None:
             next_at = max(float(planned), sim_now)
-        if next_at is None and brief_.gather(self.ctx, party, sim_now)["kind"] in ("followup", "ask_question"):
-            next_at = sim_now
+        if next_at is None or next_at > sim_now:
+            owed = brief_.gather(self.ctx, party, sim_now)["kind"]
+            # A dispute follow-up is owed now and once (gather stops naming it
+            # after the follow-up attempt), so it beats a later timer such as
+            # the 4 h removal check; open questions only fill an empty ladder.
+            if owed == "followup" or (next_at is None and owed == "ask_question"):
+                next_at = sim_now
         return new_step, next_at
 
     def stop(self, what: str) -> dict:

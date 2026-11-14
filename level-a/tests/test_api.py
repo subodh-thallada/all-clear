@@ -36,7 +36,8 @@ PARTY_KEYS = {"party_id", "name", "type", "tier", "channel", "state", "shipped_i
               "returned", "forwarded", "unresolved", "batch_code", "batch_seen", "sold_source", "block_test",
               "held_by_system", "sold_by_till", "system_on_shelf", "discovered_by", "link_id", "sub", "escalation",
               "live_attempt", "attempts", "memory", "found_via", "ladder_step", "next_action_at", "next_label",
-              "hold_for_demo", "slice", "order_system", "priority", "open_questions", "answered", "simulated", "tag"}
+              "hold_for_demo", "slice", "order_system", "priority", "open_questions", "answered", "simulated", "tag",
+              "lease", "in_flight", "connected"}
 FEED_KEYS = {"at", "kind", "text", "level", "source", "party_id", "detail", "system", "sim_label"}
 RUN_KEYS = {"sim_now", "sim_label", "day", "days_total", "real_elapsed_s", "seconds_per_sim_hour", "paused",
             "parties", "checked", "steps", "kills", "duplicates", "model_calls", "tokens_per_decision",

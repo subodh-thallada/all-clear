@@ -38,8 +38,11 @@ its own shipment plus every inbound edge's corroborated quantity.
 
 A claim that leaves tins on the shelf sets the party's removal check,
 `removal_check_at` and `next_action_at`, REMOVAL_CHECK_H simulated hours
-later: the three checks are asked again then. A claim with nothing on the
-shelf clears `removal_check_at`.
+later: the three checks are asked again then. An earlier due time the party
+already had stands when it still owes other work (a disputed transfer, an
+open question, a receipt): next_action_at is the earlier of the two
+(_keep_earlier_timer). A claim with nothing on the shelf clears
+`removal_check_at`.
 
 When a claim changes an edge the other party must hear about (a receipt, a
 dispute, a corroboration, a new transfer into a party that already exists),
@@ -459,11 +462,14 @@ def submit_claim(client, db, *, recall_id, party_id, attempt_id, source, raw, no
         if c["received_qty"] is not None:
             shipped_in = _book_receipt(db, b, recall_id, party_id, c["received_qty"], sender, names, now, session)
         b.stage, b.shipped_in = "party", shipped_in
+        check_at = round(sim_now() + REMOVAL_CHECK_H, 4) if c["on_shelf"] > 0 else None
         _book_counts(db, party, c, ck, shipped_in, now, session, batch_code=recall["batch_code"],
-                     removal_check_at=round(sim_now() + REMOVAL_CHECK_H, 4) if c["on_shelf"] > 0 else None)
+                     removal_check_at=check_at)
         if fail_after_party_update:
             raise RuntimeError("failpoint: after party update")
         _book_forwards(db, b, party, entries, names, dirs, source=source, sim_now=sim_now, now=now, session=session)
+        if check_at is not None:
+            _keep_earlier_timer(db, party, check_at, session)
         idle = _refresh_states(db, recall_id, b.touched, session)
         b.wake -= idle | {party_id}
         if b.wake:
@@ -626,7 +632,8 @@ def _book_counts(db, party, c, ck, shipped_in, now, session, *, batch_code: str,
 
     A claim that leaves tins on the shelf sets the removal check:
     `removal_check_at` and `next_action_at`, both REMOVAL_CHECK_H simulated
-    hours on."""
+    hours on (an earlier due time for other work is put back afterwards by
+    _keep_earlier_timer)."""
     code = party.get("batch_code") or batch_code
     answers = dict(ck)
     if "batch_seen" in answers and _alnum(answers["batch_seen"]) == _alnum(code):
@@ -639,6 +646,27 @@ def _book_counts(db, party, c, ck, shipped_in, now, session, *, batch_code: str,
                   "batch_code": code, **answers, **timers}},
         {"$set": {"unresolved": {"$subtract": ["$shipped_in", _SUM]}, "state": "claimed", "last_claim_at": now}},
     ], session=session)
+
+
+def _keep_earlier_timer(db, party: dict, check_at: float, session) -> None:
+    """The removal check must not push back work the party is already due
+    for: a disputed transfer's follow-up (the ledger wakes a counterpart now),
+    an open question, a receipt still owed. When the party's due time before
+    this claim (`party` is the document as it was) is earlier than the check
+    and it still owes one of those, that time stands; an overdue time stays
+    due now. removal_check_at keeps the check's own hour either way. Runs after
+    the claim's transfers are booked, so a dispute this claim opened counts."""
+    due = party.get("next_action_at")
+    if due is None or float(due) >= check_at:
+        return
+    if not party.get("open_questions"):
+        rid, pid = party["recall_id"], party["party_id"]
+        owed = db.edges.find_one({"recall_id": rid, "$or": [
+            {"from_party": pid, "state": "disputed"},
+            {"to_party": pid, "state": {"$in": ["disputed", "awaiting_recipient"]}}]}, {"_id": 1}, session=session)
+        if owed is None:
+            return
+    db.parties.update_one({"_id": party["_id"]}, {"$set": {"next_action_at": due}}, session=session)
 
 
 def _book_forwards(db, b: _Booking, party, entries, names, dirs, *, source, sim_now, now, session) -> None:

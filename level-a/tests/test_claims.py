@@ -357,7 +357,68 @@ def test_a_store_books_on_shelf_with_its_checks_and_a_removal_check(client, db, 
     assert cm["state"] == "claimed"                              # tins on a shelf: not reconciled
     sim = get_clock(db, RID).sim_now(server_now(client))
     assert sim + REMOVAL_CHECK_H - 1 < cm["removal_check_at"] <= sim + REMOVAL_CHECK_H + 1
-    assert cm["next_action_at"] == cm["removal_check_at"]
+    # Its own claim opened a dispute (25 of 40): the follow-up it was already
+    # due for stands, the removal check keeps its own hour.
+    assert cm["next_action_at"] <= sim < cm["removal_check_at"]
+    assert_balance(RID)
+
+
+def _sim(client, db):
+    return get_clock(db, RID).sim_now(server_now(client))
+
+
+def _dispute_then_queen_st_due(client, db) -> float:
+    """Queen St passes 40 to Corner Mart, Corner Mart counts 25 (held): the
+    ledger wakes Queen St for its dispute follow-up. Returns that due time."""
+    assert _corner(client, db, held=25, **HELD)["accepted"]
+    assert db.edges.find_one({"recall_id": RID})["state"] == "disputed"
+    due = party(db, "queen-st-grocer")["next_action_at"]
+    assert due is not None and due <= _sim(client, db)
+    return due
+
+
+def test_the_removal_check_does_not_push_back_a_dispute_followup(client, db, recall, assert_balance):
+    """Lead loose end 2: a claim that leaves tins on a shelf sets the removal check
+    (4 h on) but keeps the earlier follow-up the party is due for now."""
+    due = _dispute_then_queen_st_due(client, db)
+    res = claim(client, db, "queen-st-grocer", attempt="att_q2", sold=50, held=20, on_shelf=10, forwarded_qty=40,
+                forwarded_to_name="Corner Mart", **TILL, **HELD)
+    assert res["accepted"], res
+    qs = party(db, "queen-st-grocer")
+    sim = _sim(client, db)
+    assert sim + REMOVAL_CHECK_H - 1 < qs["removal_check_at"] <= sim + REMOVAL_CHECK_H + 1
+    assert qs["next_action_at"] == due, "the dispute follow-up still fires now"
+    assert_balance(RID)
+
+
+def test_a_due_time_later_than_the_removal_check_gives_way_to_it(client, db, recall, assert_balance):
+    _dispute_then_queen_st_due(client, db)
+    later = _sim(client, db) + REMOVAL_CHECK_H + 6
+    db.parties.update_one({"recall_id": RID, "party_id": "queen-st-grocer"}, {"$set": {"next_action_at": later}})
+    assert claim(client, db, "queen-st-grocer", attempt="att_q2", sold=50, held=20, on_shelf=10, forwarded_qty=40,
+                 forwarded_to_name="Corner Mart", **TILL, **HELD)["accepted"]
+    qs = party(db, "queen-st-grocer")
+    assert qs["next_action_at"] == qs["removal_check_at"] < later
+    assert_balance(RID)
+
+
+def test_with_nothing_else_owed_the_removal_check_replaces_an_earlier_timer(client, db, recall, assert_balance):
+    """No dispute, no question, no receipt owed: an old ladder timer is not kept."""
+    db.parties.update_one({"recall_id": RID, "party_id": "lakeside-foods"},
+                          {"$set": {"next_action_at": _sim(client, db) - 1.0}})
+    assert claim(client, db, "lakeside-foods", attempt="att_l", sold=20, on_shelf=60, **TILL)["accepted"]
+    lf = party(db, "lakeside-foods")
+    assert lf["next_action_at"] == lf["removal_check_at"] > _sim(client, db)
+    assert_balance(RID)
+
+
+def test_an_open_question_keeps_its_due_time_past_a_removal_check(client, db, recall, assert_balance):
+    due = _sim(client, db)
+    db.parties.update_one({"recall_id": RID, "party_id": "lakeside-foods"},
+                          {"$set": {"next_action_at": due, "open_questions": ["q-01"]}})
+    assert claim(client, db, "lakeside-foods", attempt="att_l", sold=20, on_shelf=60, **TILL)["accepted"]
+    lf = party(db, "lakeside-foods")
+    assert lf["next_action_at"] == due < lf["removal_check_at"]
     assert_balance(RID)
 
 
