@@ -19,7 +19,7 @@ from __future__ import annotations
 import html
 import logging
 import secrets
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -27,6 +27,7 @@ from pydantic import BaseModel
 
 from ..monitoring import classify, link, plant, signals
 from ..monitoring.store_events import StoreEventError, post_event
+from .form import form_body
 from .deps import jsonable, require_admin, require_tool_secret, secret_matches
 
 log = logging.getLogger("levela.api.store")
@@ -243,8 +244,13 @@ async def press(store_id: str, request: Request):
     key = request.query_params.get("key")
     if not _key_ok(st, key):
         raise HTTPException(status_code=401, detail="bad or missing ?key= (the admin token)")
-    form = await request.form()
-    action = str(form.get("action") or request.query_params.get("action") or "")
+    # Parsed with urllib.parse, as the fallback form does (levela/api/form.py):
+    # python-multipart is not a dependency. The body is a few bytes ("action=...").
+    body = await form_body(request)
+    if body is None:
+        raise HTTPException(status_code=413, detail="request body too large")
+    fields = parse_qs(body.decode("utf-8", "replace"), keep_blank_values=True)
+    action = str((fields.get("action") or [""])[0] or request.query_params.get("action") or "")
     store = _store_or_404(st.db, store_id)
     import anyio
     try:
