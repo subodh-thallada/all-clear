@@ -30,10 +30,10 @@ $Python = if ($env:PYTHON) { $env:PYTHON } else { "python" }
 # An order system bound to every interface still answers on the loopback address.
 $ProbeHost = if ($BindHost -eq "0.0.0.0") { "127.0.0.1" } else { $BindHost }
 
-function Start-Order system([string]$Name, [int]$Port) {
+function Start-OrderSystem([string]$Name, [int]$Port) {
     $orderSystemArgs = @("-m", "levela.mock.order_system", "--name", $Name, "--port", "$Port",
                     "--host", $BindHost, "--scenario", $Scenario)
-    Start-Process -FilePath $Python -ArgumentList $orderSystemArgs -NoNewWindow -PassThru
+    Start-Process -FilePath $Python -ArgumentList $orderSystemArgs -WindowStyle Hidden -PassThru
 }
 
 # Waits until the order system serves its OpenAPI document (the repairer reads it too).
@@ -52,20 +52,20 @@ function Wait-Ready([string]$Name, [int]$Port) {
     throw "order system $Name did not answer $base/openapi.json within $ReadySeconds s"
 }
 
-$order systems = @()
+$orderSystems = @()
 try {
-    $order systems += Start-Order system "north" $NorthPort
-    $order systems += Start-Order system "east" $EastPort
+    $orderSystems += Start-OrderSystem "north" $NorthPort
+    $orderSystems += Start-OrderSystem "east" $EastPort
     Wait-Ready "north" $NorthPort
     Wait-Ready "east" $EastPort
     Write-Host "Both order systems are up (scenario $Scenario). Ctrl+C stops both."
-    while (-not ($order systems | Where-Object { $_.HasExited })) {
+    while (-not ($orderSystems | Where-Object { $_.HasExited })) {
         Start-Sleep -Seconds 1
     }
     Write-Host "An order system stopped; stopping the other."
     exit 1
 } finally {
-    foreach ($p in $order systems) {
+    foreach ($p in $orderSystems) {
         if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue }
     }
 }

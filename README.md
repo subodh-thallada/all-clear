@@ -1,19 +1,25 @@
 # All Clear
 
-"Lie to it, kill it, break the system under it: our agent still won't say 'all clear' until the database shows every recalled tin off every shelf."
+An agent that follows a product recall until every unit has an explanation.
+Track: **Finish the Job**.
 
-A recall agent for a food company that sells through distributors and stores.
-It finds every tin of a recalled batch, has it pulled from sale, and keeps the
-recall open until the store's own records show it is gone, with the evidence in
-MongoDB Atlas. Track: **Finish the Job**.
+The backend runs a milk powder recall end to end: store records and complaints,
+a second node for a chain that runs its own copy, and an audit trail. The workflow
+screen also has its own simulated demo. The build plan records every deviation
+from the product spec.
 
-- **Built today, and how to run it:** [level-a/README.md](level-a/README.md)
-  (the code keeps its codename, Level A).
-- **The spec and its 49 tests:** [docs/All_Clear_build_spec_and_test_plan.md](docs/All_Clear_build_spec_and_test_plan.md)
-- **The demo runbook:** [level-a/docs/RUNBOOK.md](level-a/docs/RUNBOOK.md)
+**Real mechanisms:** database validators, transactions, worker leases and recovery.
+Live voice calls require the operator's configured providers.
 
-**Real:** Atlas and every refusal it makes, the phone calls (ElevenLabs over
-Twilio), the webhook server on a public URL, every kill of a worker.
-**Simulated:** the clock, 36 parties, the distributors' order systems, the
-shipment records, and the stores' tills and stock records. The product, the
-batch and every name are invented.
+**Simulated:** the bundled parties, shipment records, distributor order systems,
+clock and screen demo. Every product and company in the demo is invented.
+
+- [Run the engine and its checks](level-a/README.md)
+- [Current product spec and test plan](docs/All_Clear_build_spec_and_test_plan.md)
+- [Backend implementation plan](level-a/docs/BUILD_PLAN.md)
+- [Workflow screen](level-a/web/README.md)
+- [Demo runbook](level-a/docs/RUNBOOK.md)
+- [Deployment](level-a/deploy/README.md)
+
+GitHub Actions runs database smoke checks, the fast and slow Python suites on
+Python 3.11 and 3.12 with MongoDB 8.0, and the workflow screen's tests and build.

@@ -724,12 +724,19 @@ def test_ci_runs_both_pythons_on_a_mongodb_replica_set():
     commands = "\n".join(s["run"] for s in runs.values())
     assert "pip install -r requirements-dev.txt" in commands
     assert 'python -m pytest -q -m "not slow"' in commands
-    assert 'bash -n "$f"' in commands
     slow = next(s for s in runs.values() if "-m slow" in s["run"])
     assert slow["timeout-minutes"] == 20
     assert (ROOT / "requirements-dev.txt").is_file()
+    every = "\n".join(s["run"] for j in wf["jobs"].values() for s in j["steps"] if "run" in s)
+    # The shell scripts parse (in the workflow and operator checks job).
+    assert 'bash -n "$f"' in every
+    # The team's workflow screen is tested and built in its own job.
+    web = wf["jobs"]["web"]
+    assert web["defaults"]["run"]["working-directory"] == "level-a/web"
+    web_runs = "\n".join(s["run"] for s in web["steps"] if "run" in s)
+    assert "npm ci" in web_runs and "npm test" in web_runs and "npm run build" in web_runs
     # The seed kit is not used, and the old wall script is gone: CI runs neither.
-    assert "seedkit" not in commands and "wall.js" not in commands
+    assert "seedkit" not in every and "wall.js" not in every
 
 
 def _env_example_keys() -> tuple[set[str], set[str]]:
