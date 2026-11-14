@@ -23,7 +23,7 @@ make, run the command shown next to each target.
 | Phone P1 | Rings as Harbour Market (`PHONE_HARBOUR`); handed to the judge |
 | Phone P2 | Rings as Corner Mart (`PHONE_CORNER`); held by teammate B |
 | Big screen | The wall, `https://<host>/wall` |
-| T1 | `make order systems` (the two mock order systems; their tunnels if the API is hosted) |
+| T1 | `make order_systems` (the two mock order systems; their tunnels if the API is hosted) |
 | T2 | `make supervisor RECALL=RCL-2026-020` (the worker under random kills); becomes the kill-demo terminal |
 | T3 | `python scripts/demo.py ...` (the beats) |
 
@@ -36,11 +36,11 @@ hour ago".
 |---|---|---|---|
 | Night before | Secrets in `.env` and on the host, the same `TOOL_SECRET`, `ADMIN_TOKEN`, `ELEVEN_WEBHOOK_SECRET` | see `deploy/README.md` | `python -m levela status` connects |
 | 4:15 | Reset run-time state (history stays; both mock order systems are reset to v1 too) | `make reset` (`python -m levela reset`) | no run-time recall listed; both order systems answer `version 1` |
-| 4:15 | Preflight: Atlas, schema, history, vector index | `make preflight` (`python -m levela preflight`) | exit 0, every check ok |
-| Once only | Load the synthetic history, if preflight says it is missing | `make seed` (`python -m levela load-history`) | "loaded ... history documents" and the vector index queryable |
+| Once only | Create the schema and Atlas search indexes | `make seed` (`python -m levela setup-db --search-indexes`) | schema installed and the vector index queryable |
+| 4:15 | Preflight: Atlas, schema, clean slate, vector index | `make preflight` (`python -m levela preflight`) | exit 0, every check ok |
 | 4:20 | Public URL answers from a phone on mobile data | open `https://<host>/healthz` | `{"ok": true, ...}` |
 | 4:20 | Agent points at the current URL | `make provision` (`python scripts/provision_agent.py`) | "updated" for the three tools and the agent, exit 0 |
-| 4:25 | Order systems up (and tunnelled if the API is hosted) | T1: `make order systems` (`bash scripts/start_order_systems.sh`, Windows `scripts\start_order_systems.ps1`) | "Both order systems are up" |
+| 4:25 | Order systems up (and tunnelled if the API is hosted) | T1: `make order_systems` (`bash scripts/start_order_systems.sh`, Windows `scripts\start_order_systems.ps1`) | "Both order systems are up" |
 | 4:25 | API running | hosted: `/healthz` above; laptop fallback: `make api` | `/wall` loads |
 | 4:30 | Smoke call to P1 | `python scripts/call_once.py --watch` | P1 rings; status reaches `completed` |
 | 4:55 | **Start the long run**, slice and order system change held | T3: `make demo` (`python scripts/demo.py start --scenario recall_long --mode demo`); finals clock: `make demo SPEED=15` | "started RCL-2026-020 (demo mode ...)"; order system changes "by hand" |
@@ -62,7 +62,7 @@ kill beat uses the failpoint, so its timing is exact.
 | 0:35 | Caught | T3: `python scripts/demo.py caught` (watches) | Feed: rejected by Atlas, 60 reported, 40 shipped. The agent says both numbers; the judge corrects; accepted | "The model did not catch that. The database did." |
 | 1:00 | Hidden party | T2: Ctrl+C the supervisor (it stops its worker), then `make kill-demo RECALL=RCL-2026-020` (the wall's **Arm failpoint** button does the same arming and releases Corner Mart and Queen St Grocer, for when the supervisor restarts the worker instead) | `kill_demo` arms the failpoint and releases Queen St Grocer's held reply: her claim creates Corner Mart on the wall | "Queen St Grocer forwarded part of the batch to a party no list had." |
 | 1:05 | Kill | (kill_demo runs the worker) T3: `python scripts/demo.py kill` | The worker dials Corner Mart and dies: the `WORKER KILLED (exit 137)` banner. P2 rings once; B says "received twenty-five". The edge turns disputed: 15 tins. Operator presses Enter in T2: the resume line (documents read, nothing replayed), the attempt adopted, no second ring | "The call was requested and the worker died before saving it. A naive agent redials. Ours finds the evidence first." |
-| 1:45 | Order system changes | Button **Switch order system to v2** (North), or T3: `python scripts/demo.py order system` | Contract failure (a field missing), operations flagged, the repaired adapter, the canary matching, only the flagged operations retried | "The order system changed under us. A mapping that does not reproduce a count the ledger already trusts is never activated." |
+| 1:45 | Order system changes | Button **Switch order system to v2** (North), or T3: `python scripts/demo.py order_system` | Contract failure (a field missing), operations flagged, the repaired adapter, the canary matching, only the flagged operations retried | "The order system changed under us. A mapping that does not reproduce a count the ledger already trusts is never activated." |
 | 2:20 | Memory | Button **Switch East to v2** (secondary row), or T3: `python scripts/demo.py memory` | East orders fails the same way; the saved mapping is retrieved and activated with 0 model calls | "The second order system repaired itself from memory: Vector Search on the failure text, the same canary, no model call." |
 | 2:35 | Closing gate | Button **Close recall**, or T3: `python scripts/demo.py close` | Close refused by Atlas; the open tins; documented, recovered and open side by side | "Fifteen tins are unexplained, so Atlas will not let the recall close." |
 | 2:50 | Wrap | T3: `python scripts/demo.py wrap` (resumes random kills) | | "What is real here: the calls, the kills and every refusal by the database. What is simulated: the clock, the other parties and the order system." Then: "Today this is food recalls. Next it is any recalled product. Eventually it is any obligation that must reach everyone in a chain and be proven complete." |
@@ -111,7 +111,7 @@ After the judges leave: in T2, Ctrl+C the kill-demo worker and run
 
 | Question | Answer |
 |---|---|
-| Is the check just application code? | The rule is an Atlas validator. Show the raw validation error in the feed and the validator in `seedkit/schema.py`. |
+| Is the check just application code? | The rule is an Atlas validator. Show the raw validation error in the feed and the validator in `levela/db/schema.py`. |
 | Killing the worker does not kill the call. What does that prove? | The risk is the gap between requesting a call and saving it. A restart that trusts its own records redials. Ours checks `tool_events` and Twilio's call list first. |
 | What is simulated? | The clock, 36 of the 40 parties (behaviour profiles), the two distributor order systems and the shipment records. Atlas, the two calls, the webhooks and every kill are real. |
 | Is the clock real? | No. Ten days are played in 120 minutes. The calls, the kills and the database refusals are real. |

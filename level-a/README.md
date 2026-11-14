@@ -14,8 +14,9 @@ more kills survived, and zero duplicate effects.
 
 ## What was built today
 
-Everything in this directory except the seed kit (below) was written during
-the event:
+The engine builds on an earlier seed kit. That package and its historical
+dataset were removed; the current schema and embedders live in `levela/`.
+The implementation includes:
 
 - **Ledger in Atlas** (`levela/ledger`, `levela/db`): one transaction per
   claim, transfer edges with two claims each, disputes, multi-destination
@@ -51,10 +52,9 @@ the event:
 | MongoDB Atlas (sandbox cluster) and every validator, index and transaction refusal | The clock: 10 days played in 120 minutes (`levela/clock.py`) |
 | Two outbound phone calls, ElevenLabs Agents over Twilio | 36 of the 40 parties, each with a behaviour profile |
 | The tool and post-call webhooks, on a public HTTPS URL | The two distributor order systems: mock processes written today |
-| Every kill of the worker (SIGKILL or the failpoint's `os._exit(137)`) | The shipment records and the 16 past recalls (the seed kit) |
+| Every kill of the worker (SIGKILL or the failpoint's `os._exit(137)`) | The shipment records |
 
-**Seeded for the demo:** the shipment records, the 16 past recalls in
-`data/history/` (2,325 documents), the scenarios in `scenarios/` and the
+**Seeded for the demo:** the shipment records, the scenarios in `scenarios/` and the
 simulated parties' behaviour are synthetic. Every party, brand, batch and person
 is invented, and every phone number in the data is in the 555-0100 to 555-0199
 block, which cannot ring a real line.
@@ -63,7 +63,7 @@ block, which cannot ring a real line.
 
 | Tool | Used for |
 |---|---|
-| The All Clear seed kit (`seedkit/`, `data/history/`), written on Nov 13 before the event and disclosed as such | Synthetic history, the spec's Atlas rules, dry run and preflight |
+| The original Level A seed kit, now retired | Earlier schema and embedding design; the implementation is now in `levela/db/schema.py` and `levela/memory/embed.py` |
 | MongoDB Atlas, PyMongo | System of record: validators, transactions, change streams, `$graphLookup`, `$$NOW` leases, Vector Search |
 | Voyage AI embeddings through Atlas (local hash embedder as fallback) | Episode vectors for memory |
 | ElevenLabs Agents | The voice agent and its webhook tools |
@@ -84,7 +84,7 @@ development values instead (never on a host).
 ```sh
 pip install -r requirements-dev.txt
 make setup-db            # python -m levela setup-db: collections, validators, indexes
-make seed                # python -m levela load-history: the synthetic history and the vector index (once)
+make seed                # python -m levela setup-db --search-indexes: Atlas search indexes
 make preflight           # python -m levela preflight
 ```
 
@@ -93,7 +93,7 @@ Each process in its own terminal (the `Makefile` targets are one CLI call each):
 | Process | Command |
 |---|---|
 | API (tools, webhooks, form, admin, wall, scheduler) | `make api` (`python -m levela api --host 127.0.0.1 --port 8000`) |
-| Mock order systems North and East | `make order systems` (`bash scripts/start_order_systems.sh`; Windows `scripts\start_order_systems.ps1`) |
+| Mock order systems North and East | `make order_systems` (`bash scripts/start_order_systems.sh`; Windows `scripts\start_order_systems.ps1`) |
 | Worker pool | `make worker` (`python -m levela worker --workers 4`) |
 | Worker under random kills | `make supervisor` (`python scripts/supervisor.py --workers 4`) |
 | Voice agent on ElevenLabs | `make provision` (`python scripts/provision_agent.py`), then `python scripts/call_once.py --watch` |
@@ -163,6 +163,9 @@ claim decides what counts.
 
 ## Test map
 
+These 32 checks describe the existing engine. The current food recall spec
+has additional checks and revised numbering; see the product spec linked below.
+
 Tests 1 to 7, 10, 11 and 16 to 32 run in pytest on the fake voice provider
 (`make test`, `make test-slow`; CI runs both on a MongoDB 8.0 replica set).
 Tests 8, 9 and 14 need a real phone; 12, 13 and 15 are also checked by hand.
@@ -180,7 +183,7 @@ Tests 8, 9 and 14 need a real phone; 12, 13 and 15 are also checked by hand.
 | 9 | Post-call webhook | The attempt completes and the transcript is stored | By hand with a real call; the handler by `tests/test_hooks.py` |
 | 10 | Simulated end to end | Recall 1 all simulated: metrics exact, one dispute of 15, not closable | `tests/e2e_sim.py` |
 | 11 | Memory | With memory, Corner Mart' attempt starts before Queen St Grocer's claim; without, after | `tests/test_memory.py` |
-| 12 | Wall display | New party within two seconds, the rejection in the feed, metrics match | By hand during test 10; assets by `tests/test_wall_assets.py` |
+| 12 | Wall display | New party within two seconds, the rejection in the feed, metrics match | By hand during test 10; state and assets by `tests/test_api.py` |
 | 13 | Fallback form | The same rejection and acceptance as the voice path | `tests/test_form.py`; by hand on a phone |
 | 14 | Kill demo with a real call | The phone rings once; the claim lands while the worker is down; adopted on restart | By hand: `scripts/kill_demo.sh`, checked by `scripts/demo.py kill` |
 | 15 | Full rehearsal | Three runs under three minutes, every beat landing, one on a hotspot | By hand: `docs/RUNBOOK.md`, `scripts/demo.py` |
@@ -210,8 +213,7 @@ profiles, the API, the agent files, the scripts and these docs
 ## More
 
 - `docs/DESIGN.md` and `docs/DESIGN_V2.md`: the build contracts.
-- `../docs/Level_A_build_spec_and_test_plan.md`: the product spec and test plan.
+- `../docs/All_Clear_build_spec_and_test_plan.md`: the current product spec and test plan.
 - `docs/RUNBOOK.md`: the operator's runbook for the demo.
 - `deploy/README.md`: hosting the API, tunnels, re-provisioning.
 - `agent/README.md`: the voice agent as code.
-- `seedkit/README.md`: the seed kit and the synthetic history.

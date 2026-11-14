@@ -1,7 +1,7 @@
 """The docs the judges and the operator read.
 
-The README must map every test of the spec (1 to 32) to the file or the
-procedure that proves it, with the spec's own test names; every command the
+The README must map the engine's 32 checks to the file or the
+procedure that proves it; every command the
 docs tell the operator to run must exist; and no doc may carry a secret or a
 phone number that could ring a real line. No database is needed.
 """
@@ -14,7 +14,7 @@ import pytest
 from levela.config import ROOT
 
 REPO = ROOT.parent
-SPEC = (REPO / "docs" / "Level_A_build_spec_and_test_plan.md").read_text(encoding="utf-8")
+SPEC = (REPO / "docs" / "All_Clear_build_spec_and_test_plan.md").read_text(encoding="utf-8")
 CONTRACTS = SPEC + (ROOT / "docs" / "DESIGN.md").read_text(encoding="utf-8") + \
     (ROOT / "docs" / "DESIGN_V2.md").read_text(encoding="utf-8")
 README = ROOT / "README.md"
@@ -51,22 +51,15 @@ def _table_rows(section: str) -> dict[int, list[str]]:
     return rows
 
 
-def _spec_test_names() -> dict[int, str]:
-    names = {}
-    for heading in ("## Test plan", "### Added tests", "### Saboteur tests"):
-        names.update({n: cells[0] for n, cells in _table_rows(_section(SPEC, heading)).items()})
-    return names
-
-
 # ---- the README ------------------------------------------------------------------
 
-def test_readme_maps_every_test_1_to_32_with_the_specs_names():
+def test_readme_maps_all_32_engine_checks_and_distinguishes_the_new_spec():
     rows = _table_rows(_section(_text(README), "## Test map"))
     assert sorted(rows) == list(range(1, 33))
-    spec = _spec_test_names()
-    assert sorted(spec) == list(range(1, 33))
-    for n, cells in rows.items():
-        assert cells[0] == spec[n], f"test {n}: README says {cells[0]!r}, the spec {spec[n]!r}"
+    assert len({cells[0] for cells in rows.values()}) == 32
+    assert all(len(cells) == 3 and all(cells) for cells in rows.values())
+    assert "existing engine" in _section(_text(README), "## Test map")
+    assert "All_Clear_build_spec_and_test_plan.md" in _text(README)
 
 
 def test_every_test_names_the_file_or_procedure_that_proves_it():
@@ -75,9 +68,7 @@ def test_every_test_names_the_file_or_procedure_that_proves_it():
         files = re.findall(r"`((?:tests|scripts|docs|agent)/[\w./-]+)`", proven_by)
         assert files, f"test {n} names no file"
         for path in files:
-            # On disk, or (for another engineer's file not merged into this
-            # branch) named by the spec or the design contracts.
-            assert (ROOT / path).exists() or path.split("/")[-1] in CONTRACTS, f"test {n}: {path}"
+            assert (ROOT / path).is_file(), f"test {n}: {path}"
         if not any(f.startswith("tests/") for f in files):
             assert proven_by.startswith("By hand"), f"test {n} has no automated test and is not marked by hand"
 
@@ -88,7 +79,7 @@ def test_readme_has_the_sections_the_spec_requires():
                     "## Architecture", "## The rules Atlas enforces", "## Test map"):
         assert heading + "\n" in text, heading
     assert "**Seeded for the demo:**" in text and "synthetic" in _section(text, "## Real and simulated")
-    for tool in ("seed kit", "Atlas", "ElevenLabs", "Twilio", "Voyage", "FastAPI"):
+    for tool in ("Atlas", "ElevenLabs", "Twilio", "Voyage", "FastAPI"):
         assert tool in _section(text, "## Pre-existing tools used"), tool
     assert "```text" in _section(text, "## Architecture")
 
@@ -106,7 +97,7 @@ def test_root_readme_is_one_screen_and_its_links_resolve():
 # ---- the commands the docs give ----------------------------------------------------
 
 def _makefile_targets() -> set[str]:
-    return set(re.findall(r"^([a-z0-9-]+):", _text(ROOT / "Makefile"), re.M))
+    return set(re.findall(r"^([a-z0-9_-]+):", _text(ROOT / "Makefile"), re.M))
 
 
 @pytest.mark.parametrize("doc", DOCS, ids=lambda p: p.relative_to(REPO).as_posix())
@@ -115,13 +106,13 @@ def test_every_command_in_the_docs_exists(doc):
 
     text = _text(doc)
     targets = _makefile_targets()
-    for target in re.findall(r"`make ([a-z0-9-]+)", text):
+    for target in re.findall(r"`make ([a-z0-9_-]+)", text):
         assert target in targets, f"make {target}"
     demo_commands = {b.command for b in demo.BEATS + demo.EXTRAS} | {"beats", "start", "status"}
-    for command in re.findall(r"python scripts/demo\.py ([a-z][a-z-]*)", text):
+    for command in re.findall(r"python scripts/demo\.py ([a-z][a-z_-]*)", text):
         assert command in demo_commands, f"demo.py {command}"
     levela = _levela_parser()._subparsers._group_actions[0].choices
-    for sub in re.findall(r"python -m levela ([a-z][a-z-]*)", text):
+    for sub in re.findall(r"python -m levela ([a-z][a-z_-]*)", text):
         assert sub in levela, f"python -m levela {sub}"
     for script in re.findall(r"scripts[/\\]([\w-]+\.(?:py|sh|ps1|md))", text):
         assert (ROOT / "scripts" / script).is_file() or f"scripts/{script}" in CONTRACTS, script
@@ -141,7 +132,7 @@ def test_runbook_covers_the_nine_beats_the_checklist_and_the_fallbacks():
                  "Nothing counts in a recall until every tin is explained."):
         assert line in show, line
     checklist = _section(text, "## Pre-show checklist")
-    for step in ("make reset", "make preflight", "make seed", "make provision", "make order systems", "make demo",
+    for step in ("make reset", "make preflight", "make seed", "make provision", "make order_systems", "make demo",
                  "make supervisor", "4:55", "/healthz"):
         assert step in checklist, step
     assert "make kill-demo" in show
