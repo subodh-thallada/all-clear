@@ -1,9 +1,7 @@
-# All Clear (codename Level A): every push and pull request runs the fast tests
-# and the slow ones (the long run, random kills, eight workers) against a
+# Level A: every push and pull request runs the database smoke checks, the fast
+# tests and the slow ones (the long run, random kills, eight workers) against a
 # MongoDB 8.0 replica set, the same server version as an Atlas free cluster.
-# Tests marked `atlas` (Vector Search) skip on a plain mongod. The seed kit
-# written on Nov 13 is not used and not in the repository (spec "First checks
-# on the sandbox"), so there is no dry run of it.
+# Tests marked `atlas` (Vector Search) skip on a plain mongod.
 name: ci
 
 on:
@@ -18,6 +16,29 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  infrastructure:
+    name: workflow and operator checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: level-a
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            level-a/requirements.txt
+            level-a/requirements-dev.txt
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Check workflow, commands, documentation and launch scripts
+        run: python -m pytest -q tests/test_docs.py tests/test_scripts.py -m "not integration"
+      - name: Shell scripts parse
+        run: for f in scripts/*.sh; do bash -n "$f"; done
+
   test:
     name: tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -51,8 +72,8 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
 
-      - name: Shell scripts parse
-        run: for f in scripts/*.sh; do bash -n "$f"; done
+      - name: Database smoke tests
+        run: python -m pytest -q tests/test_atlas_basics.py -m "not slow"
 
       - name: Fast tests
         run: python -m pytest -q -m "not slow"
@@ -66,3 +87,25 @@ jobs:
           # 5 = nothing collected: no test is marked slow yet.
           if [ "$code" -eq 5 ]; then echo "No slow tests collected."; exit 0; fi
           exit "$code"
+
+  web:
+    name: workflow screen
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: level-a/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: level-a/web/package-lock.json
+
+      - name: Install screen dependencies
+        run: npm ci
+      - name: Screen engine tests
+        run: npm test
+      - name: Build workflow screen
+        run: npm run build
