@@ -39,12 +39,12 @@ router = APIRouter()
 SCREEN_DIR = config.SCREEN_DIR
 CACHE_TTL_S = 0.5
 DAYS_TOTAL = 10
-RECALL_FIELDS = {k: 1 for k in ("batch_code", "model", "product", "supplier", "hazard", "affected_versions",
-                                "fixed_version", "units_total", "status", "source", "source_signal", "mode",
-                                "options", "opened_at", "closed_at")}
-PARTY_FIELDS = ("party_id", "name", "type", "channel", "state", "shipped_in", "in_stock", "installed", "fixed",
-                "returned", "forwarded", "unresolved", "model_seen", "version_seen", "sounder_test", "fixed_by_panel",
-                "connected_unfixed", "discovered_by")
+RECALL_FIELDS = {k: 1 for k in ("batch_code", "product", "barcode", "company", "hazard", "defect",
+                                "affected_batches", "action", "barcode_verified", "units_total", "status",
+                                "source", "source_signal", "mode", "options", "opened_at", "closed_at")}
+PARTY_FIELDS = ("party_id", "name", "type", "channel", "state", "shipped_in", "sold", "on_shelf", "held",
+                "returned", "forwarded", "unresolved", "batch_code", "batch_seen", "sold_source", "block_test",
+                "held_by_system", "sold_by_till", "system_on_shelf", "discovered_by")
 PARTY_V2_FIELDS = ("tier", "found_via", "ladder_step", "next_action_at", "hold_for_demo", "slice", "order_system",
                    "priority")
 EDGE_FIELDS = ("from_party", "to_party", "sender_qty", "recipient_qty", "corroborated_qty", "disputed_qty", "state")

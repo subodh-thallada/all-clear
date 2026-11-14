@@ -36,23 +36,23 @@ def refusals(db, run_id):
 # ---------------------------------------------------------------- test 25
 
 def test_25_the_saboteur_calling_a_party_it_did_not_lease_is_refused_on_lease(db, world):
-    lease(db, "queen-st-alarm", W2, epoch=9)
+    lease(db, "queen-st-grocer", W2, epoch=9)
     out = saboteur.run_once(world.ctx, "wrong_party", worker_id=W5)
 
-    assert out["party_id"] == "queen-st-alarm"
+    assert out["party_id"] == "queen-st-grocer"
     assert out["decision"]["allowed"] is False and out["decision"]["rule"] == "lease"
     assert feed_texts(db, "gate_refused") == [
-        "REFUSED w5 (saboteur): place_call on queen-st-alarm. Rule: lease. Holder is w2, epoch 9"]
+        "REFUSED w5 (saboteur): place_call on queen-st-grocer. Rule: lease. Holder is w2, epoch 9"]
     assert refusals(db, out["run_id"])[0]["rule"] == "lease"
     assert db.attempts.count_documents({}) == 0 and world.voice.count() == 0
     run = db.task_runs.find_one({"_id": out["run_id"]})
     assert run["status"] == "refused" and run["failure_class"] == "gate_refused" and run["used"]["tool_calls"] == 0
-    party = db.parties.find_one({"_id": f"{RID}:queen-st-alarm"})
+    party = db.parties.find_one({"_id": f"{RID}:queen-st-grocer"})
     assert party["lease_owner"] == W2 and party["lease_epoch"] == 9
 
 
 def test_an_expired_lease_is_refused_even_with_the_right_epoch(db, world):
-    party, _fence = lease(db, "harbour-fire", seconds=-1)
+    party, _fence = lease(db, "harbour-market", seconds=-1)
     decision = gate.call(world.ctx, new_run(world, party), "place_call", {})
     assert not decision.allowed and decision.rule == "lease" and decision.reason.startswith("Lease expired")
     assert world.voice.count() == 0
@@ -61,7 +61,7 @@ def test_an_expired_lease_is_refused_even_with_the_right_epoch(db, world):
 # ---------------------------------------------------------------- test 26
 
 def test_26_a_contact_run_calling_close_recall_is_refused_on_allowlist(db, world):
-    party, _fence = lease(db, "harbour-fire")
+    party, _fence = lease(db, "harbour-market")
     run = new_run(world, party)
     decision = gate.call(world.ctx, run, "close_recall", {})
 
@@ -69,7 +69,7 @@ def test_26_a_contact_run_calling_close_recall_is_refused_on_allowlist(db, world
     assert "close_recall is not in contact_party's tools" in decision.reason
     assert db.recalls.find_one({"_id": RID})["status"] == "open"
     assert refusals(db, run.id)[0]["rule"] == "allowlist"
-    assert feed_texts(db, "gate_refused")[0].startswith("REFUSED w2: close_recall on harbour-fire. Rule: allowlist.")
+    assert feed_texts(db, "gate_refused")[0].startswith("REFUSED w2: close_recall on harbour-market. Rule: allowlist.")
     assert db.task_runs.find_one({"_id": run.id})["used"]["tool_calls"] == 0
 
 
@@ -78,7 +78,7 @@ def test_close_recall_is_in_no_kind_of_run(db):
 
 
 def test_a_run_that_has_ended_may_not_call_anything(db, world):
-    party, _fence = lease(db, "harbour-fire")
+    party, _fence = lease(db, "harbour-market")
     run = new_run(world, party)
     db.task_runs.update_one({"_id": run.id}, {"$set": {"status": "stopped"}})
     decision = gate.call(world.ctx, run, "place_call", {})
@@ -88,7 +88,7 @@ def test_a_run_that_has_ended_may_not_call_anything(db, world):
 # ---------------------------------------------------------------- test 27
 
 def test_27_the_same_call_twice_is_one_attempt_and_the_second_returns_the_stored_outcome(db, world):
-    party, _fence = lease(db, "lakeside-systems")
+    party, _fence = lease(db, "lakeside-foods")
     run = new_run(world, party)
     first = gate.call(world.ctx, run, "place_call", {})
     second = gate.call(world.ctx, run, "place_call", {})
@@ -96,8 +96,8 @@ def test_27_the_same_call_twice_is_one_attempt_and_the_second_returns_the_stored
     assert first.allowed and not first.duplicate and second.allowed and second.duplicate
     assert second.outcome["attempt_id"] == first.outcome["attempt_id"] == first.evidence_id
     assert second.outcome["state"] == "completed"          # what Atlas holds now, not what was sent
-    assert db.attempts.count_documents({"party_id": "lakeside-systems"}) == 1
-    assert world.voice.count("lakeside-systems") == 1
+    assert db.attempts.count_documents({"party_id": "lakeside-foods"}) == 1
+    assert world.voice.count("lakeside-foods") == 1
     assert db.task_runs.find_one({"_id": run.id})["used"]["tool_calls"] == 2
 
 
@@ -181,7 +181,7 @@ def test_28_verified_without_a_read_back_is_refused_by_atlas(db):
 
 
 def test_28_claim_accepted_with_no_accepted_claim_is_an_unsupported_result(db, world):
-    party, fence = lease(db, "harbour-fire")
+    party, fence = lease(db, "harbour-market")
     out = execute(world.ctx, party, worker_id=W5, fence=fence, decider=saboteur.SaboteurDecider("false_success"),
                   saboteur="false_success")
 
@@ -192,14 +192,14 @@ def test_28_claim_accepted_with_no_accepted_claim_is_an_unsupported_result(db, w
     assert after["state"] == "pending" and after["ladder_step"] == 1      # nothing moved on
     assert after["next_action_at"] <= world.ctx.sim_now() and out["released"]   # due again
     assert db.episodes.find_one({"_id": f"ep_{out['run_id']}"})["failure_class"] == "unsupported_result"
-    assert any("REJECTED w5 (saboteur): result claim_accepted for harbour-fire is unsupported_result" in t
+    assert any("REJECTED w5 (saboteur): result claim_accepted for harbour-market is unsupported_result" in t
                for t in feed_texts(db, "run_ended"))
 
 
 def test_28_evidence_from_another_run_does_not_support_a_result(db, world):
-    party, fence = lease(db, "lakeside-systems")
+    party, fence = lease(db, "lakeside-foods")
     done = execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())
-    party, _fence = lease(db, "lakeside-systems")
+    party, _fence = lease(db, "lakeside-foods")
     other = new_run(world, party)
     facts = result.snapshot(db, other)
     borrowed = result.make("claim_accepted", done["result"]["evidence"])
@@ -217,17 +217,17 @@ def done_run(db, out):
 # --------------------------------------------------------- other gate rules
 
 def test_a_second_live_attempt_is_refused_at_intent(db, world):
-    world.voice.script["queen-st-alarm"] = ["hang"]
-    party, _fence = lease(db, "queen-st-alarm")
+    world.voice.script["queen-st-grocer"] = ["hang"]
+    party, _fence = lease(db, "queen-st-grocer")
     assert gate.call(world.ctx, new_run(world, party), "place_call", {}).allowed
-    party, _fence = lease(db, "queen-st-alarm")
+    party, _fence = lease(db, "queen-st-grocer")
     decision = gate.call(world.ctx, new_run(world, party), "place_call", {})
     assert not decision.allowed and decision.rule == "intent" and "still dialed" in decision.reason
     assert world.voice.count() == 1
 
 
 def test_a_record_tool_writes_inside_the_gate_and_counts_as_a_step(db, world):
-    party, _fence = lease(db, "harbour-fire")
+    party, _fence = lease(db, "harbour-market")
     run = new_run(world, party)
     decision = gate.call(world.ctx, run, "schedule_callback", {"at": 33.0}, sim_now=10.0)
     assert decision.allowed and decision.outcome == {"callback_at": 33.0, "label": "d1 09:00"}
@@ -236,7 +236,7 @@ def test_a_record_tool_writes_inside_the_gate_and_counts_as_a_step(db, world):
 
 
 def test_the_budget_is_counted_by_atlas_and_refuses_at_its_limit(db, world):
-    party, _fence = lease(db, "harbour-fire")
+    party, _fence = lease(db, "harbour-market")
     run = new_run(world, party)
     db.task_runs.update_one({"_id": run.id}, {"$set": {"used.tool_calls": 6}})
     decision = gate.call(world.ctx, run, "schedule_callback", {"at": 40.0})
@@ -247,9 +247,9 @@ def test_the_budget_is_counted_by_atlas_and_refuses_at_its_limit(db, world):
 
 
 def test_refusals_name_the_worker_the_saboteur_and_the_holder(db, world):
-    party, _fence = lease(db, "harbour-fire")
+    party, _fence = lease(db, "harbour-market")
     assert gate.who(new_run(world, party)) == "w2"
     assert gate.who(new_run(world, party, saboteur="loop")) == "w2 (saboteur)"
-    set_party(db, "harbour-fire", lease_owner=None)
+    set_party(db, "harbour-market", lease_owner=None)
     decision = gate.call(world.ctx, new_run(world, party), "place_call", {})
     assert decision.reason == f"No holder (epoch {party['lease_epoch']})"

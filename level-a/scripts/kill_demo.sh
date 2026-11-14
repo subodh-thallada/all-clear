@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 # The kill beat (spec "Demo script", 1:05): the worker dies between asking
-# ElevenLabs for the call to Corner Properties and saving the answer, the phone rings
+# ElevenLabs for the call to Corner Mart and saving the answer, the phone rings
 # once, the claim lands while the worker is down, and the restarted worker
 # adopts the attempt from the evidence instead of dialling again.
 #
 #   scripts/kill_demo.sh [--recall-id RCL] [--api URL] [--no-release] [--workers N]
 #
 # 1. python scripts/demo.py kill-arm: arms the after_dial_request failpoint for
-#    corner-properties through the API, releases Corner Properties and (unless
-#    --no-release) Queen St Alarm's held reply, whose claim names Corner Properties.
+#    corner-mart through the API, releases Corner Mart and (unless
+#    --no-release) Queen St Grocer's held reply, whose claim names Corner Mart.
 #    It refuses while another worker is alive: stop the supervisor first.
-# 2. Runs the worker in the foreground. When it dials Corner Properties the failpoint
+# 2. Runs the worker in the foreground. When it dials Corner Mart the failpoint
 #    kills it with exit code 137 (os._exit, like kill -9).
 # 3. Counts the kill as the supervisor would (python -m levela count-kill:
 #    runs.kills + 1 and "worker died with exit 137 (n)" on the wall), prints a
@@ -65,7 +65,7 @@ banner() {
 "$PYTHON" scripts/demo.py ${demo_opts[@]+"${demo_opts[@]}"} kill-arm ${arm_opts[@]+"${arm_opts[@]}"}
 
 banner "Starting the worker in the foreground." \
-       "It dies the moment it has asked for the call to Corner Properties."
+       "It dies the moment it has asked for the call to Corner Mart."
 code=0
 "${worker_cmd[@]}" || code=$?
 
@@ -82,7 +82,7 @@ fi
 "${count_cmd[@]}" || echo "Could not count the kill on the wall (see above); carrying on." >&2
 
 banner "WORKER KILLED (exit 137) by failpoint after_dial_request." \
-       "The call to Corner Properties was requested and never saved." \
+       "The call to Corner Mart was requested and never saved." \
        "Let the phone ring; the teammate answers \"received 25\"." \
        "Watch the wall: the claim lands while the worker is down." \
        "Press Enter to restart the worker."

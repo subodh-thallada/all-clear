@@ -1,11 +1,11 @@
 # All Clear
 
-An agent that runs a panel recall to completion. One batch of 2,400 panels went to
+An agent that runs a tin recall to completion. One batch of 2,400 tins went to
 about 40 parties and distributors; All Clear contacts every party by phone,
 through a party form and through two distributor order systems, books every count in
 MongoDB Atlas behind validators and transactions, finds the parties no shipment
 list named, survives being killed at random, adapts when an order system changes its
-contract, and refuses to close the recall until every panel is explained. The
+contract, and refuses to close the recall until every tin is explained. The
 database, not the model, decides what counts.
 
 Hackathon track: **Finish the Job**. The long run plays 10 simulated days in
@@ -179,12 +179,12 @@ Tests 8, 9 and 14 need a real phone; 12, 13 and 15 are also checked by hand.
 | 8 | Voice loop | Rejection spoken within about three seconds; numbers read back; four of five runs clean | By hand: `scripts/call_once.py`, `agent/README.md` ("Measurements"); the agent files by `tests/test_agent_config.py` |
 | 9 | Post-call webhook | The attempt completes and the transcript is stored | By hand with a real call; the handler by `tests/test_hooks.py` |
 | 10 | Simulated end to end | Recall 1 all simulated: metrics exact, one dispute of 15, not closable | `tests/e2e_sim.py` |
-| 11 | Memory | With memory, Corner Properties' attempt starts before Queen St Alarm's claim; without, after | `tests/test_memory.py` |
+| 11 | Memory | With memory, Corner Mart' attempt starts before Queen St Grocer's claim; without, after | `tests/test_memory.py` |
 | 12 | Wall display | New party within two seconds, the rejection in the feed, metrics match | By hand during test 10; assets by `tests/test_wall_assets.py` |
 | 13 | Fallback form | The same rejection and acceptance as the voice path | `tests/test_form.py`; by hand on a phone |
 | 14 | Kill demo with a real call | The phone rings once; the claim lands while the worker is down; adopted on restart | By hand: `scripts/kill_demo.sh`, checked by `scripts/demo.py kill` |
 | 15 | Full rehearsal | Three runs under three minutes, every beat landing, one on a hotspot | By hand: `docs/RUNBOOK.md`, `scripts/demo.py` |
-| 16 | Long run | 40 parties, 10 simulated days, under 3 minutes; only the slice's 15 disputed panels open; balance every simulated hour | `tests/test_long_run.py` |
+| 16 | Long run | 40 parties, 10 simulated days, under 3 minutes; only the slice's 15 disputed tins open; balance every simulated hour | `tests/test_long_run.py` |
 | 17 | Hold took effect | Accepted then dropped: stays `sent`, one resend with the same key verifies, one hold in the order system's log | `tests/test_order_system_hold.py` |
 | 18 | Order system change | Only `intent` and `sent` operations flagged; the repair passes the canary; only those retry | `tests/test_order_system_change.py` |
 | 19 | Bad mapping refused | A wrong mapping fails the canary; nothing activated; the order system stays paused | `tests/test_order_system_change.py` |

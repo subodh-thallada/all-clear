@@ -2,7 +2,7 @@
   "tool_config": {
     "type": "webhook",
     "name": "submit_count",
-    "description": "Record the counts and checks this party confirmed for the recalled batch of fire alarm panels. Call it only after every number and answer has been read back and confirmed with a yes, and send the complete set in one call: in_stock, returned, installed, fixed and forwarded_qty, with 0 for any the person said was none, plus the three checks when you asked them. After a correction, call it again with the complete corrected set. The reply says whether the counts were accepted. If stop is true, stop asking, thank the person and end the call. If accepted is false and the reply gives two values that disagree, say both plainly and ask them to check again. Otherwise do what the reply's message says.",
+    "description": "Record the counts and checks this party confirmed for the recalled batch of fire alarm tins. Call it only after every number and answer has been read back and confirmed with a yes, and send the complete set in one call: held, returned, on_shelf, fixed and forwarded_qty, with 0 for any the person said was none, plus the three checks when you asked them. After a correction, call it again with the complete corrected set. The reply says whether the counts were accepted. If stop is true, stop asking, thank the person and end the call. If accepted is false and the reply gives two values that disagree, say both plainly and ask them to check again. Otherwise do what the reply's message says.",
     "response_timeout_secs": 20,
     "api_schema": {
       "url": "{{PUBLIC_BASE_URL}}/tools/submit_count",
@@ -15,7 +15,7 @@
       },
       "request_body_schema": {
         "type": "object",
-        "description": "One party's confirmed counts for the recalled batch, in whole panels, and its checks.",
+        "description": "One party's confirmed counts for the recalled batch, in whole tins, and its checks.",
         "required": [
           "attempt_id",
           "party_id"
@@ -37,47 +37,47 @@
             "type": "string",
             "dynamic_variable": "system__call_sid"
           },
-          "in_stock": {
+          "held": {
             "type": "integer",
-            "description": "Panels of this batch the party still has in stock, not installed anywhere, as the person confirmed. Send 0 if they have none. Leave it out only if they could not give a number."
+            "description": "Tins of this batch the party still has in stock, not on_shelf anywhere, as the person confirmed. Send 0 if they have none. Leave it out only if they could not give a number."
           },
           "returned": {
             "type": "integer",
-            "description": "Panels of this batch already sent back to the supplier, as the person confirmed. Send 0 if none were returned. Leave it out only if they could not give a number."
+            "description": "Tins of this batch already sent back to the supplier, as the person confirmed. Send 0 if none were returned. Leave it out only if they could not give a number."
           },
-          "installed": {
+          "on_shelf": {
             "type": "integer",
-            "description": "Panels of this batch installed in the party's own buildings and not yet updated, as the person confirmed. Send 0 if none. An installer's panels installed at someone else's building are forwarded, not installed."
+            "description": "Tins of this batch on_shelf in the party's own buildings and not yet updated, as the person confirmed. Send 0 if none. An store's tins on_shelf at someone else's building are forwarded, not on_shelf."
           },
-          "fixed": {
+          "held": {
             "type": "integer",
-            "description": "Panels of this batch in the party's own buildings that the installer has already updated, as the person confirmed. Send 0 if none. Send the three checks with it."
+            "description": "Tins of this batch in the party's own buildings that the store has already updated, as the person confirmed. Send 0 if none. Send the three checks with it."
           },
           "forwarded_qty": {
             "type": "integer",
-            "description": "Panels of this batch installed at a building owner's site or passed to another installer, as the person confirmed. Send 0 if none went anywhere."
+            "description": "Tins of this batch on_shelf at a store's site or passed to another store, as the person confirmed. Send 0 if none went anywhere."
           },
           "forwarded_to_name": {
             "type": "string",
-            "description": "Name of the building owner or installer the forwarded panels went to, as read back and confirmed with the person. Send it only when forwarded_qty is more than 0; leave it out otherwise."
+            "description": "Name of the store or store the forwarded tins went to, as read back and confirmed with the person. Send it only when forwarded_qty is more than 0; leave it out otherwise."
           },
           "received_qty": {
             "type": "integer",
-            "description": "Only when the call details say to ask what they received: how many panels of this batch the party received from the party that sent them. Leave it out entirely for every other party, even as 0."
+            "description": "Only when the call details say to ask what they received: how many tins of this batch the party received from the party that sent them. Leave it out entirely for every other party, even as 0."
           },
           "received_from": {
             "type": "string",
-            "description": "Only for a party that received panels of this batch from more than one sender: the name of the party that sent the panels counted in received_qty, as read back and confirmed. Leave it out otherwise."
+            "description": "Only for a party that received tins of this batch from more than one sender: the name of the party that sent the tins counted in received_qty, as read back and confirmed. Leave it out otherwise."
           },
-          "model_seen": {
+          "batch_seen": {
             "type": "string",
-            "description": "Only when you asked the three checks: the model printed on the front of the panel, as read back and confirmed. Leave it out otherwise."
+            "description": "Only when you asked the three checks: the model printed on the front of the tin, as read back and confirmed. Leave it out otherwise."
           },
-          "version_seen": {
+          "sold_source": {
             "type": "string",
-            "description": "Only when you asked the three checks: the software version the panel's display shows, digits and points only, as read back and confirmed. Leave it out otherwise."
+            "description": "Only when you asked the three checks: the software version the tin's display shows, digits and points only, as read back and confirmed. Leave it out otherwise."
           },
-          "sounder_test": {
+          "block_test": {
             "type": "boolean",
             "description": "Only when you asked the three checks: true if the sounder rang when the test button was pressed, false if it did not. Leave it out otherwise."
           },
@@ -87,10 +87,10 @@
           },
           "forwards": {
             "type": "array",
-            "description": "Only when panels went to more than one building owner or installer: one entry per party with its name and the number of panels, as read back and confirmed. When every party is listed here, leave forwarded_qty and forwarded_to_name out. Leave it out entirely when one party or no party got panels.",
+            "description": "Only when tins went to more than one store or store: one entry per party with its name and the number of tins, as read back and confirmed. When every party is listed here, leave forwarded_qty and forwarded_to_name out. Leave it out entirely when one party or no party got tins.",
             "items": {
               "type": "object",
-              "description": "One party that received forwarded panels.",
+              "description": "One party that received forwarded tins.",
               "properties": {
                 "to_name": {
                   "type": "string",
@@ -98,7 +98,7 @@
                 },
                 "qty": {
                   "type": "integer",
-                  "description": "How many panels went to that party."
+                  "description": "How many tins went to that party."
                 }
               },
               "required": [

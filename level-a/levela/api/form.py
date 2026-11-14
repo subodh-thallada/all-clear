@@ -17,9 +17,9 @@ the same numbers reused its dedupe scope and got the stale rejection back.
 The party's live call attempt, when the form used it, is the worker's to
 close.
 
-Fields: a party that some sender reported forwarding panels to is asked for
+Fields: a party that some sender reported forwarding tins to is asked for
 its receipt whatever its tier (a tier 1 party can receive a transfer too),
-and a party several senders shipped to also picks which one the panels came
+and a party several senders shipped to also picks which one the tins came
 from. The delivery note is asked when the call asked for it or when memory
 flagged the party (V2 / DESIGN §10.4: an over-reporter must give it on every
 path, the form included).
@@ -59,8 +59,8 @@ log = logging.getLogger("levela.api.form")
 router = APIRouter()
 
 MAX_BODY = 16 * 1024
-NUMBER_FIELDS = ("in_stock", "installed", "fixed", "returned", "forwarded_qty", "received_qty")
-COUNT_KEYS = ("in_stock", "installed", "fixed", "returned", "forwarded_qty", "forwarded_to_name", "delivery_note")
+NUMBER_FIELDS = ("sold", "on_shelf", "held", "returned", "forwarded_qty", "received_qty")
+COUNT_KEYS = ("sold", "on_shelf", "held", "returned", "forwarded_qty", "forwarded_to_name", "delivery_note")
 BUSY_TEXT = "Someone else is updating this party right now. Please submit again."
 UNRECORDED_TEXT = "Your counts could not be recorded just now. Nothing was saved. Please submit again."
 
@@ -68,21 +68,22 @@ UNRECORDED_TEXT = "Your counts could not be recorded just now. Nothing was saved
 REJECTION_TEXT = {
     "delivery_note_required": "Enter the delivery note number from your paperwork, then submit again.",
     "delivery_note_mismatch": "That delivery note does not match the shipment record. Check it and submit again.",
-    "no_inbound_edge": ("No party has reported sending panels to you yet, so a receipt cannot be recorded. "
+    "no_inbound_edge": ("No party has reported sending tins to you yet, so a receipt cannot be recorded. "
                         "The recall team will contact you again."),
-    "receipt_sender_ambiguous": ("Panels reached you from more than one party. Choose the party these panels came "
+    "receipt_sender_ambiguous": ("Tins reached you from more than one party. Choose the party these tins came "
                                  "from, then submit again."),
-    "forward_missing_name": "Enter the name of the building owner or installer the panels went to.",
+    "forward_missing_name": "Enter the name of the store the tins went to.",
     "recall_closed": "This recall is already closed.",
-    "model_mismatch": "That is not the recalled model. Read the model printed on the front of the panel again.",
-    "fixed_needs_evidence": ("A panel counts as fixed only with the software version read off its display and a "
-                             "sounder that rang on the test. Enter both, or count the panels as installed."),
-    "version_affected": ("That software version is affected, so these panels are not fixed yet. Count them as "
-                         "installed; your installer will arrange the update."),
-    "sounder_not_confirmed": ("A panel counts as fixed only if the sounder rang when the test button was pressed. "
-                              "Count the panels as installed until it does."),
-    "panel_not_fixed": ("A connected panel at your site has not passed its own test yet, so it cannot be counted "
-                        "as fixed. Count it as installed."),
+    "held_needs_evidence": ("A tin counts as held only with the batch code read from under one tin and a till "
+                            "that refused the sale. Enter both, or count the tins as on the shelf."),
+    "batch_mismatch": ("That is not the recalled batch. Read the batch code printed under one tin again, or count "
+                       "the tins as on the shelf."),
+    "block_not_confirmed": ("A tin counts as held only once the till refuses the sale when one is scanned. Count "
+                            "the tins as on the shelf until it does."),
+    "sold_needs_till": ("A sold count must come from the till. Open the item sales report on the till and enter "
+                        "the number it shows."),
+    "stock_record_on_shelf": ("Your store's own stock record still shows tins on the shelf, and it outranks this "
+                              "form. Count them as on the shelf until staff move them to quarantine."),
     "bad_answer": "One of the check answers could not be read. Check it and submit again.",
 }
 
@@ -187,7 +188,7 @@ def _needs_note(party: dict, attempt: dict | None) -> bool:
 
 
 def _senders(db, party: dict) -> list[str]:
-    """The names of the parties that reported forwarding panels to this party,
+    """The names of the parties that reported forwarding tins to this party,
     whatever its tier, so the form can ask about them by name (and ask which
     one, when there are several)."""
     ids = sorted(e["from_party"] for e in db.edges.find(
@@ -212,12 +213,12 @@ def raw_from_form(values: dict, party: dict, *, receipt: bool | None = None) -> 
     asked for one (`receipt`, see tools.receives_transfers; without it, a
     party below tier 1): a tier 1 party that received a transfer is asked too,
     or its receipt was dropped and its true counts refused as an over-count.
-    The three checks are read from a building owner only."""
+    The three checks are read from a store only."""
     keys = list(COUNT_KEYS)
     asks_receipt = party.get("tier") != 1 if receipt is None else receipt
     if asks_receipt:
         keys += ["received_qty", "received_from"]
-    if party.get("type") == "owner":
+    if party.get("type") == "store":
         keys += list(CHECK_FIELDS)
     return {k: values[k] for k in keys if values.get(k)}
 
@@ -324,7 +325,7 @@ def _not_found() -> HTMLResponse:
 def render_page(party: dict, recall: dict, *, values: dict | None = None, need_note: bool = False,
                 senders: list[str] | None = None, receipt: bool | None = None, result: dict | None = None,
                 raw: dict | None = None, error: str | None = None) -> str:
-    """The whole page. `senders` names the parties that forwarded panels here;
+    """The whole page. `senders` names the parties that forwarded tins here;
     `receipt` says whether to ask for a receipt (default: a party below tier
     1, or any party with a sender)."""
     senders = senders or []
@@ -337,20 +338,20 @@ def render_page(party: dict, recall: dict, *, values: dict | None = None, need_n
         parts.append(_result(result, party, raw or {}))
     if recall["status"] != "open":
         parts.append("<section class=\"result ok\" role=\"status\"><h2>All clear</h2>"
-                     "<p>Every panel of the batch is found and fixed or returned. Thank you.</p></section>")
+                     "<p>Every tin of the batch is found and off the shelf. Thank you.</p></section>")
     else:
         parts.append(_form(party, recall, values or {}, need_note, senders, receipt))
     parts.append("<p class=\"foot\">Your numbers are checked by the database against the shipment record. "
-                 "Nothing is saved unless every panel adds up.</p>")
+                 "Nothing is saved unless every tin adds up.</p>")
     return _page(f"{party['name']} - recall of batch {recall['batch_code']}", "".join(parts))
 
 
 def _header(party: dict, recall: dict) -> str:
-    facts = [("Product", recall.get("product")), ("Supplier", recall.get("supplier")),
-             ("Model", recall.get("model")), ("Batch", recall.get("batch_code"))]
+    facts = [("Product", recall.get("product")), ("Company", recall.get("company")),
+             ("Barcode", recall.get("barcode")), ("Batch", recall.get("batch_code"))]
     rows = "".join(f"<div><dt>{_e(k)}</dt><dd>{_e(v)}</dd></div>" for k, v in facts if v)
     rows += f"<div class=\"hazard\"><dt>Hazard</dt><dd>{_e(recall.get('hazard'))}</dd></div>"
-    return (f"<header><p class=\"eyebrow\">All Clear: panel recall {_e(recall['_id'])}</p>"
+    return (f"<header><p class=\"eyebrow\">All Clear: tin recall {_e(recall['_id'])}</p>"
             f"<h1>{_e(party['name'])}</h1><dl class=\"facts\">{rows}</dl></header>")
 
 
@@ -374,36 +375,38 @@ def _plural(unit: str) -> str:
 
 
 def _form(party: dict, recall: dict, values: dict, need_note: bool, senders: list[str], receipt: bool) -> str:
-    unit = _plural(recall.get("unit") or "panel")
+    unit = _plural(recall.get("unit") or "tin")
     fields = []
     if need_note:
         fields.append(_field("delivery_note", "Delivery note number", "Printed on the delivery paperwork",
                              values, numeric=False))
     if receipt and len(senders) > 1:
         # One receipt per submission: the ledger books it on that sender's transfer.
-        fields.append(_choice("received_from", "Received from", "Several parties sent panels to you: pick one, "
+        fields.append(_choice("received_from", "Received from", "Several parties sent tins to you: pick one, "
                               "enter what came from it, and submit once for each party", senders, values))
         fields.append(_field("received_qty", f"{unit.capitalize()} received", "From the party chosen above", values))
     elif receipt:
         hint = f"From {senders[0]}" if senders else "From the party that sent them to you"
         fields.append(_field("received_qty", f"{unit.capitalize()} received", hint, values))
     fields += [
-        _field("in_stock", "In stock", "Not installed anywhere yet", values),
-        _field("installed", "Installed, not yet fixed", "In a building, still on the old software", values),
-        _field("fixed", "Fixed", "Updated, and the sounder rang on the test", values),
-        _field("returned", "Returned", "Sent back to the supplier", values),
+        _field("sold", "Sold", "Sold to shoppers since the delivery, as the till's item sales report shows", values),
+        _field("on_shelf", "On the shelf", "Still out for sale", values),
+        _field("held", "Held", "Pulled from sale and kept apart", values),
+        _field("returned", "Returned", "Sent back to the company", values),
     ]
-    forward = ("<fieldset><legend>Installed at a building you do not own, or passed to another installer</legend>"
+    forward = ("<fieldset><legend>Passed to another store</legend>"
                + _field("forwarded_qty", f"How many {unit}", "Leave blank if none", values)
-               + _field("forwarded_to_name", "Building owner or installer", "Their name", values, numeric=False)
+               + _field("forwarded_to_name", "Store", "Their name", values, numeric=False)
                + "</fieldset>")
     checks = ""
-    if party.get("type") == "owner":
-        checks = ("<fieldset><legend>Checks at one of the panels</legend>"
-                  + _field("model_seen", "Model", "Printed on the front of the panel", values, numeric=False)
-                  + _field("version_seen", "Software version", "As the display shows it, for example 2.4", values,
+    if party.get("type") == "store":
+        checks = ("<fieldset><legend>Checks</legend>"
+                  + _field("batch_seen", "Batch code", "Printed under one tin, for example B-4471", values,
                            numeric=False)
-                  + _choice("sounder_test", "Sounder test", "Press the test button: did the sounder ring?",
+                  + _choice("sold_source", "Where the sold count came from",
+                            "Open the item sales report on the till", ["till report", "estimate"], values,
+                            prompt="Choose one")
+                  + _choice("block_test", "Till test", "Scan one tin at the till: did the till refuse the sale?",
                             ["yes", "no"], values, prompt="Choose yes or no")
                   + "</fieldset>")
     return (f"<form method=\"post\" novalidate><fieldset><legend>Count the {_e(unit)} of batch "
@@ -420,7 +423,7 @@ def _result(result: dict, party: dict, raw: dict) -> str:
 def _accepted(result: dict, party: dict, raw: dict) -> str:
     said = ("These counts were already recorded." if result.get("duplicate")
             else f"Recorded: {describe_counts(raw)}.")
-    booked = [("In stock", "in_stock"), ("Installed, not fixed", "installed"), ("Fixed", "fixed"),
+    booked = [("Sold", "sold"), ("On the shelf", "on_shelf"), ("Held", "held"),
               ("Returned", "returned"), ("Passed on", "forwarded"), ("Not located", "unresolved")]
     items = "".join(f"<li>{_e(label)} <b>{_e(party.get(key))}</b></li>" for label, key in booked)
     return ("<section class=\"result ok\" role=\"status\"><h2>Accepted</h2>"

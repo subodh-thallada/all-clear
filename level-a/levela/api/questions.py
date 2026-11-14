@@ -50,9 +50,9 @@ PER_CALL = 3            # questions asked on one call: the call stays short and 
 
 # How the agent is told to collect each kind of answer.
 HOW_TO_ANSWER = {
-    "yes_no_count": "yes or no, and how many panels",
+    "yes_no_count": "yes or no, and how many tins",
     "yes_no": "yes or no",
-    "count": "a number of panels",
+    "count": "a number of tins",
     "text": "a few words",
 }
 _YES = {"yes", "y", "yeah", "yep", "true"}
@@ -229,7 +229,7 @@ def list_questions(db, recall_id: str) -> list[dict]:
 
 
 def counts_on_books(party: dict) -> bool:
-    """Every panel at the party is explained by its own accepted claim."""
+    """Every tin at the party is explained by its own accepted claim."""
     return party.get("state") in ("claimed", "reconciled") and party.get("unresolved") == 0
 
 
@@ -242,7 +242,7 @@ def call_variables(db, party: dict, *, take_counts: bool | None = None, session=
     """The question part of a call's dynamic variables (all strings, as
     ElevenLabs requires), in the form agent/prompt.md reads them:
 
-        questions     "q-02: Did you also receive batch L-4480? (answer: yes or no, and how many panels)."
+        questions     "q-02: Did you also receive batch L-4480? (answer: yes or no, and how many tins)."
         question_ids  "q-02"
         ask_counts    "yes" | "no"
 
@@ -276,18 +276,18 @@ def _yes_no(value) -> str:
 
 def _count(value) -> int:
     if isinstance(value, bool):
-        raise QuestionError("bad_answer", "the count must be a whole number of panels")
+        raise QuestionError("bad_answer", "the count must be a whole number of tins")
     if isinstance(value, int) and value >= 0:
         return value
     if isinstance(value, float) and value.is_integer() and value >= 0:
         return int(value)
     if isinstance(value, str) and value.strip().replace(",", "").isdigit():
         return int(value.strip().replace(",", ""))
-    raise QuestionError("bad_answer", "the count must be a whole number of panels")
+    raise QuestionError("bad_answer", "the count must be a whole number of tins")
 
 
 def _yes_no_count(value) -> dict:
-    """{"answer": "yes"|"no", "count": n|None} from a dict, "yes, 12 panels", "no", or a bare count."""
+    """{"answer": "yes"|"no", "count": n|None} from a dict, "yes, 12 tins", "no", or a bare count."""
     if isinstance(value, dict):
         answer = _yes_no(value.get("answer"))
         count = None if value.get("count") in (None, "") else _count(value.get("count"))
@@ -323,8 +323,8 @@ def _panels(n: int, unit: str) -> str:
     return f"{n} {unit if n == 1 else plural}"
 
 
-def answer_text(answer_type: str, value, unit: str = "panel") -> str:
-    """'yes, 12 panels' - the answer as the screen shows it."""
+def answer_text(answer_type: str, value, unit: str = "tin") -> str:
+    """'yes, 12 tins' - the answer as the screen shows it."""
     if answer_type == "yes_no_count":
         if value["answer"] == "no":
             return "no"

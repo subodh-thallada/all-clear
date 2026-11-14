@@ -15,7 +15,7 @@ from levela.providers.profiles import ANSWER, BUSY, CALLBACK, NO_ANSWER, Context
 
 SCN = load_scenario("recall_long")
 TRUTH = SCN["sim_truth"]
-BUCKETS = ("in_stock", "installed", "fixed", "returned")
+BUCKETS = ("held", "on_shelf", "held", "returned")
 L4480 = {"id": "q-02", "text": "Did you also receive batch B-4480?", "answer_type": "yes_no_count"}
 
 
@@ -43,9 +43,9 @@ def test_straight_answers_the_first_call_with_the_truth():
     assert claim == {"received_qty": t["received"], **{b: t[b] for b in BUCKETS}}
     assert total(claim) == claim["received_qty"]
     assert reply.say == [profiles.spoken(claim)]
-    lakeside = play("lakeside-systems").claims[0]
+    lakeside = play("lakeside-foods").claims[0]
     assert "received_qty" not in lakeside, "a party on the shipment list confirms no receipt"
-    assert (lakeside["in_stock"], lakeside["returned"]) == (20, 60)
+    assert (lakeside["held"], lakeside["returned"]) == (20, 60)
 
 
 def test_a_no_answer_party_answers_only_on_the_third_attempt():
@@ -83,7 +83,7 @@ def test_an_over_reporter_reports_more_than_it_received_then_the_truth():
     reply = play("ridgeway-alarm-co")
     wrong, right = reply.claims
     assert total(wrong) == wrong["received_qty"] + by, "Atlas must refuse the first count"
-    assert wrong["in_stock"] == right["in_stock"] + by
+    assert wrong["held"] == right["held"] + by
     assert right == truth_claim("ridgeway-alarm-co") and total(right) == right["received_qty"]
     assert reply.say[1].startswith("Sorry, I was reading the wrong line.")
     assert [t[0] for t in reply.claim_turns()] == [wrong, right]
@@ -99,7 +99,7 @@ def test_a_forwarder_reports_several_destinations_as_a_list_and_corrects_on_foll
     real = {f["to_name"]: f["qty"] for f in t["forwards"]}
     assert set(said) == set(real) and "forwarded_qty" not in first
     assert said["Larkspur Residences"] == real["Larkspur Residences"] + lie["extra"]
-    assert first["in_stock"] == t["in_stock"] - lie["extra"]
+    assert first["held"] == t["held"] - lie["extra"]
     assert total(first) == first["received_qty"] == t["received"], "the first claim still conserves"
     followup = play("birchmount-fire-protection", purpose="dispute_followup", told_qty=real["Larkspur Residences"])
     assert followup.claims == [truth_claim("birchmount-fire-protection")]
@@ -111,7 +111,7 @@ def test_a_forwarder_with_one_destination_uses_the_single_fields():
     (fwd,) = TRUTH["juniper-lane-alarm"]["truth"]["forwards"]
     assert (claim["forwarded_qty"], claim["forwarded_to_name"]) == (fwd["qty"], "Willow Creek Towers")
     assert "forwards" not in claim and total(claim) == claim["received_qty"]
-    assert "We installed or passed on" in play("juniper-lane-alarm").say[0]
+    assert "We on_shelf or passed on" in play("juniper-lane-alarm").say[0]
 
 
 def test_a_short_receiver_reports_fewer_than_its_sender_claims_and_stands_by_it():
@@ -140,19 +140,19 @@ def test_a_reviser_answers_the_truth_and_plans_its_correction_48_hours_later():
     assert play("glenholme-fire-services").claims == [truth_claim("glenholme-fire-services")]
     plan = profiles.revision_plan(e["profile"], e["truth"], e["params"], accepted_at=30.5)
     assert plan.submit_at == 78.5
-    assert plan.fields["in_stock"] == e["truth"]["in_stock"] - delta
+    assert plan.fields["held"] == e["truth"]["held"] - delta
     assert plan.fields["returned"] == e["truth"]["returned"] + delta
     assert total(plan.fields) == plan.fields["received_qty"]
     assert profiles.revision_plan("straight", e["truth"], e["params"], 30.5) is None
     with pytest.raises(ValueError, match="cannot move"):
-        profiles.revised_truth(e["truth"], e["truth"]["in_stock"] + 1)
+        profiles.revised_truth(e["truth"], e["truth"]["held"] + 1)
 
 
 # ---------------------------------------------------------------- questions
 
 def test_a_question_call_answers_from_the_truth_and_asks_no_counts():
     count = TRUTH["cedarbrae-life-safety"]["truth"]["other_batches"]["B-4480"]
-    questions = (L4480, {"id": "q-03", "text": "How many panels of B-4480?", "answer_type": "count"},
+    questions = (L4480, {"id": "q-03", "text": "How many tins of B-4480?", "answer_type": "count"},
                  {"id": "q-04", "text": "Any of B-4480 left?", "answer_type": "yes_no"},
                  {"id": "q-05", "text": "Anything else to tell us?", "answer_type": "text"})
     reply = play("cedarbrae-life-safety", purpose="ask_question", open_questions=questions, reached_before=True,
@@ -161,8 +161,8 @@ def test_a_question_call_answers_from_the_truth_and_asks_no_counts():
     assert reply.answers == [{"question_id": "q-02", "value": {"answer": "yes", "count": count}},
                              {"question_id": "q-03", "value": count}, {"question_id": "q-04", "value": "yes"},
                              {"question_id": "q-05", "value": "No, nothing like that here."}]
-    assert reply.answer_turns()[0][1] == f"Yes, we got {count} panels of batch B-4480."
-    none = play("lakeside-systems", purpose="ask_question", open_questions=(L4480,))
+    assert reply.answer_turns()[0][1] == f"Yes, we got {count} tins of batch B-4480."
+    none = play("lakeside-foods", purpose="ask_question", open_questions=(L4480,))
     assert none.answers == [{"question_id": "q-02", "value": {"answer": "no", "count": 0}}]
     assert none.say == ["No, we never had batch B-4480."]
 
@@ -214,15 +214,15 @@ def test_every_simulated_party_eventually_gives_a_count_that_conserves():
 def test_unknown_profile_and_spoken_lines():
     with pytest.raises(ValueError, match="unknown behaviour profile"):
         respond("grumpy", {}, {}, Context())
-    assert profiles.spoken({"received_qty": 12, "in_stock": 12, "returned": 0},
+    assert profiles.spoken({"received_qty": 12, "held": 12, "returned": 0},
                            "Juniper Lane Alarm") == "We received 12 from Juniper Lane Alarm. 12 in stock."
-    assert profiles.spoken({"in_stock": 0, "returned": 0}) == "None left in stock."
-    assert profiles.spoken({"in_stock": 1, "returned": 2,
+    assert profiles.spoken({"held": 0, "returned": 0}) == "None left in stock."
+    assert profiles.spoken({"held": 1, "returned": 2,
                             "forwards": [{"to_name": "A", "qty": 3}, {"to_name": "B", "qty": 4},
                                          {"to_name": "C", "qty": 5}]}) == \
-        "1 in stock, 2 sent back. We installed or passed on 3 to A, 4 to B and 5 to C."
-    assert profiles.spoken({"installed": 3, "model_seen": "DEMO-7", "version_seen": "2.4", "sounder_test": False}) == \
-        "3 installed. The front says DEMO-7, the display shows 2.4, and the sounder did not ring on the test."
+        "1 in stock, 2 sent back. We on_shelf or passed on 3 to A, 4 to B and 5 to C."
+    assert profiles.spoken({"on_shelf": 3, "batch_seen": "B-4471", "sold_source": "2.4", "block_test": False}) == \
+        "3 on_shelf. The front says B-4471, the display shows 2.4, and the sounder did not ring on the test."
 
 
 # ---------------------------------------------------------------- the fix script
@@ -231,17 +231,17 @@ def test_a_building_owner_reports_installed_before_its_fix_and_fixed_after():
     e = TRUTH["maple-court"]
     fix = e["truth"]["fix"]
     before = play("maple-court", sim_now=fix["at"] - 1).claims[0]
-    after = play("maple-court", purpose="fix_check", sim_now=fix["at"] + 1, reached_before=True).claims[0]
-    assert (before["installed"], before["fixed"]) == (e["truth"]["installed"], 0)
-    assert (before["model_seen"], before["version_seen"], before["sounder_test"]) == (
-        "DEMO-7", fix["version_before"], False)
-    assert (after["installed"], after["fixed"]) == (0, e["truth"]["installed"])
-    assert (after["version_seen"], after["sounder_test"]) == ("2.5", True)
+    after = play("maple-court", purpose="removal_check", sim_now=fix["at"] + 1, reached_before=True).claims[0]
+    assert (before["on_shelf"], before["held"]) == (e["truth"]["on_shelf"], 0)
+    assert (before["batch_seen"], before["sold_source"], before["block_test"]) == (
+        "B-4471", fix["version_before"], False)
+    assert (after["on_shelf"], after["held"]) == (0, e["truth"]["on_shelf"])
+    assert (after["sold_source"], after["block_test"]) == ("2.5", True)
     assert total(before) == total(after) == before["received_qty"]
-    assert fix["version_before"] in SCN["recall"]["affected_versions"]
+    assert fix["version_before"] in SCN["recall"]["affected_batches"]
 
 
 def test_only_building_owners_answer_the_three_checks():
-    assert "version_seen" not in play("lambton-mills-alarm").claims[0]
+    assert "sold_source" not in play("lambton-mills-alarm").claims[0]
     for sid, e in TRUTH.items():
-        assert ("fix" in e["truth"]) == (e["type"] == "owner"), sid
+        assert ("fix" in e["truth"]) == (e["type"] == "store"), sid

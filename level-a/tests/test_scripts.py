@@ -404,7 +404,7 @@ def _wall(**over) -> dict:
         "metrics": {"checks_completed": [31, 40], "units_documented": [2115, 2400],
                     "units_recovered": [1340, 2400], "open_units": 285, "disputed_units": 15,
                     "mass_balance": 2400, "units_total": 2400},
-        "parties": [{"party_id": "harbour-fire", "hold_for_demo": True, "live_attempt": None}],
+        "parties": [{"party_id": "harbour-market", "hold_for_demo": True, "live_attempt": None}],
         "edges": [], "feed": [], "failpoints": {}, "calls": {"total": 0, "by_party": {}},
         "systems": [{"system": "phone", "attempts": 58, "accepted_claims": 29},
                     {"system": "North orders", "adapter_version": 1, "adapter_source": "builtin",
@@ -460,7 +460,7 @@ def test_close_beat_presses_close_and_sees_the_refusal():
     assert code == 0, out
     assert api.posts == [("/admin/close", {"recall_id": "RCL-TEST-1"})]
     assert "ok       Atlas refused the close" in out and "close refused: 285 open units" in out
-    assert 'Say: "Fifteen panels are unexplained' in out
+    assert 'Say: "Fifteen tins are unexplained' in out
 
 
 def test_a_line_from_before_the_beat_does_not_count():
@@ -480,10 +480,10 @@ def test_check_only_does_not_act_and_counts_what_is_on_the_wall():
 
 def test_judge_pauses_kills_and_releases_harbour_fire_and_lakeside_only():
     def release(body, api):
-        if body["party_id"] == "harbour-fire":
-            api.state["parties"] = [{"party_id": "harbour-fire", "hold_for_demo": False,
+        if body["party_id"] == "harbour-market":
+            api.state["parties"] = [{"party_id": "harbour-market", "hold_for_demo": False,
                                     "live_attempt": {"_id": "att_1", "state": "dialed"}}]
-            api.state["feed"] = [_line("claim_accepted", party_id="lakeside-systems")]
+            api.state["feed"] = [_line("claim_accepted", party_id="lakeside-foods")]
         return {"unheld": [body["party_id"]]}
 
     def pause(body, api):
@@ -493,8 +493,8 @@ def test_judge_pauses_kills_and_releases_harbour_fire_and_lakeside_only():
     code, out = _demo(api, ["judge"])
     assert code == 0, out
     assert [(p, b.get("party_id"), b.get("paused")) for p, b in api.posts] == [
-        ("/admin/supervisor", None, True), ("/admin/release", "harbour-fire", None),
-        ("/admin/release", "lakeside-systems", None)]
+        ("/admin/supervisor", None, True), ("/admin/release", "harbour-market", None),
+        ("/admin/release", "lakeside-foods", None)]
 
 
 def test_kill_arm_refuses_while_a_worker_is_alive():
@@ -504,8 +504,8 @@ def test_kill_arm_refuses_while_a_worker_is_alive():
     assert "Stop the supervisor first" in out
 
 
-@pytest.mark.parametrize("argv, released", [(["kill-arm"], ["corner-properties", "queen-st-alarm"]),
-                                            (["kill-arm", "--no-release"], ["corner-properties"])])
+@pytest.mark.parametrize("argv, released", [(["kill-arm"], ["corner-mart", "queen-st-grocer"]),
+                                            (["kill-arm", "--no-release"], ["corner-mart"])])
 def test_kill_arm_arms_before_it_releases(argv, released):
     def arm(body, api):
         api.state["failpoints"] = {body["name"]: {"party_id": body["party_id"]}}
@@ -513,19 +513,19 @@ def test_kill_arm_arms_before_it_releases(argv, released):
     api = FakeApi(_wall(), workers=[{"name": "old", "alive": False}], on_post={"/admin/failpoint": arm})
     code, out = _demo(api, argv)
     assert code == 0, out
-    assert api.posts[0] == ("/admin/failpoint", {"name": "after_dial_request", "party_id": "corner-properties"})
+    assert api.posts[0] == ("/admin/failpoint", {"name": "after_dial_request", "party_id": "corner-mart"})
     assert [b["party_id"] for p, b in api.posts[1:]] == released
     assert all(p == "/admin/release" for p, _ in api.posts[1:])
 
 
 def test_kill_evidence_must_follow_the_failpoint():
     """A resume line from an earlier restart proves nothing about this kill."""
-    resumed, adopted = demo.after_fire("worker_resumed"), demo.after_fire("attempt_adopted", party_id="corner-properties")
-    fired = _line("failpoint_fired", at=NOW, party_id="corner-properties")
+    resumed, adopted = demo.after_fire("worker_resumed"), demo.after_fire("attempt_adopted", party_id="corner-mart")
+    fired = _line("failpoint_fired", at=NOW, party_id="corner-mart")
     before = demo.View(_wall(), [_line("worker_resumed", at=EARLIER), fired])
     assert not resumed(before, before)
     after = demo.View(_wall(), [fired, _line("worker_resumed", at=LATER),
-                                _line("attempt_adopted", at=LATER, party_id="corner-properties")])
+                                _line("attempt_adopted", at=LATER, party_id="corner-mart")])
     assert resumed(after, after) and adopted(after, after)
     assert not resumed(demo.View(_wall(), [_line("worker_resumed")]), before)     # never fired
 
@@ -555,12 +555,12 @@ def test_start_posts_the_recall_and_prints_the_forms():
     def started(body, api):
         return {"recall_id": "RCL-2026-020", "mode": "demo", "options": {},
                 "run": {"sim_start_label": "d0 09:00", "seconds_per_sim_hour": 15, "order_system_change_at": {}},
-                "parties": [{"party_id": "harbour-fire", "channel": "voice", "form_url": "https://x/form/t"}]}
+                "parties": [{"party_id": "harbour-market", "channel": "voice", "form_url": "https://x/form/t"}]}
     api = FakeApi(_wall(), on_post={"/admin/recalls": started})
-    code, out = _demo(api, ["start", "--speed", "15", "--sim-party", "corner-properties"])
+    code, out = _demo(api, ["start", "--speed", "15", "--sim-party", "corner-mart"])
     assert code == 0, out
     assert api.posts == [("/admin/recalls", {"scenario": "recall_long", "mode": "demo", "all_sim": False,
-                                             "seconds_per_sim_hour": 15.0, "sim_parties": ["corner-properties"]})]
+                                             "seconds_per_sim_hour": 15.0, "sim_parties": ["corner-mart"]})]
     assert "started RCL-2026-020" in out and "by hand" in out and "https://x/form/t" in out
 
 

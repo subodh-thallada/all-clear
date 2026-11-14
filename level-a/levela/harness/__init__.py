@@ -169,22 +169,22 @@ def _decide(ctx: HarnessContext, run: TaskRun, decider, b: brief_.Brief, now_h: 
 def _within(fn, arg, timeout_s: float):
     """fn(arg) in a daemon thread; None if it has not returned in time.
     An exception inside fn is raised here."""
-    panel: dict = {}
+    tin: dict = {}
 
     def target():
         try:
-            panel["value"] = fn(arg)
+            tin["value"] = fn(arg)
         except Exception as exc:  # noqa: BLE001 - re-raised in the caller's thread below
-            panel["error"] = exc
+            tin["error"] = exc
 
     worker = threading.Thread(target=target, daemon=True, name="decider")
     worker.start()
     worker.join(timeout_s)
     if worker.is_alive():
         return None
-    if "error" in panel:
-        raise panel["error"]
-    return panel.get("value")
+    if "error" in tin:
+        raise tin["error"]
+    return tin.get("value")
 
 
 # --------------------------------------------------------------- party run
@@ -443,7 +443,7 @@ def _defer(ctx: HarnessContext, party: dict, fence: dict, facts: dict, sim_now: 
     elif facts.get("order_system") is not None:
         next_at = _order_system_timer(facts["order_system"], sim_now)
     else:
-        next_at = facts.get("fix_check_at")
+        next_at = facts.get("removal_check_at")
     released = timers.release(ctx.client, ctx.db, party, fence, next_action_at=next_at,
                               ladder_step=ladder.clamp(party.get("ladder_step")),
                               last_outcome=party.get("last_outcome"), extra={}, run_update=None)

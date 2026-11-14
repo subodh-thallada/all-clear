@@ -130,7 +130,7 @@ def test_agent_config_has_the_vendor_shape():
     assert conv["tts"]["model_id"] == "eleven_flash_v2_5"
     assert conv["conversation"]["max_duration_seconds"] == 180
     assert conv["turn"] == {"turn_timeout": 7, "silence_end_call_timeout": 20}
-    assert {"recall", "batch", "panels", "on hand", "delivery note", "Corner Properties",
+    assert {"recall", "batch", "tins", "on hand", "delivery note", "Corner Mart",
             "call back", "tomorrow"} <= set(conv["asr"]["keywords"])
     hooks = agent["platform_settings"]["workspace_overrides"]["webhooks"]
     assert hooks["events"] == ["transcript", "call_initiation_failure"]
@@ -214,7 +214,7 @@ def test_the_worker_writes_the_question_variables_the_way_the_agent_reads_them(d
         doc = questions.insert_question(db, recall_id=rid, text=text if n == number else f"Question {n}?",
                                         answer_type=answer_type, applies_to={}, sim_now=9.0, by="admin")
     assert doc["question_id"] == qid
-    party = {"recall_id": rid, "party_id": "harbour-fire", "state": "contacting", "unresolved": 40,
+    party = {"recall_id": rid, "party_id": "harbour-market", "state": "contacting", "unresolved": 40,
              "open_questions": [qid]}
     sent = questions.call_variables(db, party)
     assert sent == {k: example[k] for k in ("questions", "question_ids", "ask_counts")}
@@ -633,13 +633,13 @@ def test_call_once_sends_exactly_the_worker_variables():
 def test_call_once_attempt_and_overrides():
     voice = FakeVoice()
     code, out = _call(["--attempt", "att_0123456789abcd", "--var", "tier=downstream",
-                       "--var", "sender_name=Queen St Alarm"],
+                       "--var", "sender_name=Queen St Grocer"],
                       voice=voice, env={"PHONE_HARBOUR": TO})
     assert code == 0, out
     (call,) = voice.calls
     assert call["to_number"] == TO and call["attempt_id"] == "att_0123456789abcd"
     assert call["dynamic_variables"]["tier"] == "downstream"
-    assert call["dynamic_variables"]["sender_name"] == "Queen St Alarm"
+    assert call["dynamic_variables"]["sender_name"] == "Queen St Grocer"
     assert "call not recognised" not in out
 
 

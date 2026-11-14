@@ -1,26 +1,26 @@
 {
   "scenario_id": "recall_long",
   "synthetic": true,
-  "about": "The long run. Batch B-4471 of DEMO-7 fire alarm panels, 2,400 panels, 40 parties over 10 simulated days: 5 on the shipment records, 21 installers found in the distributors' order systems, 14 named by forwarders (12 building owners, one more installer and Corner Properties). 36 are simulated parties with behaviour profiles; Harbour Fire and Corner Properties answer real phones in the demo. Every building owner's panels are installed at first and fixed two to four simulated days in. Ends with only the slice's panels open (15 disputed, 25 installed and not fixed at Corner Properties), so the recall cannot close.",
+  "about": "The long run. Batch B-4471 of B-4471 fire alarm tins, 2,400 tins, 40 parties over 10 simulated days: 5 on the shipment records, 21 stores found in the distributors' order systems, 14 named by forwarders (12 stores, one more store and Corner Mart). 36 are simulated parties with behaviour profiles; Harbour Market and Corner Mart answer real phones in the demo. Every store's tins are on_shelf at first and fixed two to four simulated days in. Ends with only the slice's tins open (15 disputed, 25 on_shelf and not fixed at Corner Mart), so the recall cannot close.",
   "seed": 20261114,
   "recall": {
     "_id": "RCL-2026-020",
     "batch_code": "B-4471",
     "batch_spoken": "B, four four seven one",
-    "model": "DEMO-7",
-    "product": "DEMO-7 fire alarm control panel",
-    "supplier": "Kestrel Life Safety",
+    "model": "B-4471",
+    "product": "Maple Farm milk powder 800 g",
+    "supplier": "Maple Farm Foods",
     "hazard": "The sounder circuit may fail to activate in an alarm",
-    "affected_versions": [
+    "affected_batches": [
       "2.3",
       "2.4"
     ],
-    "fixed_version": "2.5",
+    "action": "2.5",
     "checks": [
       {
         "id": "model",
         "label": "Affected unit",
-        "question": "What model is printed on the front of the panel?",
+        "question": "What model is printed on the front of the tin?",
         "answer": "model",
         "rule": "Must be the recalled model"
       },
@@ -39,39 +39,39 @@
         "rule": "fixed needs yes"
       }
     ],
-    "unit": "panel",
+    "unit": "tin",
     "units_total": 2400
   },
   "parties": [
     {
-      "party_id": "harbour-fire",
-      "name": "Harbour Fire",
-      "type": "installer",
+      "party_id": "harbour-market",
+      "name": "Harbour Market",
+      "type": "store",
       "tier": 1,
       "channel": "voice",
       "phone_env": "PHONE_HARBOUR",
       "sim_phone": "+14165550141",
       "shipped_in": 40,
       "delivery_note": "DN-48213",
-      "profile": "Fire alarm contractor on Queens Quay by the Toronto waterfront. A crew of four technicians installs and services panels in mid-rise residential buildings. Buys panels from the supplier by the case. The office manager answers the phone during working hours.",
+      "profile": "Fire alarm contractor on Queens Quay by the Toronto waterfront. A crew of four technicians installs and services tins in mid-rise residential buildings. Buys tins from the supplier by the case. The office manager answers the phone during working hours.",
       "slice": true
     },
     {
-      "party_id": "queen-st-alarm",
-      "name": "Queen St Alarm",
-      "type": "installer",
+      "party_id": "queen-st-grocer",
+      "name": "Queen St Grocer",
+      "type": "store",
       "tier": 1,
       "channel": "sim",
       "phone": "+14165550142",
       "shipped_in": 120,
       "delivery_note": "DN-48214",
-      "profile": "Fire alarm installer on Queen St W in Parkdale, Toronto. A busy contractor with a stock room larger than its jobs need. Installs panels for property managers across the west end and keeps its job sheets on paper.",
+      "profile": "Fire alarm store on Queen St W in Parkdale, Toronto. A busy contractor with a stock room larger than its jobs need. Installs tins for property managers across the west end and keeps its job sheets on paper.",
       "slice": true
     },
     {
-      "party_id": "lakeside-systems",
-      "name": "Lakeside Systems",
-      "type": "installer",
+      "party_id": "lakeside-foods",
+      "name": "Lakeside Foods",
+      "type": "store",
       "tier": 1,
       "channel": "sim",
       "phone": "+14165550143",
@@ -89,7 +89,7 @@
       "order_system": "north",
       "shipped_in": 1300,
       "delivery_note": "DN-48216",
-      "profile": "Regional fire and security distributor serving installers north and west of the city. Ships panels by the pallet every week. Holds and account lists go through its Kestrel OrderDesk account."
+      "profile": "Regional fire and security distributor serving stores north and west of the city. Ships tins by the pallet every week. Holds and account lists go through its Kestrel OrderDesk account."
     },
     {
       "party_id": "dist-east",
@@ -100,26 +100,26 @@
       "order_system": "east",
       "shipped_in": 860,
       "delivery_note": "DN-48217",
-      "profile": "Regional fire and security distributor serving installers east of the city, out to Durham. Ships panels by the pallet twice a month. Holds and account lists go through its Kestrel OrderDesk account."
+      "profile": "Regional fire and security distributor serving stores east of the city, out to Durham. Ships tins by the pallet twice a month. Holds and account lists go through its Kestrel OrderDesk account."
     }
   ],
   "directory": [
     {
-      "party_id": "corner-properties",
-      "name": "Corner Properties",
+      "party_id": "corner-mart",
+      "name": "Corner Mart",
       "aliases": [
-        "corner properties",
-        "the corner properties",
-        "corner property",
-        "korner properties",
-        "corner properties ltd"
+        "corner mart",
+        "the corner mart",
+        "corner mart",
+        "korner mart",
+        "corner mart ltd"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "voice",
       "phone_env": "PHONE_CORNER",
       "sim_phone": "+14165550144",
-      "profile": "Property manager in Parkdale, Toronto, running several mid-rise residential buildings. Buys its fire alarm panels through a local installer, not from a distributor. The building manager answers a mobile phone.",
+      "profile": "Property manager in Parkdale, Toronto, running several mid-rise residential buildings. Buys its fire alarm tins through a local store, not from a distributor. The building manager answers a mobile phone.",
       "slice": true
     },
     {
@@ -131,11 +131,11 @@
         "juniper lane",
         "juniper alarm"
       ],
-      "type": "installer",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+19055550186",
-      "profile": "Small alarm installer on Juniper Lane in Scarborough that subcontracts for larger firms. Installs panels at buildings for property managers, and passes spare panels to smaller installers, none of them on a distributor's list."
+      "profile": "Small alarm store on Juniper Lane in Scarborough that subcontracts for larger firms. Installs tins at buildings for property managers, and passes spare tins to smaller stores, none of them on a distributor's list."
     },
     {
       "party_id": "willow-creek-towers",
@@ -146,11 +146,11 @@
         "willow creek",
         "willow creek tower"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+12895550161",
-      "profile": "Two residential towers by Willow Creek park in Scarborough. The office answers the phone during working hours and keeps panel counts in its job system."
+      "profile": "Two residential towers by Willow Creek park in Scarborough. The office answers the phone during working hours and keeps tin counts in its job system."
     },
     {
       "party_id": "bayview-annex",
@@ -161,7 +161,7 @@
         "bayview",
         "bay view annex"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+13655550109",
@@ -176,11 +176,11 @@
         "larkspur",
         "larkspur residence"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+14165550169",
-      "profile": "Seniors' residence on Larkspur Ave with three wings. Has its panels installed by a local contractor and checks every invoice against the panels on site."
+      "profile": "Seniors' residence on Larkspur Ave with three wings. Has its tins on_shelf by a local contractor and checks every invoice against the tins on site."
     },
     {
       "party_id": "kingsway-apartments",
@@ -191,7 +191,7 @@
         "kingsway",
         "kingsway apts"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+16475550169",
@@ -206,11 +206,11 @@
         "old mill condos",
         "oldmill condominiums"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+14375550190",
-      "profile": "Condominium buildings near the Old Mill bridge. Has its panels installed by a local contractor and checks every invoice against the panels on site."
+      "profile": "Condominium buildings near the Old Mill bridge. Has its tins on_shelf by a local contractor and checks every invoice against the tins on site."
     },
     {
       "party_id": "rosehill-court",
@@ -221,7 +221,7 @@
         "rosehill",
         "rose hill court"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+19055550147",
@@ -236,11 +236,11 @@
         "harrow st lofts",
         "harrow lofts"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+12895550172",
-      "profile": "Converted warehouse lofts on Harrow St in Pickering village. Keeps careful paperwork and sends a correction when panels are returned after a call."
+      "profile": "Converted warehouse lofts on Harrow St in Pickering village. Keeps careful paperwork and sends a correction when tins are returned after a call."
     },
     {
       "party_id": "clover-hill-plaza",
@@ -251,7 +251,7 @@
         "clover hill",
         "cloverhill plaza"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+13655550119",
@@ -266,11 +266,11 @@
         "maple court apartments",
         "maple ct"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+14165550171",
-      "profile": "Mid-rise residential court on Maple Ave in Pickering. The office answers the phone during working hours and keeps panel counts in its job system."
+      "profile": "Mid-rise residential court on Maple Ave in Pickering. The office answers the phone during working hours and keeps tin counts in its job system."
     },
     {
       "party_id": "dundas-lofts",
@@ -281,11 +281,11 @@
         "dundas loft",
         "dundas st lofts"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+16475550112",
-      "profile": "Loft building on Dundas St West downtown. The office answers the phone during working hours and keeps panel counts in its job system."
+      "profile": "Loft building on Dundas St West downtown. The office answers the phone during working hours and keeps tin counts in its job system."
     },
     {
       "party_id": "spadina-works",
@@ -296,11 +296,11 @@
         "spadina",
         "spadina work"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+14375550101",
-      "profile": "Office building in a converted factory on Spadina Ave. The office answers the phone during working hours and keeps panel counts in its job system."
+      "profile": "Office building in a converted factory on Spadina Ave. The office answers the phone during working hours and keeps tin counts in its job system."
     },
     {
       "party_id": "gable-street-housing-co-op",
@@ -311,11 +311,11 @@
         "gable street co-op",
         "gable st housing co-op"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+19055550117",
-      "profile": "Housing co-operative of four low-rise buildings on Gable St in Ajax. The office answers the phone during working hours and keeps panel counts in its job system."
+      "profile": "Housing co-operative of four low-rise buildings on Gable St in Ajax. The office answers the phone during working hours and keeps tin counts in its job system."
     }
   ],
   "order_systems": {
@@ -484,7 +484,7 @@
       "serial": "D7-4471-0070",
       "site_label": "Bayview Annex",
       "party_id": "bayview-annex",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.4",
       "fault": true,
       "signal": true,
@@ -494,7 +494,7 @@
       "serial": "D7-4471-0093",
       "site_label": "Clover Hill Plaza, Tower 1",
       "party_id": "clover-hill-plaza",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.3",
       "fault": false,
       "signal": false,
@@ -504,7 +504,7 @@
       "serial": "D7-4471-0119",
       "site_label": "Clover Hill Plaza, Tower 2",
       "party_id": "clover-hill-plaza",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.3",
       "fault": false,
       "signal": false,
@@ -514,7 +514,7 @@
       "serial": "D7-4471-0182",
       "site_label": "Clover Hill Plaza, North Wing",
       "party_id": "clover-hill-plaza",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.3",
       "fault": false,
       "signal": false,
@@ -522,9 +522,9 @@
     },
     {
       "serial": "D7-4471-0193",
-      "site_label": "Corner Properties, Tower 2",
-      "party_id": "corner-properties",
-      "model": "DEMO-7",
+      "site_label": "Corner Mart, Tower 2",
+      "party_id": "corner-mart",
+      "model": "B-4471",
       "sw_version": "2.4",
       "fault": true,
       "signal": false,
@@ -534,7 +534,7 @@
       "serial": "D7-4471-0209",
       "site_label": "Dundas Lofts, Tower 1",
       "party_id": "dundas-lofts",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.3",
       "fault": false,
       "signal": false,
@@ -544,7 +544,7 @@
       "serial": "D7-4471-0224",
       "site_label": "Dundas Lofts, Tower 2",
       "party_id": "dundas-lofts",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.3",
       "fault": false,
       "signal": false,
@@ -554,7 +554,7 @@
       "serial": "D7-4471-0283",
       "site_label": "Dundas Lofts, North Wing",
       "party_id": "dundas-lofts",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.3",
       "fault": false,
       "signal": false,
@@ -564,7 +564,7 @@
       "serial": "D7-4471-0323",
       "site_label": "Gable Street Housing Co-op, Tower 1",
       "party_id": "gable-street-housing-co-op",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.3",
       "fault": false,
       "signal": false,
@@ -574,7 +574,7 @@
       "serial": "D7-4471-0333",
       "site_label": "Gable Street Housing Co-op, Tower 2",
       "party_id": "gable-street-housing-co-op",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.3",
       "fault": false,
       "signal": false,
@@ -584,7 +584,7 @@
       "serial": "D7-4471-0442",
       "site_label": "Gable Street Housing Co-op, North Wing",
       "party_id": "gable-street-housing-co-op",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.3",
       "fault": false,
       "signal": false,
@@ -594,7 +594,7 @@
       "serial": "D7-4471-0600",
       "site_label": "Harrow Street Lofts, Tower 1",
       "party_id": "harrow-street-lofts",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.4",
       "fault": false,
       "signal": false,
@@ -604,7 +604,7 @@
       "serial": "D7-4471-0677",
       "site_label": "Kingsway Apartments, Tower 1",
       "party_id": "kingsway-apartments",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.4",
       "fault": false,
       "signal": false,
@@ -614,7 +614,7 @@
       "serial": "D7-4471-0771",
       "site_label": "Kingsway Apartments, Tower 2",
       "party_id": "kingsway-apartments",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.4",
       "fault": false,
       "signal": false,
@@ -624,7 +624,7 @@
       "serial": "D7-4471-0822",
       "site_label": "Kingsway Apartments, North Wing",
       "party_id": "kingsway-apartments",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.4",
       "fault": false,
       "signal": false,
@@ -634,7 +634,7 @@
       "serial": "D7-4471-0868",
       "site_label": "Larkspur Residences, Tower 1",
       "party_id": "larkspur-residences",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.4",
       "fault": false,
       "signal": false,
@@ -644,7 +644,7 @@
       "serial": "D7-4471-0978",
       "site_label": "Larkspur Residences, Tower 2",
       "party_id": "larkspur-residences",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.4",
       "fault": false,
       "signal": false,
@@ -654,7 +654,7 @@
       "serial": "D7-4471-0998",
       "site_label": "Larkspur Residences, North Wing",
       "party_id": "larkspur-residences",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.4",
       "fault": false,
       "signal": false,
@@ -664,7 +664,7 @@
       "serial": "D7-4471-1025",
       "site_label": "Maple Court",
       "party_id": "maple-court",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.3",
       "fault": true,
       "signal": true,
@@ -674,7 +674,7 @@
       "serial": "D7-4471-1056",
       "site_label": "Old Mill Condominiums, Tower 1",
       "party_id": "old-mill-condominiums",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.3",
       "fault": false,
       "signal": false,
@@ -684,7 +684,7 @@
       "serial": "D7-4471-1068",
       "site_label": "Old Mill Condominiums, Tower 2",
       "party_id": "old-mill-condominiums",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.3",
       "fault": false,
       "signal": false,
@@ -694,7 +694,7 @@
       "serial": "D7-4471-1077",
       "site_label": "Rosehill Court, Tower 1",
       "party_id": "rosehill-court",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.3",
       "fault": false,
       "signal": false,
@@ -704,7 +704,7 @@
       "serial": "D7-4471-1278",
       "site_label": "Spadina Works",
       "party_id": "spadina-works",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.4",
       "fault": true,
       "signal": true,
@@ -714,7 +714,7 @@
       "serial": "D7-4471-1290",
       "site_label": "Willow Creek Towers, Tower 1",
       "party_id": "willow-creek-towers",
-      "model": "DEMO-7",
+      "model": "B-4471",
       "sw_version": "2.4",
       "fault": false,
       "signal": false,
@@ -722,7 +722,7 @@
     }
   ],
   "sim": {
-    "harbour-fire": {
+    "harbour-market": {
       "initial": [
         {
           "delay_s": 2.0,
@@ -731,7 +731,7 @@
           },
           "say": "We've got sixty in stock.",
           "claim": {
-            "in_stock": 60
+            "held": 60
           },
           "expect": {
             "accepted": false,
@@ -746,7 +746,7 @@
           },
           "say": "Sorry, I was reading the wrong job. Thirty in stock, ten already sent back to the supplier.",
           "claim": {
-            "in_stock": 30,
+            "held": 30,
             "returned": 10
           },
           "expect": {
@@ -755,7 +755,7 @@
         }
       ]
     },
-    "queen-st-alarm": {
+    "queen-st-grocer": {
       "initial": [
         {
           "delay_s": 4.0,
@@ -763,12 +763,12 @@
           "answers": {
             "delivery_note": "DN-48214"
           },
-          "say": "Fifty in stock, thirty returned, and forty installed at Corner Properties' buildings.",
+          "say": "Fifty in stock, thirty returned, and forty on_shelf at Corner Mart' buildings.",
           "claim": {
-            "in_stock": 50,
+            "held": 50,
             "returned": 30,
             "forwarded_qty": 40,
-            "forwarded_to_name": "Corner Properties"
+            "forwarded_to_name": "Corner Mart"
           },
           "expect": {
             "accepted": true
@@ -784,12 +784,12 @@
           "answers": {
             "delivery_note": "DN-48214"
           },
-          "say": "Checked the job sheets. Twenty-five went into Corner Properties. The other fifteen are still in our stock room.",
+          "say": "Checked the job sheets. Twenty-five went into Corner Mart. The other fifteen are still in our stock room.",
           "claim": {
-            "in_stock": 65,
+            "held": 65,
             "returned": 30,
             "forwarded_qty": 25,
-            "forwarded_to_name": "Corner Properties"
+            "forwarded_to_name": "Corner Mart"
           },
           "expect": {
             "accepted": true
@@ -797,7 +797,7 @@
         }
       ]
     },
-    "lakeside-systems": {
+    "lakeside-foods": {
       "initial": [
         {
           "delay_s": 3.0,
@@ -806,7 +806,7 @@
           },
           "say": "Twenty in stock. Sixty already shipped back to the supplier.",
           "claim": {
-            "in_stock": 20,
+            "held": 20,
             "returned": 60
           },
           "expect": {
@@ -815,17 +815,17 @@
         }
       ]
     },
-    "corner-properties": {
+    "corner-mart": {
       "initial": [
         {
           "delay_s": 3.0,
-          "say": "We received twenty-five, all installed. The front says DEMO-7, the display says 2.4, and the sounder did not ring.",
+          "say": "We received twenty-five, all on_shelf. The front says B-4471, the display says 2.4, and the sounder did not ring.",
           "claim": {
             "received_qty": 25,
-            "installed": 25,
-            "model_seen": "DEMO-7",
-            "version_seen": "2.4",
-            "sounder_test": false
+            "on_shelf": 25,
+            "batch_seen": "B-4471",
+            "sold_source": "2.4",
+            "block_test": false
           },
           "expect": {
             "accepted": true
@@ -838,13 +838,13 @@
           "told": {
             "other_side_qty": 40
           },
-          "say": "No, twenty-five. I have the installer's invoice.",
+          "say": "No, twenty-five. I have the store's invoice.",
           "claim": {
             "received_qty": 25,
-            "installed": 25,
-            "model_seen": "DEMO-7",
-            "version_seen": "2.4",
-            "sounder_test": false
+            "on_shelf": 25,
+            "batch_seen": "B-4471",
+            "sold_source": "2.4",
+            "block_test": false
           },
           "expect": {
             "accepted": true
@@ -854,22 +854,22 @@
     }
   },
   "sim_truth": {
-    "queen-st-alarm": {
-      "name": "Queen St Alarm",
-      "type": "installer",
+    "queen-st-grocer": {
+      "name": "Queen St Grocer",
+      "type": "store",
       "tier": 1,
       "upstream": null,
       "profile": "forwarder",
-      "description": "Fire alarm installer on Queen St W in Parkdale, Toronto. A busy contractor with a stock room larger than its jobs need. Installs panels for property managers across the west end and keeps its job sheets on paper.",
+      "description": "Fire alarm store on Queen St W in Parkdale, Toronto. A busy contractor with a stock room larger than its jobs need. Installs tins for property managers across the west end and keeps its job sheets on paper.",
       "truth": {
-        "in_stock": 65,
-        "installed": 0,
-        "fixed": 0,
+        "held": 65,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 30,
         "forwards": [
           {
-            "to_party_id": "corner-properties",
-            "to_name": "Corner Properties",
+            "to_party_id": "corner-mart",
+            "to_name": "Corner Mart",
             "qty": 25
           }
         ],
@@ -877,17 +877,17 @@
       },
       "params": {}
     },
-    "lakeside-systems": {
-      "name": "Lakeside Systems",
-      "type": "installer",
+    "lakeside-foods": {
+      "name": "Lakeside Foods",
+      "type": "store",
       "tier": 1,
       "upstream": null,
       "profile": "straight",
       "description": "Fire alarm and sprinkler contractor on Lake Shore Blvd W in Mimico, Etobicoke. Pulls recalled stock the same day and ships it back to the supplier with return slips.",
       "truth": {
-        "in_stock": 20,
-        "installed": 0,
-        "fixed": 0,
+        "held": 20,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 60,
         "forwards": [],
         "other_batches": {}
@@ -896,16 +896,16 @@
     },
     "birchmount-fire-protection": {
       "name": "Birchmount Fire Protection",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "forwarder",
-      "description": "Fire alarm contractor on Birchmount Rd in Scarborough with a warehouse and two install crews. Installs panels at buildings for property managers, and passes spare panels to smaller installers, none of them on a distributor's list.",
+      "description": "Fire alarm contractor on Birchmount Rd in Scarborough with a warehouse and two install crews. Installs tins at buildings for property managers, and passes spare tins to smaller stores, none of them on a distributor's list.",
       "truth": {
         "received": 177,
-        "in_stock": 28,
-        "installed": 0,
-        "fixed": 0,
+        "held": 28,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 36,
         "forwards": [
           {
@@ -937,16 +937,16 @@
     },
     "pinecrest-alarm-services": {
       "name": "Pinecrest Alarm Services",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "forwarder",
-      "description": "Alarm installer on Pinecrest Ave in North York that works for property managers. Installs panels at buildings for property managers, and passes spare panels to smaller installers, none of them on a distributor's list.",
+      "description": "Alarm store on Pinecrest Ave in North York that works for property managers. Installs tins at buildings for property managers, and passes spare tins to smaller stores, none of them on a distributor's list.",
       "truth": {
         "received": 177,
-        "in_stock": 57,
-        "installed": 0,
-        "fixed": 0,
+        "held": 57,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 31,
         "forwards": [
           {
@@ -978,16 +978,16 @@
     },
     "tallpine-fire-safety": {
       "name": "Tallpine Fire & Safety",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "unreachable",
       "description": "One-van fire safety contractor on a rural route north of the city. The line is unreliable and messages go unanswered; the distributor's sales rep visits weekly and knows the stock.",
       "truth": {
         "received": 97,
-        "in_stock": 55,
-        "installed": 0,
-        "fixed": 0,
+        "held": 55,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 42,
         "forwards": [],
         "other_batches": {
@@ -1001,16 +1001,16 @@
     },
     "morrow-avenue-alarms": {
       "name": "Morrow Avenue Alarms",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "no_answer",
-      "description": "Small alarm installer on Morrow Ave in the Junction Triangle. The technicians are out on site in the morning; the office phone is only answered between 13:00 and 17:00.",
+      "description": "Small alarm store on Morrow Ave in the Junction Triangle. The technicians are out on site in the morning; the office phone is only answered between 13:00 and 17:00.",
       "truth": {
         "received": 119,
-        "in_stock": 73,
-        "installed": 0,
-        "fixed": 0,
+        "held": 73,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 46,
         "forwards": [],
         "other_batches": {}
@@ -1025,16 +1025,16 @@
     },
     "elmvale-fire-systems": {
       "name": "Elmvale Fire Systems",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "no_answer",
       "description": "Fire systems contractor on Elmvale Rd in East York. One person runs the office alone; the phone often rings out or is engaged and is usually picked up only after a couple of tries.",
       "truth": {
         "received": 85,
-        "in_stock": 62,
-        "installed": 0,
-        "fixed": 0,
+        "held": 62,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 23,
         "forwards": [],
         "other_batches": {
@@ -1048,16 +1048,16 @@
     },
     "cedarbrae-life-safety": {
       "name": "Cedarbrae Life Safety",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "callback",
       "description": "Life safety contractor in the Cedarbrae business park in Scarborough. The manager keeps the job sheets in the site office and asks to be called back the next morning at 11:00.",
       "truth": {
         "received": 99,
-        "in_stock": 67,
-        "installed": 0,
-        "fixed": 0,
+        "held": 67,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 32,
         "forwards": [],
         "other_batches": {
@@ -1070,16 +1070,16 @@
     },
     "ridgeway-alarm-co": {
       "name": "Ridgeway Alarm Co",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "over_reporter",
-      "description": "Alarm and intercom installer on Ridgeway Dr in Etobicoke. Counts are read off a shared stock sheet, and the first figure given is often from the wrong line.",
+      "description": "Alarm and intercom store on Ridgeway Dr in Etobicoke. Counts are read off a shared stock sheet, and the first figure given is often from the wrong line.",
       "truth": {
         "received": 89,
-        "in_stock": 53,
-        "installed": 0,
-        "fixed": 0,
+        "held": 53,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 36,
         "forwards": [],
         "other_batches": {}
@@ -1090,16 +1090,16 @@
     },
     "glenholme-fire-services": {
       "name": "Glenholme Fire Services",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "reviser",
-      "description": "Family-run fire services firm on Glenholme Ave in Oakwood Village. Keeps careful paperwork and sends a correction when panels are returned after a call.",
+      "description": "Family-run fire services firm on Glenholme Ave in Oakwood Village. Keeps careful paperwork and sends a correction when tins are returned after a call.",
       "truth": {
         "received": 104,
-        "in_stock": 52,
-        "installed": 0,
-        "fixed": 0,
+        "held": 52,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 52,
         "forwards": [],
         "other_batches": {
@@ -1115,16 +1115,16 @@
     },
     "lambton-mills-alarm": {
       "name": "Lambton Mills Alarm",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "straight",
-      "description": "Alarm installer on Old Dundas St by the Humber River. The office answers the phone during working hours and keeps panel counts in its job system.",
+      "description": "Alarm store on Old Dundas St by the Humber River. The office answers the phone during working hours and keeps tin counts in its job system.",
       "truth": {
         "received": 102,
-        "in_stock": 71,
-        "installed": 0,
-        "fixed": 0,
+        "held": 71,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 31,
         "forwards": [],
         "other_batches": {}
@@ -1133,16 +1133,16 @@
     },
     "bloor-alarm": {
       "name": "Bloor Alarm",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "straight",
-      "description": "Fire alarm contractor on Bloor St West with a busy service desk. The office answers the phone during working hours and keeps panel counts in its job system.",
+      "description": "Fire alarm contractor on Bloor St West with a busy service desk. The office answers the phone during working hours and keeps tin counts in its job system.",
       "truth": {
         "received": 102,
-        "in_stock": 77,
-        "installed": 0,
-        "fixed": 0,
+        "held": 77,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 25,
         "forwards": [],
         "other_batches": {
@@ -1153,16 +1153,16 @@
     },
     "humber-bay-fire": {
       "name": "Humber Bay Fire",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "straight",
-      "description": "Fire alarm installer working the condo towers of Humber Bay. The office answers the phone during working hours and keeps panel counts in its job system.",
+      "description": "Fire alarm store working the condo towers of Humber Bay. The office answers the phone during working hours and keeps tin counts in its job system.",
       "truth": {
         "received": 70,
-        "in_stock": 48,
-        "installed": 0,
-        "fixed": 0,
+        "held": 48,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 22,
         "forwards": [],
         "other_batches": {}
@@ -1171,16 +1171,16 @@
     },
     "silverthorn-protection": {
       "name": "Silverthorn Protection",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "straight",
-      "description": "Fire protection contractor on Silverthorn Ave near Eglinton Ave West. The office answers the phone during working hours and keeps panel counts in its job system.",
+      "description": "Fire protection contractor on Silverthorn Ave near Eglinton Ave West. The office answers the phone during working hours and keeps tin counts in its job system.",
       "truth": {
         "received": 79,
-        "in_stock": 43,
-        "installed": 0,
-        "fixed": 0,
+        "held": 43,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 36,
         "forwards": [],
         "other_batches": {}
@@ -1189,16 +1189,16 @@
     },
     "fernbrook-fire-supply": {
       "name": "Fernbrook Fire Supply",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-east",
       "profile": "forwarder",
-      "description": "Fire alarm contractor in an industrial unit in Pickering that installs for housing providers. Installs panels at buildings for property managers, and passes spare panels to smaller installers, none of them on a distributor's list.",
+      "description": "Fire alarm contractor in an industrial unit in Pickering that installs for housing providers. Installs tins at buildings for property managers, and passes spare tins to smaller stores, none of them on a distributor's list.",
       "truth": {
         "received": 147,
-        "in_stock": 23,
-        "installed": 0,
-        "fixed": 0,
+        "held": 23,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 29,
         "forwards": [
           {
@@ -1223,16 +1223,16 @@
     },
     "annex-fire": {
       "name": "Annex Fire",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-east",
       "profile": "forwarder",
-      "description": "Fire alarm installer in the Annex that services lofts and offices downtown. Installs panels at buildings for property managers, and passes spare panels to smaller installers, none of them on a distributor's list.",
+      "description": "Fire alarm store in the Annex that services lofts and offices downtown. Installs tins at buildings for property managers, and passes spare tins to smaller stores, none of them on a distributor's list.",
       "truth": {
         "received": 147,
-        "in_stock": 43,
-        "installed": 0,
-        "fixed": 0,
+        "held": 43,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 26,
         "forwards": [
           {
@@ -1257,16 +1257,16 @@
     },
     "brookbanks-alarm": {
       "name": "Brookbanks Alarm",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-east",
       "profile": "no_answer",
-      "description": "Small alarm installer on Brookbanks Dr in Don Mills. The technicians are out on site in the morning; the office phone is only answered between 14:00 and 18:00.",
+      "description": "Small alarm store on Brookbanks Dr in Don Mills. The technicians are out on site in the morning; the office phone is only answered between 14:00 and 18:00.",
       "truth": {
         "received": 62,
-        "in_stock": 38,
-        "installed": 0,
-        "fixed": 0,
+        "held": 38,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 24,
         "forwards": [],
         "other_batches": {}
@@ -1281,16 +1281,16 @@
     },
     "thistledown-fire": {
       "name": "Thistledown Fire",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-east",
       "profile": "callback",
       "description": "Fire alarm contractor in a strip plaza in Thistletown, Etobicoke. The manager keeps the job sheets in the site office and asks to be called back the next morning at 9:00.",
       "truth": {
         "received": 97,
-        "in_stock": 47,
-        "installed": 0,
-        "fixed": 0,
+        "held": 47,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 50,
         "forwards": [],
         "other_batches": {}
@@ -1301,16 +1301,16 @@
     },
     "cliffcrest-alarm-systems": {
       "name": "Cliffcrest Alarm Systems",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-east",
       "profile": "over_reporter",
-      "description": "Alarm systems installer on Kingston Rd in Cliffcrest. Counts are read off a shared stock sheet, and the first figure given is often from the wrong line.",
+      "description": "Alarm systems store on Kingston Rd in Cliffcrest. Counts are read off a shared stock sheet, and the first figure given is often from the wrong line.",
       "truth": {
         "received": 62,
-        "in_stock": 28,
-        "installed": 0,
-        "fixed": 0,
+        "held": 28,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 34,
         "forwards": [],
         "other_batches": {}
@@ -1321,16 +1321,16 @@
     },
     "wexford-fire-security": {
       "name": "Wexford Fire & Security",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-east",
       "profile": "straight",
-      "description": "Fire and security contractor on Lawrence Ave East in Wexford. The office answers the phone during working hours and keeps panel counts in its job system.",
+      "description": "Fire and security contractor on Lawrence Ave East in Wexford. The office answers the phone during working hours and keeps tin counts in its job system.",
       "truth": {
         "received": 65,
-        "in_stock": 36,
-        "installed": 0,
-        "fixed": 0,
+        "held": 36,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 29,
         "forwards": [],
         "other_batches": {}
@@ -1339,16 +1339,16 @@
     },
     "guildwood-alarm": {
       "name": "Guildwood Alarm",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-east",
       "profile": "straight",
-      "description": "Owner-run alarm installer in Guildwood Village. The office answers the phone during working hours and keeps panel counts in its job system.",
+      "description": "Owner-run alarm store in Guildwood Village. The office answers the phone during working hours and keeps tin counts in its job system.",
       "truth": {
         "received": 96,
-        "in_stock": 62,
-        "installed": 0,
-        "fixed": 0,
+        "held": 62,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 34,
         "forwards": [],
         "other_batches": {}
@@ -1357,16 +1357,16 @@
     },
     "orchard-park-fire": {
       "name": "Orchard Park Fire",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-east",
       "profile": "straight",
-      "description": "Fire alarm contractor on Orchard Park Blvd in Ajax. The office answers the phone during working hours and keeps panel counts in its job system.",
+      "description": "Fire alarm contractor on Orchard Park Blvd in Ajax. The office answers the phone during working hours and keeps tin counts in its job system.",
       "truth": {
         "received": 85,
-        "in_stock": 53,
-        "installed": 0,
-        "fixed": 0,
+        "held": 53,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 32,
         "forwards": [],
         "other_batches": {}
@@ -1375,16 +1375,16 @@
     },
     "highland-creek-protection": {
       "name": "Highland Creek Protection",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "upstream": "dist-east",
       "profile": "straight",
-      "description": "Fire protection contractor on Old Kingston Rd in Highland Creek. The office answers the phone during working hours and keeps panel counts in its job system.",
+      "description": "Fire protection contractor on Old Kingston Rd in Highland Creek. The office answers the phone during working hours and keeps tin counts in its job system.",
       "truth": {
         "received": 99,
-        "in_stock": 59,
-        "installed": 0,
-        "fixed": 0,
+        "held": 59,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 40,
         "forwards": [],
         "other_batches": {
@@ -1395,16 +1395,16 @@
     },
     "juniper-lane-alarm": {
       "name": "Juniper Lane Alarm",
-      "type": "installer",
+      "type": "store",
       "tier": 3,
       "upstream": "birchmount-fire-protection",
       "profile": "forwarder",
-      "description": "Small alarm installer on Juniper Lane in Scarborough that subcontracts for larger firms. Installs panels at buildings for property managers, and passes spare panels to smaller installers, none of them on a distributor's list.",
+      "description": "Small alarm store on Juniper Lane in Scarborough that subcontracts for larger firms. Installs tins at buildings for property managers, and passes spare tins to smaller stores, none of them on a distributor's list.",
       "truth": {
         "received": 49,
-        "in_stock": 17,
-        "installed": 0,
-        "fixed": 0,
+        "held": 17,
+        "on_shelf": 0,
+        "held": 0,
         "returned": 14,
         "forwards": [
           {
@@ -1419,21 +1419,21 @@
     },
     "willow-creek-towers": {
       "name": "Willow Creek Towers",
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "upstream": "juniper-lane-alarm",
       "profile": "straight",
-      "description": "Two residential towers by Willow Creek park in Scarborough. The office answers the phone during working hours and keeps panel counts in its job system.",
+      "description": "Two residential towers by Willow Creek park in Scarborough. The office answers the phone during working hours and keeps tin counts in its job system.",
       "truth": {
         "received": 18,
-        "in_stock": 2,
-        "installed": 15,
-        "fixed": 0,
+        "held": 2,
+        "on_shelf": 15,
+        "held": 0,
         "returned": 1,
         "forwards": [],
         "fix": {
           "at": 79.4,
-          "model": "DEMO-7",
+          "model": "B-4471",
           "version_before": "2.4",
           "version_after": "2.5"
         },
@@ -1445,21 +1445,21 @@
     },
     "bayview-annex": {
       "name": "Bayview Annex",
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "upstream": "birchmount-fire-protection",
       "profile": "no_answer",
       "description": "Office and retail annex at the top of Bayview Ave. The technicians are out on site in the morning; the office phone is only answered between 15:00 and 19:00.",
       "truth": {
         "received": 33,
-        "in_stock": 3,
-        "installed": 30,
-        "fixed": 0,
+        "held": 3,
+        "on_shelf": 30,
+        "held": 0,
         "returned": 0,
         "forwards": [],
         "fix": {
           "at": 103.8,
-          "model": "DEMO-7",
+          "model": "B-4471",
           "version_before": "2.4",
           "version_after": "2.5"
         },
@@ -1475,21 +1475,21 @@
     },
     "larkspur-residences": {
       "name": "Larkspur Residences",
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "upstream": "birchmount-fire-protection",
       "profile": "short_receiver",
-      "description": "Seniors' residence on Larkspur Ave with three wings. Has its panels installed by a local contractor and checks every invoice against the panels on site.",
+      "description": "Seniors' residence on Larkspur Ave with three wings. Has its tins on_shelf by a local contractor and checks every invoice against the tins on site.",
       "truth": {
         "received": 31,
-        "in_stock": 1,
-        "installed": 30,
-        "fixed": 0,
+        "held": 1,
+        "on_shelf": 30,
+        "held": 0,
         "returned": 0,
         "forwards": [],
         "fix": {
           "at": 103.6,
-          "model": "DEMO-7",
+          "model": "B-4471",
           "version_before": "2.4",
           "version_after": "2.5"
         },
@@ -1502,21 +1502,21 @@
     },
     "kingsway-apartments": {
       "name": "Kingsway Apartments",
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "upstream": "pinecrest-alarm-services",
       "profile": "callback",
       "description": "Apartment buildings on Bloor St West in the Kingsway. The manager keeps the job sheets in the site office and asks to be called back the next morning at 10:00.",
       "truth": {
         "received": 27,
-        "in_stock": 3,
-        "installed": 24,
-        "fixed": 0,
+        "held": 3,
+        "on_shelf": 24,
+        "held": 0,
         "returned": 0,
         "forwards": [],
         "fix": {
           "at": 101.5,
-          "model": "DEMO-7",
+          "model": "B-4471",
           "version_before": "2.4",
           "version_after": "2.5"
         },
@@ -1528,21 +1528,21 @@
     },
     "old-mill-condominiums": {
       "name": "Old Mill Condominiums",
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "upstream": "pinecrest-alarm-services",
       "profile": "short_receiver",
-      "description": "Condominium buildings near the Old Mill bridge. Has its panels installed by a local contractor and checks every invoice against the panels on site.",
+      "description": "Condominium buildings near the Old Mill bridge. Has its tins on_shelf by a local contractor and checks every invoice against the tins on site.",
       "truth": {
         "received": 31,
-        "in_stock": 2,
-        "installed": 29,
-        "fixed": 0,
+        "held": 2,
+        "on_shelf": 29,
+        "held": 0,
         "returned": 0,
         "forwards": [],
         "fix": {
           "at": 89.8,
-          "model": "DEMO-7",
+          "model": "B-4471",
           "version_before": "2.3",
           "version_after": "2.5"
         },
@@ -1557,21 +1557,21 @@
     },
     "rosehill-court": {
       "name": "Rosehill Court",
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "upstream": "pinecrest-alarm-services",
       "profile": "over_reporter",
       "description": "Housing co-operative on Rosehill Ave by the reservoir park. Counts are read off a shared stock sheet, and the first figure given is often from the wrong line.",
       "truth": {
         "received": 31,
-        "in_stock": 2,
-        "installed": 29,
-        "fixed": 0,
+        "held": 2,
+        "on_shelf": 29,
+        "held": 0,
         "returned": 0,
         "forwards": [],
         "fix": {
           "at": 99.0,
-          "model": "DEMO-7",
+          "model": "B-4471",
           "version_before": "2.3",
           "version_after": "2.5"
         },
@@ -1585,21 +1585,21 @@
     },
     "harrow-street-lofts": {
       "name": "Harrow Street Lofts",
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "upstream": "fernbrook-fire-supply",
       "profile": "reviser",
-      "description": "Converted warehouse lofts on Harrow St in Pickering village. Keeps careful paperwork and sends a correction when panels are returned after a call.",
+      "description": "Converted warehouse lofts on Harrow St in Pickering village. Keeps careful paperwork and sends a correction when tins are returned after a call.",
       "truth": {
         "received": 27,
-        "in_stock": 2,
-        "installed": 25,
-        "fixed": 0,
+        "held": 2,
+        "on_shelf": 25,
+        "held": 0,
         "returned": 0,
         "forwards": [],
         "fix": {
           "at": 66.6,
-          "model": "DEMO-7",
+          "model": "B-4471",
           "version_before": "2.4",
           "version_after": "2.5"
         },
@@ -1614,21 +1614,21 @@
     },
     "clover-hill-plaza": {
       "name": "Clover Hill Plaza",
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "upstream": "fernbrook-fire-supply",
       "profile": "no_answer",
       "description": "Shopping plaza and offices at the Clover Hill crossroads. One person runs the office alone; the phone often rings out or is engaged and is usually picked up only after a couple of tries.",
       "truth": {
         "received": 33,
-        "in_stock": 3,
-        "installed": 30,
-        "fixed": 0,
+        "held": 3,
+        "on_shelf": 30,
+        "held": 0,
         "returned": 0,
         "forwards": [],
         "fix": {
           "at": 103.2,
-          "model": "DEMO-7",
+          "model": "B-4471",
           "version_before": "2.3",
           "version_after": "2.5"
         },
@@ -1641,21 +1641,21 @@
     },
     "maple-court": {
       "name": "Maple Court",
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "upstream": "fernbrook-fire-supply",
       "profile": "straight",
-      "description": "Mid-rise residential court on Maple Ave in Pickering. The office answers the phone during working hours and keeps panel counts in its job system.",
+      "description": "Mid-rise residential court on Maple Ave in Pickering. The office answers the phone during working hours and keeps tin counts in its job system.",
       "truth": {
         "received": 35,
-        "in_stock": 4,
-        "installed": 31,
-        "fixed": 0,
+        "held": 4,
+        "on_shelf": 31,
+        "held": 0,
         "returned": 0,
         "forwards": [],
         "fix": {
           "at": 96.4,
-          "model": "DEMO-7",
+          "model": "B-4471",
           "version_before": "2.3",
           "version_after": "2.5"
         },
@@ -1667,21 +1667,21 @@
     },
     "dundas-lofts": {
       "name": "Dundas Lofts",
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "upstream": "annex-fire",
       "profile": "straight",
-      "description": "Loft building on Dundas St West downtown. The office answers the phone during working hours and keeps panel counts in its job system.",
+      "description": "Loft building on Dundas St West downtown. The office answers the phone during working hours and keeps tin counts in its job system.",
       "truth": {
         "received": 25,
-        "in_stock": 3,
-        "installed": 22,
-        "fixed": 0,
+        "held": 3,
+        "on_shelf": 22,
+        "held": 0,
         "returned": 0,
         "forwards": [],
         "fix": {
           "at": 64.0,
-          "model": "DEMO-7",
+          "model": "B-4471",
           "version_before": "2.3",
           "version_after": "2.5"
         },
@@ -1691,21 +1691,21 @@
     },
     "spadina-works": {
       "name": "Spadina Works",
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "upstream": "annex-fire",
       "profile": "straight",
-      "description": "Office building in a converted factory on Spadina Ave. The office answers the phone during working hours and keeps panel counts in its job system.",
+      "description": "Office building in a converted factory on Spadina Ave. The office answers the phone during working hours and keeps tin counts in its job system.",
       "truth": {
         "received": 26,
-        "in_stock": 3,
-        "installed": 23,
-        "fixed": 0,
+        "held": 3,
+        "on_shelf": 23,
+        "held": 0,
         "returned": 0,
         "forwards": [],
         "fix": {
           "at": 94.4,
-          "model": "DEMO-7",
+          "model": "B-4471",
           "version_before": "2.4",
           "version_after": "2.5"
         },
@@ -1717,21 +1717,21 @@
     },
     "gable-street-housing-co-op": {
       "name": "Gable Street Housing Co-op",
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "upstream": "annex-fire",
       "profile": "straight",
-      "description": "Housing co-operative of four low-rise buildings on Gable St in Ajax. The office answers the phone during working hours and keeps panel counts in its job system.",
+      "description": "Housing co-operative of four low-rise buildings on Gable St in Ajax. The office answers the phone during working hours and keeps tin counts in its job system.",
       "truth": {
         "received": 27,
-        "in_stock": 1,
-        "installed": 26,
-        "fixed": 0,
+        "held": 1,
+        "on_shelf": 26,
+        "held": 0,
         "returned": 0,
         "forwards": [],
         "fix": {
           "at": 94.7,
-          "model": "DEMO-7",
+          "model": "B-4471",
           "version_before": "2.3",
           "version_after": "2.5"
         },
@@ -1754,11 +1754,11 @@
     "days": 10
   },
   "expected": {
-    "note": "Every simulated party's truth conserves and the batch adds up to units_total (checked by generate.py before writing). final: what the run ends with when the slice's follow-ups are manual (demo): the Queen St Alarm -> Corner Properties dispute stays open and Corner Properties' 25 panels stay installed on 2.4.",
+    "note": "Every simulated party's truth conserves and the batch adds up to units_total (checked by generate.py before writing). final: what the run ends with when the slice's follow-ups are manual (demo): the Queen St Grocer -> Corner Mart dispute stays open and Corner Mart' 25 tins stay on_shelf on 2.4.",
     "final": {
       "open_units": 40,
       "disputed_units": 15,
-      "awaiting_fix": 25,
+      "on_shelf": 25,
       "parties": 40,
       "at_start": 5
     },

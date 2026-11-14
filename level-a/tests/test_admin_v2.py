@@ -107,30 +107,30 @@ def test_long_run_options_then_release_by_party_and_by_slice(api, db, long_scena
     run = runs.get_run(db, "RCL-LONG")
     assert run["schedule"]["order_system_change_at"] == {"north": 81.5, "east": 82.0}
     assert {s["party_id"]: s["hold_for_demo"] for s in db.parties.find({"recall_id": "RCL-LONG"})} == {
-        "harbour-fire": True, "queen-st-alarm": True, "lakeside-systems": True}
+        "harbour-market": True, "queen-st-grocer": True, "lakeside-foods": True}
 
     pin(db, "RCL-LONG", 9.5)
-    r = api.post("/admin/release", headers=ADMIN, json={"recall_id": "RCL-LONG", "party_id": "harbour-fire"})
+    r = api.post("/admin/release", headers=ADMIN, json={"recall_id": "RCL-LONG", "party_id": "harbour-market"})
     assert r.status_code == 200
     assert {k: r.json()[k] for k in ("parties", "unheld", "next_action_at")} == {
-        "parties": ["harbour-fire"], "unheld": ["harbour-fire"], "next_action_at": 9.5}
-    harbour = party(db, "RCL-LONG", "harbour-fire")
+        "parties": ["harbour-market"], "unheld": ["harbour-market"], "next_action_at": 9.5}
+    harbour = party(db, "RCL-LONG", "harbour-market")
     assert (harbour["hold_for_demo"], harbour["next_action_at"]) == (False, 9.5)
-    assert db.worker_state.find_one({"_id": "sim_release:RCL-LONG:harbour-fire"})["released_at"]
+    assert db.worker_state.find_one({"_id": "sim_release:RCL-LONG:harbour-market"})["released_at"]
     pin(db, "RCL-LONG", 10.0)
-    again = api.post("/admin/release", headers=ADMIN, json={"recall_id": "RCL-LONG", "party_id": "harbour-fire"})
-    assert again.json()["unheld"] == [] and party(db, "RCL-LONG", "harbour-fire")["next_action_at"] == 9.5
+    again = api.post("/admin/release", headers=ADMIN, json={"recall_id": "RCL-LONG", "party_id": "harbour-market"})
+    assert again.json()["unheld"] == [] and party(db, "RCL-LONG", "harbour-market")["next_action_at"] == 9.5
 
     r = api.post("/admin/release", headers=ADMIN, json={"recall_id": "RCL-LONG", "party_id": "slice"})
     assert (r.json()["parties"], r.json()["unheld"]) == (
-        ["corner-properties", "harbour-fire", "lakeside-systems", "queen-st-alarm"], ["lakeside-systems", "queen-st-alarm"])
+        ["corner-mart", "harbour-market", "lakeside-foods", "queen-st-grocer"], ["lakeside-foods", "queen-st-grocer"])
     assert db.parties.count_documents({"recall_id": "RCL-LONG", "hold_for_demo": True}) == 0
     [corner] = db.recalls.find_one({"_id": "RCL-LONG"})["directory"]
     assert corner["hold_for_demo"] is False                                   # found later, created unheld
     assert db.worker_state.count_documents({"_id": {"$regex": "^sim_release:RCL-LONG:"}}) == 4
     assert texts(db, "sim_released") == [
-        "Released Harbour Fire to the timers: due now at d0 09:30",
-        "Released the held reply from Harbour Fire",
+        "Released Harbour Market to the timers: due now at d0 09:30",
+        "Released the held reply from Harbour Market",
         "Released the live slice (4 parties): 2 due now at d0 10:00"]
     assert api.post("/admin/release", headers=ADMIN,
                     json={"recall_id": "RCL-LONG", "party_id": "nowhere"}).status_code == 404
@@ -144,7 +144,7 @@ def test_long_run_options_then_release_by_party_and_by_slice(api, db, long_scena
 
 
 def test_clock_pause_speed_resume_and_start(api, db, client, rid, order_system_log):
-    db.parties.update_one({"recall_id": rid, "party_id": "queen-st-alarm"}, {"$set": {"order_system": "north"}})
+    db.parties.update_one({"recall_id": rid, "party_id": "queen-st-grocer"}, {"$set": {"order_system": "north"}})
     assert api.post("/admin/clock", headers=ADMIN, json={"recall_id": rid}).status_code == 400
     assert api.post("/admin/clock", headers=ADMIN, json={"recall_id": "RCL-NOPE", "action": "pause"}).status_code == 404
 
@@ -176,7 +176,7 @@ def test_clock_pause_speed_resume_and_start(api, db, client, rid, order_system_l
 
 
 def test_order_system_buttons_are_proxied_to_the_mock_order_system(api, db, client, rid, order_system_log, down):
-    db.parties.update_one({"recall_id": rid, "party_id": "queen-st-alarm"}, {"$set": {"order_system": "north"}})
+    db.parties.update_one({"recall_id": rid, "party_id": "queen-st-grocer"}, {"$set": {"order_system": "north"}})
     assert api.post("/admin/order-system", json={"order_system": "north", "action": "switch_v2"}).status_code == 401
 
     r = api.post("/admin/order-system", headers=ADMIN, json={"order_system": "north", "action": "switch_v2"})
@@ -244,24 +244,24 @@ def test_supervisor_and_saboteur_switches(api, app, db, client, rid):
 def test_a_switch_wakes_the_order_systems_distributor_with_a_contract_probe_owed(api, db, rid):
     """Detection needs an order system call; with its accounts reconciled (or read
     today) the distributor would make none, so the switch makes it due now."""
-    for sid, order_system in (("queen-st-alarm", "north"), ("lakeside-systems", "east")):
+    for sid, order_system in (("queen-st-grocer", "north"), ("lakeside-foods", "east")):
         db.parties.update_one({"recall_id": rid, "party_id": sid},
                              {"$set": {"order_system": order_system, "channel": "order_system", "next_action_at": None}})
     pin(db, rid, 50.0)
     r = api.post("/admin/order-system", headers=ADMIN, json={"order_system": "north", "action": "switch_v2"})
     assert r.status_code == 200 and r.json()["probes_owed"] == {rid: 1}
-    queen = party(db, rid, "queen-st-alarm")
+    queen = party(db, rid, "queen-st-grocer")
     assert (queen["next_action_at"], queen["order_system_probe_due"], queen["order_system_probes"]) == (50.0, True, 1)
     assert db.feed.find_one({"kind": "order_system_switched"})["detail"]["probes_owed"] == 1
-    assert "order_system_probes" not in party(db, rid, "lakeside-systems"), "only the switched order system's distributor"
+    assert "order_system_probes" not in party(db, rid, "lakeside-foods"), "only the switched order system's distributor"
 
     # An earlier timer stands; each switch owes one more probe; arming a fault owes none.
-    db.parties.update_one({"recall_id": rid, "party_id": "queen-st-alarm"}, {"$set": {"next_action_at": 40.0}})
+    db.parties.update_one({"recall_id": rid, "party_id": "queen-st-grocer"}, {"$set": {"next_action_at": 40.0}})
     api.post("/admin/order-system", headers=ADMIN, json={"order_system": "north", "action": "switch_v2"})
-    queen = party(db, rid, "queen-st-alarm")
+    queen = party(db, rid, "queen-st-grocer")
     assert (queen["next_action_at"], queen["order_system_probes"]) == (40.0, 2)
     r = api.post("/admin/order-system", headers=ADMIN, json={"order_system": "north", "action": "fault", "fault": "stale_read"})
-    assert r.json()["probes_owed"] == {} and party(db, rid, "queen-st-alarm")["order_system_probes"] == 2
+    assert r.json()["probes_owed"] == {} and party(db, rid, "queen-st-grocer")["order_system_probes"] == 2
 
 
 # -- reset resets the order systems ------------------------------------------------------------------
@@ -294,13 +294,13 @@ def test_a_refused_close_wakes_the_planner(api, db, rid):
 
 def test_a_claim_that_creates_a_party_wakes_the_planner_in_its_own_transaction(client, db, rid):
     db.runs.update_one({"_id": runs.run_id(rid)}, {"$set": {"planner_wake": False}})
-    plain = submit_claim(client, db, recall_id=rid, party_id="harbour-fire", attempt_id="form-hm", source="form",
-                         raw={"in_stock": 40})
+    plain = submit_claim(client, db, recall_id=rid, party_id="harbour-market", attempt_id="form-hm", source="form",
+                         raw={"held": 40})
     assert plain["accepted"] and runs.get_run(db, rid)["planner_wake"] is False, "no party created, no wake"
-    forwarded = submit_claim(client, db, recall_id=rid, party_id="queen-st-alarm", attempt_id="form-qsg",
-                             source="form", raw={"in_stock": 80, "forwarded_qty": 40,
-                                                 "forwarded_to_name": "Corner Properties"})
-    assert forwarded["accepted"] and forwarded["discovered"] == "corner-properties"
+    forwarded = submit_claim(client, db, recall_id=rid, party_id="queen-st-grocer", attempt_id="form-qsg",
+                             source="form", raw={"held": 80, "forwarded_qty": 40,
+                                                 "forwarded_to_name": "Corner Mart"})
+    assert forwarded["accepted"] and forwarded["discovered"] == "corner-mart"
     run = runs.get_run(db, rid)
     assert (run["planner_wake"], run["planner_wake_reason"]) == (True, "parties_created")
 

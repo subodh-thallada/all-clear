@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "levela"
 version = "0.1.0"
-description = "All Clear: a panel recall agent that phones every party and will not close until every panel is explained."
+description = "All Clear: a tin recall agent that phones every party and will not close until every tin is explained."
 requires-python = ">=3.11"
 dependencies = [
   "pymongo[srv]>=4.7",

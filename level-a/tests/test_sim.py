@@ -121,10 +121,10 @@ def feed_lines(db, kind):
 
 
 def add_corner_properties_stub(db, recall_id):
-    """What memory does in run 2: Corner Properties exists before anyone names it."""
+    """What memory does in run 2: Corner Mart exists before anyone names it."""
     recall = db.recalls.find_one({"_id": recall_id})
-    entry = next(e for e in recall["directory"] if e["party_id"] == "corner-properties")
-    db.parties.insert_one(stub_party(recall_id, "corner-properties", entry["name"], entry, "memory",
+    entry = next(e for e in recall["directory"] if e["party_id"] == "corner-mart")
+    db.parties.insert_one(stub_party(recall_id, "corner-mart", entry["name"], entry, "memory",
                                     datetime.now(timezone.utc)))
 
 
@@ -133,7 +133,7 @@ def add_corner_properties_stub(db, recall_id):
 def test_harbour_fire_plays_its_script_in_order(client, db, network, poster, assert_balance):
     start(client, db)
     t0 = time.monotonic()
-    attempt, placed = dial(network, db, R1, "harbour-fire")
+    attempt, placed = dial(network, db, R1, "harbour-market")
     assert network.wait_idle(10)
     assert time.monotonic() - t0 < 5, "sim_time_scale 0 plays without waiting"
 
@@ -141,36 +141,36 @@ def test_harbour_fire_plays_its_script_in_order(client, db, network, poster, ass
     assert first["result"]["accepted"] is False and first["result"]["code"] == "over_count"
     assert (first["result"]["reported_total"], first["result"]["shipped_in"]) == (60, 40)
     assert second["result"]["accepted"] is True
-    assert first["body"] == {"in_stock": 60, "attempt_id": attempt["_id"], "party_id": "harbour-fire",
+    assert first["body"] == {"held": 60, "attempt_id": attempt["_id"], "party_id": "harbour-market",
                              "system__conversation_id": placed.conversation_id,
                              "system__call_sid": placed.call_sid, "source": "sim"}
-    assert {k: second["body"][k] for k in ("on_hand", "sold", "returned")} == {"in_stock": 35, "returned": 5}
+    assert {k: second["body"][k] for k in ("on_hand", "sold", "returned")} == {"held": 35, "returned": 5}
     assert db.recalls.find_one({"_id": R1})["open_units"] == 200
     assert_balance(R1)
 
     row = db.sim_calls.find_one({"_id": placed.call_sid})
     assert re.fullmatch(r"CA[0-9a-f]{32}", row["_id"]) and row["conversation_id"].startswith("conv_sim_")
     assert (row["status"], row["to"], row["attempt_id"], row["recall_id"], row["party_id"], row["purpose"],
-            row["script_key"], row["sim"]) == ("completed", "+14165550141", attempt["_id"], R1, "harbour-fire",
+            row["script_key"], row["sim"]) == ("completed", "+14165550141", attempt["_id"], R1, "harbour-market",
                                                "initial", "initial", True)
     assert row["end_time"] >= row["start_time"]
     assert [r["say"] for r in row["replies"]] == ["We've got sixty on hand.",
                                                   "Sorry, I was reading the wrong line. Twenty-five on hand, ten "
                                                   "sold, five already sent back."]
-    assert row["replies"][0]["claim"] == {"in_stock": 60}
+    assert row["replies"][0]["claim"] == {"held": 60}
     assert row["replies"][0]["reply"]["code"] == "over_count" and row["replies"][1]["reply"]["accepted"]
 
     lines = feed_lines(db, "sim_reply")
     assert [line["text"] for line in lines] == [
-        'Harbour Fire (simulated): "We\'ve got sixty on hand."',
-        'Harbour Fire (simulated): "Sorry, I was reading the wrong line. Twenty-five on hand, ten sold, '
+        'Harbour Market (simulated): "We\'ve got sixty on hand."',
+        'Harbour Market (simulated): "Sorry, I was reading the wrong line. Twenty-five on hand, ten sold, '
         'five already sent back."']
     assert all(line["source"] == "sim" and line["attempt_id"] == attempt["_id"] for line in lines)
 
 
 def test_post_call_payload_is_shaped_and_signed(client, db, network, poster, settings):
     start(client, db)
-    attempt, placed = dial(network, db, R1, "harbour-fire")
+    attempt, placed = dial(network, db, R1, "harbour-market")
     assert network.wait_idle(10)
 
     (hook,) = poster.hooks
@@ -190,7 +190,7 @@ def test_post_call_payload_is_shaped_and_signed(client, db, network, poster, set
                                   "call_sid": placed.call_sid}
     assert isinstance(meta["start_time_unix_secs"], int) and meta["call_duration_secs"] >= 0
     variables = data["conversation_initiation_client_data"]["dynamic_variables"]
-    assert variables["attempt_id"] == attempt["_id"] and variables["party_id"] == "harbour-fire"
+    assert variables["attempt_id"] == attempt["_id"] and variables["party_id"] == "harbour-market"
     assert variables["system__call_sid"] == placed.call_sid
     assert all(isinstance(v, str) for v in variables.values())
     roles = [t["role"] for t in data["transcript"]]
@@ -206,7 +206,7 @@ def test_delays_follow_the_time_scale(client, db, poster, settings):
     try:
         start(client, db)
         t0 = time.monotonic()
-        dial(net, db, R1, "harbour-fire")                  # replies at delay_s 2.0 and 2.0
+        dial(net, db, R1, "harbour-market")                  # replies at delay_s 2.0 and 2.0
         assert net.wait_idle(10)
     finally:
         net.stop()
@@ -218,19 +218,19 @@ def test_delays_follow_the_time_scale(client, db, poster, settings):
 def test_delivery_note_only_when_asked(client, db, network, poster, assert_balance):
     start(client, db, "recall_2")
     add_corner_properties_stub(db, R2)
-    dial(network, db, R2, "harbour-fire", ask_note="yes")
-    dial(network, db, R2, "lakeside-systems", ask_note="no")
-    dial(network, db, R2, "corner-properties", ask_note="yes")      # its answer is null: nothing to say
-    dial(network, db, R2, "queen-st-alarm", ask_note="no")
+    dial(network, db, R2, "harbour-market", ask_note="yes")
+    dial(network, db, R2, "lakeside-foods", ask_note="no")
+    dial(network, db, R2, "corner-mart", ask_note="yes")      # its answer is null: nothing to say
+    dial(network, db, R2, "queen-st-grocer", ask_note="no")
     assert network.wait_idle(10)
 
     bodies = {t["body"]["party_id"]: t["body"] for t in poster.tools}
-    assert bodies["harbour-fire"]["delivery_note"] == "DN-51877"
-    assert "delivery_note" not in bodies["lakeside-systems"]
-    assert "delivery_note" not in bodies["corner-properties"]
-    assert "delivery_note" not in bodies["queen-st-alarm"]
+    assert bodies["harbour-market"]["delivery_note"] == "DN-51877"
+    assert "delivery_note" not in bodies["lakeside-foods"]
+    assert "delivery_note" not in bodies["corner-mart"]
+    assert "delivery_note" not in bodies["queen-st-grocer"]
     assert all(t["result"]["accepted"] for t in poster.tools), [t["result"] for t in poster.tools]
-    assert db.recalls.find_one({"_id": R2})["open_units"] == 0, "recall 2 explains every panel"
+    assert db.recalls.find_one({"_id": R2})["open_units"] == 0, "recall 2 explains every tin"
     assert_balance(R2)
 
 
@@ -239,26 +239,26 @@ def test_delivery_note_only_when_asked(client, db, network, poster, assert_balan
 def test_demo_hold_waits_for_release(client, db, network, poster):
     out = start(client, db, mode="demo")
     assert out["mode"] == "demo" and db.recalls.find_one({"_id": R1})["mode"] == "demo"
-    dial(network, db, R1, "queen-st-alarm")
+    dial(network, db, R1, "queen-st-grocer")
 
     assert eventually(lambda: feed_lines(db, "sim_hold"))
     assert not network.wait_idle(0.5)
     assert poster.tools == [] and poster.hooks == []
     (hold,) = feed_lines(db, "sim_hold")
-    assert hold["text"] == "Queen St Alarm's reply is held for the demo - release it when ready"
-    assert hold["source"] == "sim" and hold["party_id"] == "queen-st-alarm"
+    assert hold["text"] == "Queen St Grocer's reply is held for the demo - release it when ready"
+    assert hold["source"] == "sim" and hold["party_id"] == "queen-st-grocer"
 
-    db.worker_state.update_one({"_id": f"sim_release:{R1}:queen-st-alarm"},
+    db.worker_state.update_one({"_id": f"sim_release:{R1}:queen-st-grocer"},
                                {"$set": {"released_at": datetime.now(timezone.utc)}}, upsert=True)
     assert network.wait_idle(10)
     (tool,) = poster.tools
-    assert tool["result"]["accepted"] and tool["result"]["discovered"] == "corner-properties"
+    assert tool["result"]["accepted"] and tool["result"]["discovered"] == "corner-mart"
     assert len(feed_lines(db, "sim_hold")) == 1
 
 
 def test_demo_hold_is_ignored_in_sim_mode(client, db, network, poster):
     start(client, db)
-    dial(network, db, R1, "queen-st-alarm")
+    dial(network, db, R1, "queen-st-grocer")
     assert network.wait_idle(10)
     assert len(poster.tools) == 1 and feed_lines(db, "sim_hold") == []
 
@@ -266,13 +266,13 @@ def test_demo_hold_is_ignored_in_sim_mode(client, db, network, poster):
 def test_must_follow_holds_corner_properties_until_queen_st_has_claimed(client, db, network, poster, assert_balance):
     start(client, db, "recall_2")
     add_corner_properties_stub(db, R2)
-    dial(network, db, R2, "corner-properties")
+    dial(network, db, R2, "corner-mart")
     time.sleep(0.6)
-    assert poster.tools == [], "Corner Properties must not answer before the sender reports the transfer"
+    assert poster.tools == [], "Corner Mart must not answer before the sender reports the transfer"
 
-    dial(network, db, R2, "queen-st-alarm")
+    dial(network, db, R2, "queen-st-grocer")
     assert network.wait_idle(10)
-    assert poster.order() == ["queen-st-alarm", "corner-properties"]
+    assert poster.order() == ["queen-st-grocer", "corner-mart"]
     assert all(t["result"]["accepted"] for t in poster.tools)
     edge = db.edges.find_one({"recall_id": R2})
     assert (edge["sender_qty"], edge["recipient_qty"], edge["state"]) == (30, 30, "corroborated")
@@ -283,7 +283,7 @@ def test_a_party_still_waiting_hangs_up_after_max_call_s(client, db, poster, set
     net = SimNetwork(db, poster, settings, max_call_s=0.3)
     try:
         start(client, db, mode="demo")
-        _, placed = dial(net, db, R1, "queen-st-alarm")
+        _, placed = dial(net, db, R1, "queen-st-grocer")
         assert net.wait_idle(5)
     finally:
         net.stop()
@@ -297,19 +297,19 @@ def test_a_party_still_waiting_hangs_up_after_max_call_s(client, db, poster, set
 
 def test_stop_ends_waiting_players_and_refuses_new_calls(client, db, network, poster):
     start(client, db, mode="demo")
-    _, placed = dial(network, db, R1, "queen-st-alarm")
+    _, placed = dial(network, db, R1, "queen-st-grocer")
     assert eventually(lambda: feed_lines(db, "sim_hold"))
     network.stop()
     assert network.wait_idle(5)
     assert poster.tools == [] and poster.hooks == []
     assert db.sim_calls.find_one({"_id": placed.call_sid})["status"] == "in-progress"
     with pytest.raises(ProviderError, match="stopped"):
-        dial(network, db, R1, "lakeside-systems")
+        dial(network, db, R1, "lakeside-foods")
 
 
 def test_missing_script_still_posts_a_post_call(client, db, network, poster):
     start(client, db)
-    _, placed = dial(network, db, R1, "lakeside-systems", purpose="dispute_followup")
+    _, placed = dial(network, db, R1, "lakeside-foods", purpose="dispute_followup")
     assert network.wait_idle(10)
     assert poster.tools == []
     (hook,) = poster.hooks
@@ -322,7 +322,7 @@ def test_missing_script_still_posts_a_post_call(client, db, network, poster):
 
 def test_duplicate_webhook_posts_twice_and_books_once(client, db, network, poster, assert_balance):
     start(client, db)
-    attempt, placed = dial(network, db, R1, "lakeside-systems", faults={"duplicate_webhook": True})
+    attempt, placed = dial(network, db, R1, "lakeside-foods", faults={"duplicate_webhook": True})
     assert network.wait_idle(10)
     first, second = poster.tools
     assert first["body"] == second["body"]
@@ -337,7 +337,7 @@ def test_duplicate_webhook_posts_twice_and_books_once(client, db, network, poste
 
 def test_no_answer_posts_a_call_initiation_failure(client, db, network, poster, settings):
     start(client, db)
-    _, placed = dial(network, db, R1, "harbour-fire", faults={"no_answer": True})
+    _, placed = dial(network, db, R1, "harbour-market", faults={"no_answer": True})
     assert network.wait_idle(10)
     assert poster.tools == [] and feed_lines(db, "sim_reply") == []
     (hook,) = poster.hooks
@@ -355,7 +355,7 @@ def test_no_answer_posts_a_call_initiation_failure(client, db, network, poster, 
 
 def test_drop_post_call_leaves_the_call_unfinished(client, db, network, poster):
     start(client, db)
-    _, placed = dial(network, db, R1, "lakeside-systems", faults={"drop_post_call": True})
+    _, placed = dial(network, db, R1, "lakeside-foods", faults={"drop_post_call": True})
     assert network.wait_idle(10)
     assert len(poster.tools) == 1 and poster.hooks == []
     row = db.sim_calls.find_one({"_id": placed.call_sid})
@@ -364,7 +364,7 @@ def test_drop_post_call_leaves_the_call_unfinished(client, db, network, poster):
 
 def test_late_post_call_holds_the_webhook_back(client, db, network, poster):
     start(client, db)
-    _, placed = dial(network, db, R1, "lakeside-systems", faults={"late_post_call_s": 1.5})
+    _, placed = dial(network, db, R1, "lakeside-foods", faults={"late_post_call_s": 1.5})
     assert eventually(lambda: poster.tools)
     assert poster.hooks == []
     assert network.wait_idle(10)
@@ -381,7 +381,7 @@ def test_place_call_refuses_bad_input(client, db, network):
     with pytest.raises(ProviderError, match="no attempt"):
         network.place_call(to_number="+14165550141", dynamic_variables={}, attempt_id="att_missing")
     with pytest.raises(ValueError, match="unknown simulator fault"):
-        dial(network, db, R1, "lakeside-systems", faults={"explode": True})
+        dial(network, db, R1, "lakeside-foods", faults={"explode": True})
     with pytest.raises(ValueError, match="late_post_call_s"):
         network.place_call(to_number="+1", dynamic_variables={}, attempt_id="x", faults={"late_post_call_s": True})
 
@@ -391,9 +391,9 @@ def test_place_call_refuses_bad_input(client, db, network):
 def test_sim_probe_finds_the_call(client, db, network):
     start(client, db)
     before = datetime.now(timezone.utc) - timedelta(seconds=1)
-    _, first = dial(network, db, R1, "lakeside-systems", to="+14165550199")
+    _, first = dial(network, db, R1, "lakeside-foods", to="+14165550199")
     time.sleep(0.01)                                        # start_time has millisecond precision
-    _, second = dial(network, db, R1, "harbour-fire", to="+14165550199")
+    _, second = dial(network, db, R1, "harbour-market", to="+14165550199")
     assert network.wait_idle(10)
 
     probe = SimProbe(db)
@@ -409,22 +409,22 @@ def test_sim_probe_finds_the_call(client, db, network):
 
 def test_fake_voice_with_a_network(client, db, network, poster):
     start(client, db)
-    voice = FakeVoice(network, faults={"lakeside-systems": "drop_response", "harbour-fire": "fail_before",
-                                       "queen-st-alarm": "duplicate_webhook"})
+    voice = FakeVoice(network, faults={"lakeside-foods": "drop_response", "harbour-market": "fail_before",
+                                       "queen-st-grocer": "duplicate_webhook"})
     assert isinstance(voice.probe, SimProbe)
     with pytest.raises(ProviderTimeout):
-        dial(voice, db, R1, "lakeside-systems")
+        dial(voice, db, R1, "lakeside-foods")
     with pytest.raises(ProviderTimeout):
-        dial(voice, db, R1, "harbour-fire")
-    dial(voice, db, R1, "queen-st-alarm")
+        dial(voice, db, R1, "harbour-market")
+    dial(voice, db, R1, "queen-st-grocer")
     assert network.wait_idle(10)
 
-    assert voice.count() == 2 and voice.count("harbour-fire") == 0
-    assert db.sim_calls.count_documents({"party_id": "harbour-fire"}) == 0, "fail_before never reached the vendor"
-    lost = voice.placed_calls("lakeside-systems")[0]
+    assert voice.count() == 2 and voice.count("harbour-market") == 0
+    assert db.sim_calls.count_documents({"party_id": "harbour-market"}) == 0, "fail_before never reached the vendor"
+    lost = voice.placed_calls("lakeside-foods")[0]
     assert db.sim_calls.find_one({"_id": lost["call_sid"]})["status"] == "completed", \
         "the call whose answer was lost still happened"
-    assert sorted(poster.order()) == ["lakeside-systems", "queen-st-alarm", "queen-st-alarm"]
+    assert sorted(poster.order()) == ["lakeside-foods", "queen-st-grocer", "queen-st-grocer"]
     assert voice.probe.call_status(lost["call_sid"]).raw["attempt_id"] == lost["attempt_id"]
 
 
@@ -623,32 +623,32 @@ def test_a_slice_party_answers_questions_after_its_script_and_on_a_question_call
     db.questions.insert_one({"_id": f"{RL}:q-02", "recall_id": RL, "question_id": "q-02",
                              "text": "Did you also receive batch B-4480?", "answer_type": "yes_no_count",
                              "applies_to": {"level": [1, 2, 3]}, "asked_at": 9.0})
-    db.parties.update_one({"recall_id": RL, "party_id": "queen-st-alarm"}, {"$set": {"open_questions": ["q-02"]}})
-    count = LONG["sim_truth"]["queen-st-alarm"]["truth"]["other_batches"]["B-4480"]
+    db.parties.update_one({"recall_id": RL, "party_id": "queen-st-grocer"}, {"$set": {"open_questions": ["q-02"]}})
+    count = LONG["sim_truth"]["queen-st-grocer"]["truth"]["other_batches"]["B-4480"]
 
-    scripted, _ = dial(long_net, db, RL, "queen-st-alarm")
+    scripted, _ = dial(long_net, db, RL, "queen-st-grocer")
     assert long_net.wait_idle(10)
     (tool,) = long_poster.tools
-    assert tool["result"]["accepted"] and tool["result"]["discovered"] == "corner-properties", "the script played"
-    asked, _ = dial(long_net, db, RL, "queen-st-alarm", purpose="ask_question")
+    assert tool["result"]["accepted"] and tool["result"]["discovered"] == "corner-mart", "the script played"
+    asked, _ = dial(long_net, db, RL, "queen-st-grocer", purpose="ask_question")
     assert long_net.wait_idle(10)
 
     assert len(long_poster.tools) == 1, "a question call asks no counts"
     value = {"answer": "yes", "count": count}
     assert [a["body"] for a in long_poster.answers] == [
-        {"attempt_id": scripted["_id"], "party_id": "queen-st-alarm", "question_id": "q-02", "value": value},
-        {"attempt_id": asked["_id"], "party_id": "queen-st-alarm", "question_id": "q-02", "value": value}]
-    first, second = calls_to(db, "queen-st-alarm")
+        {"attempt_id": scripted["_id"], "party_id": "queen-st-grocer", "question_id": "q-02", "value": value},
+        {"attempt_id": asked["_id"], "party_id": "queen-st-grocer", "question_id": "q-02", "value": value}]
+    first, second = calls_to(db, "queen-st-grocer")
     assert (first["script_key"], first["profile"]) == ("initial", None)
     assert (second["script_key"], second["profile"], second["reply_kind"]) == (None, "forwarder", "answer")
     transcript = long_poster.hooks[-1]["payload"]["data"]["transcript"]
     assert any(c["tool_name"] == "submit_answer" for t in transcript for c in t["tool_calls"])
 
-    # Harbour Fire is a real phone in the demo and has no ground truth; simulated, it still answers.
-    db.parties.update_one({"recall_id": RL, "party_id": "harbour-fire"}, {"$set": {"open_questions": ["q-02"]}})
-    harbour, _ = dial(long_net, db, RL, "harbour-fire", purpose="ask_question")
+    # Harbour Market is a real phone in the demo and has no ground truth; simulated, it still answers.
+    db.parties.update_one({"recall_id": RL, "party_id": "harbour-market"}, {"$set": {"open_questions": ["q-02"]}})
+    harbour, _ = dial(long_net, db, RL, "harbour-market", purpose="ask_question")
     assert long_net.wait_idle(10)
-    assert long_poster.answers[-1]["body"] == {"attempt_id": harbour["_id"], "party_id": "harbour-fire",
+    assert long_poster.answers[-1]["body"] == {"attempt_id": harbour["_id"], "party_id": "harbour-market",
                                                "question_id": "q-02", "value": {"answer": "no", "count": 0}}
     assert len(long_poster.tools) == 1
 
@@ -780,11 +780,11 @@ def test_posters_reach_the_v2_endpoints_and_the_form():
     assert poster.post_answer({"question_id": "q-02"}) == {"accepted": True}
     assert poster.post_callback({"callback_at": 33.0}) == {"accepted": True}
     assert poster.post_report({"source": "rep"}) == {"accepted": True}
-    assert poster.post_form("tok-en", {"received_qty": 31, "in_stock": 8}) == 200
+    assert poster.post_form("tok-en", {"received_qty": 31, "held": 8}) == 200
     assert got["/tools/submit_answer"] == ("tool-secret", {"question_id": "q-02"})
     assert got["/tools/request_callback"] == ("tool-secret", {"callback_at": 33.0})
     assert got["/tools/report"] == ("tool-secret", {"source": "rep"})
-    assert got["form"] == ("tok-en", "application/x-www-form-urlencoded", "received_qty=31&in_stock=8")
+    assert got["form"] == ("tok-en", "application/x-www-form-urlencoded", "received_qty=31&held=8")
 
 
 def test_sim_voice_delivers_a_form_link():

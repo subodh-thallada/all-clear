@@ -10,16 +10,16 @@ Each party's books follow its own claim and the gap lives on the edge:
 
 shipment_qty is the recipient's own delivery on the supplier's shipment
 records: 0 for a party reached only through transfers, the shipment record
-for a tier 1 party that also received panels from another party.
+for a tier 1 party that also received tins from another party.
 
-An installer that installs panels at a building books them as forwarded to
-the building's owner (an edge); the owner books them as installed, and later
-as fixed, on evidence (see the party validator in levela.db.schema).
+A store that passes tins to another store books them as forwarded (an
+edge); the second store books them as on_shelf, and later as held, sold or
+returned, held only on evidence (see the party validator in levela.db.schema).
 
 A sender may forward to several parties (V2 §9): one edge per destination. A
 party may also receive from several senders: one edge per sender, and its
 shipped_in counts every one of them. Booking only the edge a claim touched
-would drop the others' corroborated panels from the party's books while their
+would drop the others' corroborated tins from the party's books while their
 edges still counted them, and the mass balance would lose them silently.
 
 These helpers run inside the claim transaction (they take a session).
@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 from pymongo import UpdateOne
 
 # Every bucket but unresolved, which is derived: shipped_in minus this.
-_SUM = {"$add": ["$in_stock", "$installed", "$fixed", "$returned", "$forwarded"]}
+_SUM = {"$add": ["$sold", "$on_shelf", "$held", "$returned", "$forwarded"]}
 # Identity a directory entry gives an order system account's party (V2 §4).
 ACCOUNT_FIELDS = ("account", "distributor")
 
@@ -80,15 +80,15 @@ FREE_LEASE = datetime(1970, 1, 1, tzinfo=timezone.utc)
 
 def product_fields(recall: dict) -> dict:
     """What a party carries from its recall so the party validator can judge
-    a fixed claim on its own: the model and the affected software versions."""
-    return {"model": recall["model"], "affected_versions": list(recall["affected_versions"])}
+    a held claim on its own: the recalled batch code."""
+    return {"batch_code": recall["batch_code"]}
 
 
 def ledger_fields(shipped_in: int, product: dict) -> dict:
     """A new party's books: everything unresolved, no evidence yet."""
-    return {"shipped_in": shipped_in, "in_stock": 0, "installed": 0, "fixed": 0, "returned": 0, "forwarded": 0,
-            "unresolved": shipped_in, **product_fields(product), "model_seen": None, "version_seen": None,
-            "sounder_test": None, "fixed_by_panel": 0, "connected_unfixed": 0}
+    return {"shipped_in": shipped_in, "sold": 0, "on_shelf": 0, "held": 0, "returned": 0, "forwarded": 0,
+            "unresolved": shipped_in, **product_fields(product), "batch_seen": None, "sold_source": None,
+            "block_test": None, "held_by_system": 0, "sold_by_till": 0, "system_on_shelf": 0}
 
 
 def v2_fields(*, tier: int, found_via: str, next_action_at: float | None = None, slice_: bool = False,
@@ -96,8 +96,8 @@ def v2_fields(*, tier: int, found_via: str, next_action_at: float | None = None,
     """The long-run fields every party carries (V2 §4): its timer, ladder
     position and lease. A new party is due at once (`next_action_at`), so the
     worker's due query picks it up without any event having to be delivered.
-    `tier` is how the party entered the run: 1 on the shipment records, 2 an
-    order system's account, 3 named by a claim."""
+    `tier` is how the party entered the run: 0 the plant, 1 on the shipment
+    records, 2 an order system's account, 3 named by a claim."""
     return {
         "tier": int(tier), "found_via": found_via, "next_action_at": next_action_at, "ladder_step": 1,
         "hold_for_demo": bool(hold_for_demo), "slice": bool(slice_), "followups": followups,
@@ -113,17 +113,17 @@ def found_via(discovered_by: str) -> str:
 
 
 def stub_party(recall_id, party_id, name, entry, discovered_by, now, extra=None, *, product: dict, tier: int = 3,
-               type_: str = "owner", next_action_at: float | None = None) -> dict:
+               type_: str = "store", next_action_at: float | None = None) -> dict:
     """A party known only because someone named it. shipped_in is 0 until a
-    corroborated transfer books panels into it. Due at once when the caller
+    corroborated transfer books tins into it. Due at once when the caller
     passes the current simulated time as next_action_at.
 
-    `product` is the recall (or any party of it): its model and affected
-    versions are copied on. The directory entry, when there is one, supplies
+    `product` is the recall (or any party of it): its batch code is copied
+    on. The directory entry, when there is one, supplies
     the party's type, contact details and long-run fields (tier, slice, demo
     hold, follow-ups, and an order system account's `account` /
-    `distributor`). A party named by a claim is a building owner unless the
-    directory says otherwise; an order system's account is an installer."""
+    `distributor`). A party named by a claim or an order system's account is
+    a store unless the directory says otherwise."""
     entry = entry or {}
     v2 = v2_fields(tier=entry.get("tier", tier), found_via=found_via(discovered_by),
                    next_action_at=next_action_at, slice_=bool(entry.get("slice")),
@@ -177,11 +177,11 @@ def settle_edge(db, edge, sender_qty, recipient_qty, now, session) -> dict:
 
 
 def shipment_qty(db, recall_id, party_id, session=None) -> int:
-    """Panels the distributor delivered to this party directly (0 if none).
+    """Tins the distributor delivered to this party directly (0 if none).
 
     A recipient's shipped_in is this plus the corroborated transfer. Setting
     it to the transfer alone erased a direct party's own shipment when it
-    also received panels from another party: each party still conserved, so
+    also received tins from another party: each party still conserved, so
     no validator objected, but the global mass balance lost the shipment.
     """
     ship = db.shipments.find_one({"recall_id": recall_id, "party_id": party_id}, {"qty": 1}, session=session)

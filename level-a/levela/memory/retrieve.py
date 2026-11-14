@@ -197,7 +197,7 @@ def check_party(db, embedder, party: dict, *, k: int = 3, mode: str = "auto", no
     try:
         # Memory is past experience: episodes written during this same recall
         # are left out (a slice party would otherwise inherit "ask for the
-        # delivery note" from Harbour Fire's over-count minutes earlier).
+        # delivery note" from Harbour Market's over-count minutes earlier).
         # They are dropped after the search, so ask for a few spare hits.
         hits, how = retrieve(db, embedder, party["profile"], k=k + SAME_RECALL_SPARE, mode=mode)
     except EMBED_ERRORS as exc:

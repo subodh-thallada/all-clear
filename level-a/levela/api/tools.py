@@ -9,7 +9,7 @@ reports all take.
                                 distributor's rep, a form submission relayed
                                 by the simulator, an order system read
 
-The agent never knows shipped_in or the affected software versions. It
+The agent never knows shipped_in or the affected batches. It
 learns of a mismatch only from the submit_count reply, which names the two
 values that disagree, so every challenge it speaks originates in Atlas. The
 agent's tools always answer HTTP 200 for a well-formed call because the agent
@@ -53,11 +53,11 @@ router = APIRouter()
 # Body keys that are the claim itself (the rest identify the call). `forwards`
 # is the multi-destination form of forwarded_qty/forwarded_to_name (V2 §9);
 # `received_from` names the sender of a receipt for a party with several;
-# model_seen, version_seen and sounder_test are a building owner's three checks.
-CLAIM_KEYS = ("in_stock", "returned", "installed", "fixed", "forwarded_qty", "forwarded_to_name",
-              "received_qty", "received_from", "model_seen", "version_seen", "sounder_test", "delivery_note",
+# batch_seen, sold_source and block_test are a store's three checks.
+CLAIM_KEYS = ("sold", "on_shelf", "held", "returned", "forwarded_qty", "forwarded_to_name",
+              "received_qty", "received_from", "batch_seen", "sold_source", "block_test", "delivery_note",
               "forwards")
-BUCKET_LABELS = (("in_stock", "in stock"), ("installed", "installed"), ("fixed", "fixed"), ("returned", "returned"))
+BUCKET_LABELS = (("sold", "sold"), ("on_shelf", "on the shelf"), ("held", "held"), ("returned", "returned"))
 # Rejections after which the call has nothing left to do: asking again cannot
 # change the answer on this call. forward_changed / forward_restate mean the
 # receiving party already counted a transfer the party now leaves out, and
@@ -222,7 +222,7 @@ def book_claim(client, db, attempt: dict, raw: dict, *, source: str, now: dateti
 
 def receives_transfers(db, party: dict | None) -> bool:
     """Whether a party has a receipt to give: any party some sender reported
-    forwarding panels to, whatever its tier. A party below tier 1 is asked
+    forwarding tins to, whatever its tier. A party below tier 1 is asked
     even before its sender reports (the ledger then answers no_inbound_edge)."""
     if party is None:
         return False
@@ -232,7 +232,7 @@ def receives_transfers(db, party: dict | None) -> bool:
 
 
 def _without_idle_receipt(db, raw: dict, party: dict | None) -> dict:
-    """A tier 1 party that nobody forwarded panels to has no transfer to
+    """A tier 1 party that nobody forwarded tins to has no transfer to
     confirm. An LLM that fills the optional received_qty with 0 must not turn
     its counts into a receipt (the ledger would refuse it as no_inbound_edge
     and end the call). A tier 1 party with an inbound edge keeps its receipt,
@@ -315,7 +315,7 @@ def handle_answer(state, body: dict, *, now: datetime | None = None) -> dict:
 
 
 def _announce_answer(db, party: dict, attempt: dict, question: dict, out: dict, sim: float) -> None:
-    unit = (db.recalls.find_one({"_id": party["recall_id"]}, {"unit": 1}) or {}).get("unit") or "panel"
+    unit = (db.recalls.find_one({"_id": party["recall_id"]}, {"unit": 1}) or {}).get("unit") or "tin"
     said = questions.answer_text(question["answer_type"], out["value"], unit)
     verb = "corrected" if out["corrected"] else "answered"
     feed.emit(db, "answer_recorded", f"{party['name']} {verb} {question['question_id']}: {said}", level="good",
@@ -403,17 +403,17 @@ class Report(BaseModel):
     party_id: str
     source: Literal["rep", "form", "order_system"]
     evidence_id: str = Field(min_length=1)
-    in_stock: Any = None
-    installed: Any = None
-    fixed: Any = None
+    sold: Any = None
+    on_shelf: Any = None
+    held: Any = None
     returned: Any = None
     forwarded_qty: Any = None
     forwarded_to_name: str | None = None
     received_qty: Any = None
     received_from: str | None = None
-    model_seen: str | None = None
-    version_seen: Any = None
-    sounder_test: Any = None
+    batch_seen: str | None = None
+    sold_source: str | None = None
+    block_test: Any = None
     delivery_note: str | None = None
     forwards: list[dict] | None = None
 
@@ -470,7 +470,7 @@ def _announce_report(db, party: dict, body: Report, raw: dict) -> None:
 # ---- feed lines -------------------------------------------------------------
 
 def describe_counts(raw: dict, forwarded_to: str | None = None) -> str:
-    """'30 in stock, 10 returned': the non-zero buckets of a booked claim,
+    """'30 held, 10 returned': the non-zero buckets of a booked claim,
     plus a receipt, the transfers and the check answers when the claim has them."""
     c = counts(raw)
     sender = text(raw.get("received_from"))
@@ -483,13 +483,13 @@ def describe_counts(raw: dict, forwarded_to: str | None = None) -> str:
     elif c["forwarded_qty"]:
         parts.append(f"{c['forwarded_qty']} forwarded to {forwarded_to or raw.get('forwarded_to_name')}")
     ck = checks(raw)
-    if "model_seen" in ck:
-        parts.append(f"model {ck['model_seen']}")
-    if "version_seen" in ck:
-        parts.append(f"display {ck['version_seen']}")
-    if "sounder_test" in ck:
-        parts.append(f"sounder {'yes' if ck['sounder_test'] else 'no'}")
-    return ", ".join(parts) or "no panels in stock, installed, fixed or returned"
+    if "batch_seen" in ck:
+        parts.append(f"batch {ck['batch_seen']}")
+    if "sold_source" in ck:
+        parts.append("sold read off the till" if ck["sold_source"] == "till_report" else "sold estimated")
+    if "block_test" in ck:
+        parts.append(f"till refused the sale: {'yes' if ck['block_test'] else 'no'}")
+    return ", ".join(parts) or "no tins sold, on the shelf, held or returned"
 
 
 def announce(db, result: dict, *, attempt: dict, party: dict | None, raw: dict,
@@ -565,17 +565,17 @@ def _edge_line(edge: dict, names: dict):
     if state == "withdrawn":
         # A transfer the sender took back before the recipient counted it.
         gone = f"; {recipient} is no longer in the run (nothing else named it)" if edge.get("removed") else ""
-        return ("info", f"Transfer withdrawn: {sender} no longer reports sending {edge['sender_qty']} panels to "
+        return ("info", f"Transfer withdrawn: {sender} no longer reports sending {edge['sender_qty']} tins to "
                 f"{recipient}{gone}", "warn", detail, None)
     if before is None:
-        return ("edge_opened", f"Transfer opened: {sender} -> {recipient}, {edge['sender_qty']} panels "
+        return ("edge_opened", f"Transfer opened: {sender} -> {recipient}, {edge['sender_qty']} tins "
                 f"awaiting {recipient}'s count", "info", detail, None)
     if state == before:
         return None
     if state == "disputed":
         return ("edge_disputed", f"Transfer disputed: {sender} says {edge['sender_qty']}, {recipient} says "
-                f"{edge['recipient_qty']} - {edge['disputed_qty']} panels disputed", "bad", detail, None)
+                f"{edge['recipient_qty']} - {edge['disputed_qty']} tins disputed", "bad", detail, None)
     if state == "corroborated":
         return ("edge_corroborated", f"Transfer corroborated: {sender} and {recipient} agree on "
-                f"{edge['corroborated_qty']} panels", "good", detail, None)
+                f"{edge['corroborated_qty']} tins", "good", detail, None)
     return None

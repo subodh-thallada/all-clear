@@ -5,7 +5,7 @@ database with it (describe()).
 The spec's rules enforced by Atlas:
 
   1  party conservation          validator on parties
-  2  fixed needs evidence        validator on parties
+  2  removal needs evidence      validator on parties
   3  edge sanity                 validator on edges
   4  close gate                  validator on recalls
   5  one live attempt per party  partial unique index on attempts
@@ -44,52 +44,63 @@ PARTY_NAME_INDEX_DEFINITION = {"mappings": {"dynamic": False, "fields": {
 _QTY = {"bsonType": ["int", "long"], "minimum": 0}
 _QTY_OR_NULL = {"bsonType": ["int", "long", "null"], "minimum": 0}
 
-# The six buckets a party's panels fall into. `installed` means installed and
-# not yet confirmed fixed.
-BUCKETS = ("in_stock", "installed", "fixed", "returned", "forwarded", "unresolved")
-PARTY_TYPES = ["distributor", "installer", "owner"]
+# The six buckets a party's tins fall into. `on_shelf` means still for sale
+# (the open bucket); `held` means pulled from sale and kept apart.
+BUCKETS = ("sold", "on_shelf", "held", "returned", "forwarded", "unresolved")
+# plant: tier 0, the factory that made the batch. self: a node's own depot.
+PARTY_TYPES = ["plant", "distributor", "store", "self"]
+PARTY_CHANNELS = ["voice", "sim", "form", "order_system", "agent"]
+# Where a `sold` count came from: read off the till's item sales report, or not.
+SOLD_SOURCES = ["till_report", "estimate"]
+RECALL_ACTIONS = ["return", "destroy"]
 _STRING_OR_NULL = {"bsonType": ["string", "null"]}
 
 # Rule 1. Party conservation: every quantity is a non-negative integer and
-#   shipped_in = in_stock + installed + fixed + returned + forwarded + unresolved.
-# Rule 2. Fixed needs evidence: `fixed` is at most `fixed_by_panel` (connected
-# panels that passed their own test), unless the party read a version outside
-# its affected_versions off the display AND the sounder rang; `installed` is
-# never below `connected_unfixed` (a connected panel outranks the phone); and
-# a model read off the panel must be the recalled model.
-_FIXED_BY_PHONE = {"$and": [
-    {"$eq": [{"$type": "$version_seen"}, "string"]},
-    {"$not": [{"$in": ["$version_seen", {"$ifNull": ["$affected_versions", []]}]}]},
-    {"$eq": ["$sounder_test", True]},
+#   shipped_in = sold + on_shelf + held + returned + forwarded + unresolved.
+# Rule 2. Removal needs evidence:
+#   held     at most held_by_system (the party's own records show them off
+#            sale: a store's quarantine moves, a distributor's verified hold),
+#            unless batch_seen is the party's batch_code AND block_test is true
+#            (the batch code read off a tin, and the till refused the sale);
+#   sold     at most sold_by_till, unless sold_source is the till report;
+#   on_shelf never below system_on_shelf (the store's stock record outranks
+#            the phone).
+# Sub-recall: a party whose own agent reports `sub.state: "closed"` has no tin
+# on a shelf and none unresolved.
+_HELD_BY_PHONE = {"$and": [
+    {"$eq": [{"$type": "$batch_seen"}, "string"]},
+    {"$eq": ["$batch_seen", "$batch_code"]},
+    {"$eq": ["$block_test", True]},
 ]}
+_SUB_CLOSED = {"$eq": [{"$ifNull": ["$sub.state", None]}, "closed"]}
 PARTY_VALIDATOR = {
     "$jsonSchema": {
         "bsonType": "object",
         "required": [
             "recall_id", "party_id", "name", "type", "tier", "channel", "state", "shipped_in", *BUCKETS,
-            "model", "affected_versions", "fixed_by_panel", "connected_unfixed",
+            "batch_code", "held_by_system", "sold_by_till", "system_on_shelf",
         ],
         "properties": {
             "recall_id": {"bsonType": "string"},
             "party_id": {"bsonType": "string"},
             "type": {"enum": PARTY_TYPES},
-            "tier": {"bsonType": "int", "enum": [1, 2, 3]},
+            "tier": {"bsonType": "int", "enum": [0, 1, 2, 3]},
             "shipped_in": _QTY, **{b: _QTY for b in BUCKETS},
-            "fixed_by_panel": _QTY, "connected_unfixed": _QTY,
+            "held_by_system": _QTY, "sold_by_till": _QTY, "system_on_shelf": _QTY,
             "state": {"enum": ["pending", "contacting", "reached", "claimed", "reconciled"]},
-            "channel": {"enum": ["voice", "sim", "form", "order_system"]},
-            "model": {"bsonType": "string"},
-            "affected_versions": {"bsonType": "array", "items": {"bsonType": "string"}},
-            "model_seen": _STRING_OR_NULL,
-            "version_seen": _STRING_OR_NULL,
-            "sounder_test": {"bsonType": ["bool", "null"]},
+            "channel": {"enum": PARTY_CHANNELS},
+            "batch_code": {"bsonType": "string"},
+            "batch_seen": _STRING_OR_NULL,
+            "sold_source": {"enum": [*SOLD_SOURCES, None]},
+            "block_test": {"bsonType": ["bool", "null"]},
         },
     },
     "$expr": {"$and": [
         {"$eq": ["$shipped_in", {"$add": [f"${b}" for b in BUCKETS]}]},
-        {"$or": [{"$lte": ["$fixed", "$fixed_by_panel"]}, _FIXED_BY_PHONE]},
-        {"$gte": ["$installed", "$connected_unfixed"]},
-        {"$or": [{"$eq": [{"$ifNull": ["$model_seen", None]}, None]}, {"$eq": ["$model_seen", "$model"]}]},
+        {"$or": [{"$lte": ["$held", "$held_by_system"]}, _HELD_BY_PHONE]},
+        {"$or": [{"$lte": ["$sold", "$sold_by_till"]}, {"$eq": ["$sold_source", "till_report"]}]},
+        {"$gte": ["$on_shelf", "$system_on_shelf"]},
+        {"$or": [{"$not": [_SUB_CLOSED]}, {"$and": [{"$eq": ["$on_shelf", 0]}, {"$eq": ["$unresolved", 0]}]}]},
     ]},
 }
 
@@ -109,19 +120,26 @@ EDGE_VALIDATOR = {
 }
 
 # Rule 4. Close gate: status may be "closed" only when open_units is 0. The
-# recall also carries what the checks compare against (model, affected and
-# fixed versions), copied onto each party, and where it came from: a recall
-# whose source is a signal names it.
+# recall also holds the product, its barcode, the affected batches, the
+# action stores must take (return or destroy; unset until a person confirms
+# the plant's answer), whether the barcode is proven on one till, the defect
+# and the three checks. Its batch code is copied onto each party, so the
+# party validator can refuse `held` with the wrong batch. A recall whose
+# source is a signal names it.
 RECALL_VALIDATOR = {
     "$jsonSchema": {
         "bsonType": "object",
-        "required": ["batch_code", "model", "affected_versions", "fixed_version", "source", "units_total",
-                     "open_units", "status"],
+        "required": ["batch_code", "product", "barcode", "affected_batches", "action", "barcode_verified", "defect",
+                     "checks", "source", "units_total", "open_units", "status"],
         "properties": {
             "batch_code": {"bsonType": "string"},
-            "model": {"bsonType": "string"},
-            "affected_versions": {"bsonType": "array", "items": {"bsonType": "string"}},
-            "fixed_version": {"bsonType": "string"},
+            "product": {"bsonType": "string"},
+            "barcode": {"bsonType": "string"},
+            "affected_batches": {"bsonType": "array", "items": {"bsonType": "string"}},
+            "action": {"enum": [*RECALL_ACTIONS, None]},
+            "barcode_verified": {"bsonType": "bool"},
+            "defect": {"bsonType": "string"},
+            "checks": {"bsonType": "array"},
             "source": {"enum": ["signal", "manual"]},
             "source_signal": _STRING_OR_NULL,
             "units_total": _QTY, "open_units": _QTY,
@@ -289,7 +307,7 @@ def ensure_party_name_index(db, wait_s: int = 180) -> dict:
 
 
 def describe(db) -> dict:
-    """What is actually installed: validators and index names per collection
+    """What is actually on_shelf: validators and index names per collection
     (None for a collection that does not exist)."""
     out = {}
     infos = {c["name"]: c for c in db.list_collections()}

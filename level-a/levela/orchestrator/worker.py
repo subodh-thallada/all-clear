@@ -45,8 +45,8 @@ Memory before first contact (recall option memory). A suspect_party action
 creates the named party as a stub due at once, one priority above the party
 that remembered it, and that party is released with a short head start
 (SUSPECT_HEAD_START_S of real time) so the suspect is contacted first: in
-recall 2, Corner Properties' attempt starts before Queen St Alarm's claim. That
-needs a second worker thread when Corner Properties' reply waits for Queen St
+recall 2, Corner Mart' attempt starts before Queen St Grocer's claim. That
+needs a second worker thread when Corner Mart' reply waits for Queen St
 Alarm's claim; with one thread the suspect's run holds until its budget
 ends. ask_delivery_note is recorded on parties.memory, where the call's
 dynamic variables read it.
@@ -816,7 +816,7 @@ def build_decider(settings):
 
 def build_order_systems() -> dict:
     """{order system name: client} from levela.systems.order_client (URLs from
-    ORDER_<NAME>_URL); none when the systems package is not installed (the
+    ORDER_<NAME>_URL); none when the systems package is not on_shelf (the
     four-party slice needs no order system)."""
     try:
         from ..systems import order_client

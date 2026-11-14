@@ -2,7 +2,7 @@
 
 The operator's script for the three minutes in front of the judges (spec "Demo
 script"), and everything that has to be true before they arrive. The long run
-(recall `RCL-2026-020`, batch B-4471, 2,400 panels, 40 parties) starts at 4:55
+(recall `RCL-2026-020`, batch B-4471, 2,400 tins, 40 parties) starts at 4:55
 and is more than an hour old when judging begins. The live part shows the
 rejection, the kill, the order system change and the refused close.
 
@@ -20,8 +20,8 @@ make, run the command shown next to each target.
 |---|---|
 | Operator (C) | Runs the laptop: the terminals and the wall's operator strip (`/wall?key=<ADMIN_TOKEN>`, opened once; the key is then remembered and removed from the address bar) |
 | Narrator (A) | Says the lines; watches the wall |
-| Phone P1 | Rings as Harbour Fire (`PHONE_HARBOUR`); handed to the judge |
-| Phone P2 | Rings as Corner Properties (`PHONE_CORNER`); held by teammate B |
+| Phone P1 | Rings as Harbour Market (`PHONE_HARBOUR`); handed to the judge |
+| Phone P2 | Rings as Corner Mart (`PHONE_CORNER`); held by teammate B |
 | Big screen | The wall, `https://<host>/wall` |
 | T1 | `make order systems` (the two mock order systems; their tunnels if the API is hosted) |
 | T2 | `make supervisor RECALL=RCL-2026-020` (the worker under random kills); becomes the kill-demo terminal |
@@ -57,14 +57,14 @@ kill beat uses the failpoint, so its timing is exact.
 
 | Time | Beat | Operator | The room sees | Say |
 |---|---|---|---|---|
-| 0:00 | Run in progress | T3: `python scripts/demo.py run` (check only) | Started at 4:55, the simulated day, 40 parties from 5, steps, kills survived, 0 duplicate effects | "Nothing counts in a recall until every panel is explained. This agent will not close one until the mass balance holds." |
-| 0:15 | Judge call | Button **Release Harbour Fire** (it also pauses random kills and releases Lakeside Systems), or T3: `python scripts/demo.py judge` | P1 rings. Hand it to the judge: "You manage Harbour Fire. Feel free to lie about your stock." | |
+| 0:00 | Run in progress | T3: `python scripts/demo.py run` (check only) | Started at 4:55, the simulated day, 40 parties from 5, steps, kills survived, 0 duplicate effects | "Nothing counts in a recall until every tin is explained. This agent will not close one until the mass balance holds." |
+| 0:15 | Judge call | Button **Release Harbour Market** (it also pauses random kills and releases Lakeside Foods), or T3: `python scripts/demo.py judge` | P1 rings. Hand it to the judge: "You manage Harbour Market. Feel free to lie about your stock." | |
 | 0:35 | Caught | T3: `python scripts/demo.py caught` (watches) | Feed: rejected by Atlas, 60 reported, 40 shipped. The agent says both numbers; the judge corrects; accepted | "The model did not catch that. The database did." |
-| 1:00 | Hidden party | T2: Ctrl+C the supervisor (it stops its worker), then `make kill-demo RECALL=RCL-2026-020` (the wall's **Arm failpoint** button does the same arming and releases Corner Properties and Queen St Alarm, for when the supervisor restarts the worker instead) | `kill_demo` arms the failpoint and releases Queen St Alarm's held reply: her claim creates Corner Properties on the wall | "Queen St Alarm forwarded part of the batch to a party no list had." |
-| 1:05 | Kill | (kill_demo runs the worker) T3: `python scripts/demo.py kill` | The worker dials Corner Properties and dies: the `WORKER KILLED (exit 137)` banner. P2 rings once; B says "received twenty-five". The edge turns disputed: 15 panels. Operator presses Enter in T2: the resume line (documents read, nothing replayed), the attempt adopted, no second ring | "The call was requested and the worker died before saving it. A naive agent redials. Ours finds the evidence first." |
+| 1:00 | Hidden party | T2: Ctrl+C the supervisor (it stops its worker), then `make kill-demo RECALL=RCL-2026-020` (the wall's **Arm failpoint** button does the same arming and releases Corner Mart and Queen St Grocer, for when the supervisor restarts the worker instead) | `kill_demo` arms the failpoint and releases Queen St Grocer's held reply: her claim creates Corner Mart on the wall | "Queen St Grocer forwarded part of the batch to a party no list had." |
+| 1:05 | Kill | (kill_demo runs the worker) T3: `python scripts/demo.py kill` | The worker dials Corner Mart and dies: the `WORKER KILLED (exit 137)` banner. P2 rings once; B says "received twenty-five". The edge turns disputed: 15 tins. Operator presses Enter in T2: the resume line (documents read, nothing replayed), the attempt adopted, no second ring | "The call was requested and the worker died before saving it. A naive agent redials. Ours finds the evidence first." |
 | 1:45 | Order system changes | Button **Switch order system to v2** (North), or T3: `python scripts/demo.py order system` | Contract failure (a field missing), operations flagged, the repaired adapter, the canary matching, only the flagged operations retried | "The order system changed under us. A mapping that does not reproduce a count the ledger already trusts is never activated." |
 | 2:20 | Memory | Button **Switch East to v2** (secondary row), or T3: `python scripts/demo.py memory` | East orders fails the same way; the saved mapping is retrieved and activated with 0 model calls | "The second order system repaired itself from memory: Vector Search on the failure text, the same canary, no model call." |
-| 2:35 | Closing gate | Button **Close recall**, or T3: `python scripts/demo.py close` | Close refused by Atlas; the open panels; documented, recovered and open side by side | "Fifteen panels are unexplained, so Atlas will not let the recall close." |
+| 2:35 | Closing gate | Button **Close recall**, or T3: `python scripts/demo.py close` | Close refused by Atlas; the open tins; documented, recovered and open side by side | "Fifteen tins are unexplained, so Atlas will not let the recall close." |
 | 2:50 | Wrap | T3: `python scripts/demo.py wrap` (resumes random kills) | | "What is real here: the calls, the kills and every refusal by the database. What is simulated: the clock, the other parties and the order system." Then: "Today this is food recalls. Next it is any recalled product. Eventually it is any obligation that must reach everyone in a chain and be proven complete." |
 
 After the judges leave: in T2, Ctrl+C the kill-demo worker and run
@@ -73,13 +73,13 @@ After the judges leave: in T2, Ctrl+C the kill-demo worker and run
 ### Beat notes
 
 - **Judge call.** Releasing the whole slice at once would let Queen St
-  Grocer's held reply go too, and Corner Properties would be dialled before the
-  failpoint is armed. Release Harbour Fire (and Lakeside Systems) only; the
+  Grocer's held reply go too, and Corner Mart would be dialled before the
+  failpoint is armed. Release Harbour Market (and Lakeside Foods) only; the
   kill beat releases the rest.
 - **Hidden party and kill.** `kill_demo` refuses while another worker is
   alive: stop the supervisor first (Ctrl+C in T2). It arms
-  `after_dial_request` for `corner-properties`, releases Corner Properties' hold and
-  Queen St Alarm's held reply (`--no-release` if Queen St Alarm was already
+  `after_dial_request` for `corner-mart`, releases Corner Mart' hold and
+  Queen St Grocer's held reply (`--no-release` if Queen St Grocer was already
   released), then runs `python -m levela worker` in the foreground. Exit code
   137 means the failpoint fired: the call exists, the worker never saved it.
   Wait for B to answer and the claim to land (the edge turns disputed while
@@ -96,14 +96,14 @@ After the judges leave: in T2, Ctrl+C the kill-demo worker and run
 
 | If | Then |
 |---|---|
-| Voice fails in the room | The judge uses the web form on the laptop (Harbour Fire's form link from `make demo`'s output, or its QR code at `/form/<token>/qr.svg` on a phone): the same rejection appears on the wall |
-| The second phone (Corner Properties) is flaky | Run the kill with Corner Properties simulated: `VOICE_PROVIDER=sim make kill-demo RECALL=RCL-2026-020` (both worker runs dial voice parties through the simulator). The failpoint, the adoption and the call counter of 1 are the same |
+| Voice fails in the room | The judge uses the web form on the laptop (Harbour Market's form link from `make demo`'s output, or its QR code at `/form/<token>/qr.svg` on a phone): the same rejection appears on the wall |
+| The second phone (Corner Mart) is flaky | Run the kill with Corner Mart simulated: `VOICE_PROVIDER=sim make kill-demo RECALL=RCL-2026-020` (both worker runs dial voice parties through the simulator). The failpoint, the adoption and the call counter of 1 are the same |
 | Venue Wi-Fi drops | Laptop to the phone hotspot. The API is on the public host and keeps taking webhooks; the worker reconnects (it is killed and restarted all evening anyway) |
 | The judge will not play along | A teammate plays the manager |
 | The run goes long | Skip the memory beat and say it in one sentence |
 | The order system repair stalls in front of judges | Show the last passing run of test 18 (`python -m pytest tests/test_order_system_change.py -q`) and say so |
-| Memory beat cannot run on the long run | Start recall 2 as in the four-party demo: `python scripts/demo.py start --scenario recall_2 --all-sim`; Corner Properties is reached before Queen St Alarm answers |
-| `kill_demo` says the worker exited with a code other than 137 | The failpoint did not fire (Corner Properties was dialled before it was armed, or another worker took it). `python -m levela status` shows what is armed; restart with `make supervisor` and show a supervisor kill instead: "restart n" and the resume line |
+| Memory beat cannot run on the long run | Start recall 2 as in the four-party demo: `python scripts/demo.py start --scenario recall_2 --all-sim`; Corner Mart is reached before Queen St Grocer answers |
+| `kill_demo` says the worker exited with a code other than 137 | The failpoint did not fire (Corner Mart was dialled before it was armed, or another worker took it). `python -m levela status` shows what is armed; restart with `make supervisor` and show a supervisor kill instead: "restart n" and the resume line |
 | The invariant counter turns red | The supervisor stops itself and the failure stays on the wall. Say what it is: the check doing its job. `make status` names the check that failed |
 | The hosted API is asleep or down | Wake it with `/healthz` (about a minute). If it is down: the API on the laptop behind a tunnel (`deploy/README.md`, "Backup"), then `make provision` |
 

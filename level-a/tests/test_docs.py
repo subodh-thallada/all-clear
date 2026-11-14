@@ -137,8 +137,8 @@ def test_runbook_covers_the_nine_beats_the_checklist_and_the_fallbacks():
         assert f"python scripts/demo.py {beat.command}" in text or beat.command == "kill-arm", beat.command
     for line in ("The model did not catch that. The database did.",
                  "A naive agent redials. Ours finds the evidence first.",
-                 "Fifteen panels are unexplained, so Atlas will not let the recall close.",
-                 "Nothing counts in a recall until every panel is explained."):
+                 "Fifteen tins are unexplained, so Atlas will not let the recall close.",
+                 "Nothing counts in a recall until every tin is explained."):
         assert line in show, line
     checklist = _section(text, "## Pre-show checklist")
     for step in ("make reset", "make preflight", "make seed", "make provision", "make order systems", "make demo",

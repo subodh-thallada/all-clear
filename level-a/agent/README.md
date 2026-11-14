@@ -23,7 +23,7 @@ variables, filled per call from the worker's
 
 ## The one rule this folder must keep
 
-The agent never knows how many panels a party should have. Nothing here contains
+The agent never knows how many tins a party should have. Nothing here contains
 `shipped_in`, a delivered count or a delivery note number (the sample values and
 examples are numbers no scenario uses), and the worker never sends one. The
 agent hears about a mismatch only from the tool reply, after Atlas has refused
@@ -47,7 +47,7 @@ ElevenLabs provides on Twilio calls. `sender_name`, `told_qty` and
   call is a question-only call, and the prompt then never asks for counts.
 - `questions` lists the party's open questions, each starting with its id, for
   example `q-07: Did you also receive batch ZX-5521? (answer: yes or no, and how
-  many panels).` It is empty when there are none. The agent asks each one, reads
+  many tins).` It is empty when there are none. The agent asks each one, reads
   the answer back and records it with `submit_answer`; the API removes the id
   from the party's `open_questions`.
 - `question_ids` is the comma-separated list of those ids (the agent does not
@@ -103,7 +103,7 @@ webhook secret), and it never writes a file.
 ```sh
 python -m levela api                       # in another terminal; reachable at PUBLIC_BASE_URL
 python scripts/call_once.py --watch        # rings PHONE_HARBOUR
-python scripts/call_once.py --to +1... --var tier=downstream --var "sender_name=Queen St Alarm"
+python scripts/call_once.py --to +1... --var tier=downstream --var "sender_name=Queen St Grocer"
 ```
 
 `call_once.py` sends exactly the variables the worker sends for a direct party's
@@ -176,7 +176,7 @@ Write each result down, with the phone and carrier used.
    the digit read-back gets wrong, and whether the "no, that's wrong" correction
    recovers each one.
 4. **The agent speaks a canned rejection.** Run the API and the worker, start
-   `recall_1` with `PHONE_HARBOUR` set, answer as Harbour Fire and over-count.
+   `recall_1` with `PHONE_HARBOUR` set, answer as Harbour Market and over-count.
    The agent must say both numbers from the tool reply and ask again. After two
    challenges it must stop.
 5. **Call screening does not block it.** Try with iOS "Silence Unknown Callers"

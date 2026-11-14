@@ -1,8 +1,9 @@
 """Load a scenario, start a recall from it, reset run-time state.
 
 start_recall() is what POST /admin/recalls does: one transaction inserts the
-recall (its model, affected and fixed versions and the three checks come from
-the scenario and are copied onto every party), the shipment records and the
+recall (its product, barcode, affected batches, action, defect and the three
+checks come from the scenario; its batch code is copied onto every party), the
+shipment records and the
 parties on them (tier 1). Hidden parties are not
 inserted; they live in the recall's `directory` (copied from the scenario,
 with real phone numbers resolved from the environment) and appear when a
@@ -24,7 +25,7 @@ The long run (recall_long, V2 §8) adds a `schedule` (sim_start, speed,
 hold_slice_in_demo, order_system_change_at) copied onto the run, distributors on
 the shipment list with channel "order_system", and directory entries carrying
 `slice` and `tier`. Slice parties (and slice directory entries, such as
-Corner Properties) wait for the operator in demo mode when the schedule says so;
+Corner Mart) wait for the operator in demo mode when the schedule says so;
 `hold_slice` overrides the schedule either way.
 """
 from __future__ import annotations
@@ -94,9 +95,9 @@ def _contact(entry: dict, sim: bool, env) -> tuple[str, str | None]:
 
 
 def _identity(entry: dict, default_tier: int) -> dict:
-    """A scenario entry's type (distributor, installer or owner) and tier
-    (1 on the shipment records, 2 an order system's account, 3 named by a
-    claim). Every entry names its type: the checks a call asks depend on it."""
+    """A scenario entry's type (plant, distributor, store or self) and tier
+    (0 the plant, 1 on the shipment records, 2 an order system's account, 3
+    named by a claim). Every entry names its type: the checks a call asks depend on it."""
     if entry.get("type") not in PARTY_TYPES:
         raise ScenarioError(f"{entry.get('name')} needs a type: one of {', '.join(PARTY_TYPES)}")
     return {"type": entry["type"], "tier": int(entry.get("tier", default_tier))}
@@ -197,7 +198,7 @@ def start_recall(client, db, scenario: dict, *, all_sim=False, sim_parties=(), m
     forget_clocks(db)
     if emit:
         feed.emit(db, "recall_started",
-                  f"Recall {rid} opened: batch {r['batch_code']}, {r['units_total']} {r['model']} panels "
+                  f"Recall {rid} opened: batch {r['batch_code']}, {r['units_total']} tins of {r['product']} "
                   f"shipped to {len(parties)} parties ({mode} mode, memory {'on' if memory else 'off'})",
                   recall_id=rid, detail={"options": recall["options"], "mode": mode, "source": source,
                                          "source_signal": source_signal})
@@ -212,7 +213,7 @@ def reset(db) -> dict:
     the simulator's call log and the worker's bookkeeping.
 
     Run between rehearsals: an episode left over from a rehearsal makes run 1
-    find Corner Properties through memory at second zero.
+    find Corner Mart through memory at second zero.
 
     This is the database's half. The mock order systems keep their version and
     holds in their own processes, so its callers (POST /admin/reset and

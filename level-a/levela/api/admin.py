@@ -162,7 +162,7 @@ def reset(request: Request) -> dict:
 @router.post("/close")
 def close(body: RecallRef, request: Request) -> dict:
     """Atlas's close gate decides. A refusal wakes the planner (spec "The
-    planner": it runs when a close is refused), so the open panels are re-ranked
+    planner": it runs when a close is refused), so the open tins are re-ranked
     now rather than at its next six-hour pass."""
     db = request.app.state.db
     _require_recall(db, body.recall_id)

@@ -25,10 +25,10 @@ def recall(client, db, assert_balance):
     """recall_1 with a form claim (the ledger logs its evidence) and a
     simulated call whose tool event is logged as POST /tools/submit_count does."""
     start_recall(client, db, load_scenario("recall_1"), all_sim=True, emit=False)
-    db.tool_events.insert_one({"kind": "tool_call", "attempt_id": "att_lake", "party_id": "lakeside-systems",
+    db.tool_events.insert_one({"kind": "tool_call", "attempt_id": "att_lake", "party_id": "lakeside-foods",
                                "recall_id": RID, "payload": {}, "received_at": server_now(client)})
-    for party_id, attempt, source, raw in (("lakeside-systems", "att_lake", "sim", {"in_stock": 20, "returned": 60}),
-                                           ("harbour-fire", "att_form", "form", {"in_stock": 40})):
+    for party_id, attempt, source, raw in (("lakeside-foods", "att_lake", "sim", {"held": 20, "returned": 60}),
+                                           ("harbour-market", "att_form", "form", {"held": 40})):
         assert submit_claim(client, db, recall_id=RID, party_id=party_id, attempt_id=attempt, source=source,
                             raw=raw)["accepted"]
         assert_balance(RID)
@@ -36,7 +36,7 @@ def recall(client, db, assert_balance):
 
 
 def test_all_four_hold_on_a_clean_run(client, db, recall):
-    db.attempts.insert_one({"_id": "att_q", "recall_id": RID, "party_id": "queen-st-alarm", "seq": 1,
+    db.attempts.insert_one({"_id": "att_q", "recall_id": RID, "party_id": "queen-st-grocer", "seq": 1,
                             "state": "dialed"})
     logs = {"north": [{"idempotency_key": "RCL:dist-north:place_hold", "hold_id": "H1"}], "east": []}
     result = invariants.check(db, RID, logs)
@@ -49,12 +49,12 @@ def test_all_four_hold_on_a_clean_run(client, db, recall):
 
 
 def test_a_claim_without_a_tool_event_fails_check_3(client, db, recall):
-    submit_claim(client, db, recall_id=RID, party_id="queen-st-alarm", attempt_id="att_ghost", source="voice",
-                 raw={"in_stock": 120})
+    submit_claim(client, db, recall_id=RID, party_id="queen-st-grocer", attempt_id="att_ghost", source="voice",
+                 raw={"held": 120})
     result = invariants.check(db, RID, {})
     assert result["passed"] == [True, True, False, True]
     [row] = result["details"]["claims_without_evidence"]
-    assert (row["party_id"], row["attempt_id"], row["source"]) == ("queen-st-alarm", "att_ghost", "voice")
+    assert (row["party_id"], row["attempt_id"], row["source"]) == ("queen-st-grocer", "att_ghost", "voice")
     assert isinstance(row["claim_id"], str)
     assert "1 accepted claim(s) without a tool event" in invariants.describe(result)
     # A post-call event is not evidence of the numbers; the tool call is.
@@ -66,7 +66,7 @@ def test_a_claim_without_a_tool_event_fails_check_3(client, db, recall):
 
 def test_a_write_around_the_ledger_fails_check_4(db, recall):
     # Each party still conserves, so no validator objects; the recall does not.
-    db.parties.update_one({"recall_id": RID, "party_id": "queen-st-alarm"},
+    db.parties.update_one({"recall_id": RID, "party_id": "queen-st-grocer"},
                          {"$inc": {"shipped_in": 1, "unresolved": 1}})
     result = invariants.check(db, RID, {}, at=158.0)
     assert result["at"] == 158.0 and result["passed"] == [True, True, True, False]
@@ -113,16 +113,16 @@ def test_two_live_attempts_for_one_party_fail_check_1(fresh_db):
     fresh_db.recalls.insert_one({"_id": RID, "batch_code": "B-4471", "units_total": 0, "open_units": 0,
                                  "status": "open"})
     fresh_db.attempts.insert_many([
-        {"_id": "att_1", "recall_id": RID, "party_id": "harbour-fire", "seq": 1, "state": "dialed"},
-        {"_id": "att_2", "recall_id": RID, "party_id": "harbour-fire", "seq": 2, "state": "intent"},
-        {"_id": "att_3", "recall_id": RID, "party_id": "harbour-fire", "seq": 3, "state": "completed"},
-        {"_id": "att_4", "recall_id": RID, "party_id": "lakeside-systems", "seq": 1, "state": "connected"},
+        {"_id": "att_1", "recall_id": RID, "party_id": "harbour-market", "seq": 1, "state": "dialed"},
+        {"_id": "att_2", "recall_id": RID, "party_id": "harbour-market", "seq": 2, "state": "intent"},
+        {"_id": "att_3", "recall_id": RID, "party_id": "harbour-market", "seq": 3, "state": "completed"},
+        {"_id": "att_4", "recall_id": RID, "party_id": "lakeside-foods", "seq": 1, "state": "connected"},
     ])
     result = invariants.check(fresh_db, RID, {}, at=10.0)
     assert result["passed"] == [False, True, True, True]
-    assert result["details"]["live_attempts"] == [{"party_id": "harbour-fire", "attempts": ["att_1", "att_2"]}]
+    assert result["details"]["live_attempts"] == [{"party_id": "harbour-market", "attempts": ["att_1", "att_2"]}]
     assert result["details"]["duplicate_effects"] == ["attempt:att_2"]
-    assert invariants.describe(result) == "3 of 4 hold. FAILED: two live attempts at harbour-fire"
+    assert invariants.describe(result) == "3 of 4 hold. FAILED: two live attempts at harbour-market"
 
 
 def test_an_unknown_recall_cannot_be_checked(db):

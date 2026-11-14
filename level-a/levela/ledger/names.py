@@ -1,10 +1,10 @@
 """Matching a spoken name to a party already in the run, before a stub is created.
 
-A party named on a call ("the Corner Properties people", "Corner Property")
+A party named on a call ("the Corner Mart people", "Corner Property")
 must resolve to the party that already exists, or the graph gets the same
-building owner twice. match_party() is the one place that decides, so the
-claim path and the monitoring link (a connected panel's site label to its
-owner) agree:
+store twice. match_party() is the one place that decides, so the
+claim path and the store-records link (a connected store's `store_label`
+to its party) agree:
 
   1  the recall's directory: a name or alias, normalised      (exact)
   2  the recall's parties: Atlas Search fuzzy on `name`      (when the cluster has it)
@@ -38,7 +38,7 @@ FUZZY_MIN_SCORE = 1.0
 
 def normalise(name: str) -> str:
     """Lower case, punctuation as spaces, a leading article dropped:
-    "The Corner-Properties" -> "corner properties"."""
+    "The Corner-Properties" -> "corner mart"."""
     words = re.sub(r"[^a-z0-9]+", " ", (name or "").lower()).split()
     while words and words[0] in _FILLER:
         words = words[1:]

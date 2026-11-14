@@ -4,7 +4,7 @@ The invariants are re-checked here by independent arithmetic, not by calling
 generate.check(): the profile counts, the order system totals, conservation for
 every party and for the batch, the one chain three hops below the shipment
 records, short receivers downstream of a forwarder that corrects itself, the
-building owners' fix scripts, the 24 connected panels, and fictional phone
+stores' fix scripts, the 24 connected tins, and fictional phone
 numbers. check() itself is tested on broken copies.
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ from levela.ledger.transfers import resolve_party, slugify
 from levela.runs import get_run
 
 SEED = 20261114
-BUCKETS = ("in_stock", "installed", "fixed", "returned")
+BUCKETS = ("held", "on_shelf", "held", "returned")
 FICTIONAL = re.compile(r"^\+1(416|647|437|905|289|365)55501\d\d$")
 PROFILES = {"straight": 14, "no_answer": 5, "callback": 3, "over_reporter": 3, "reviser": 2, "forwarder": 6,
             "short_receiver": 2, "unreachable": 1}
@@ -65,14 +65,14 @@ def test_the_committed_file_is_what_the_fixed_seed_generates(scn):
 
 def test_recall_and_the_shipment_list(scn):
     r = scn["recall"]
-    assert (r["_id"], r["batch_code"], r["unit"], r["units_total"]) == ("RCL-2026-020", "B-4471", "panel", 2400)
+    assert (r["_id"], r["batch_code"], r["unit"], r["units_total"]) == ("RCL-2026-020", "B-4471", "tin", 2400)
     assert r["batch_spoken"] and r["supplier"] and r["product"] and r["hazard"] and r["checks"]
-    assert (r["model"], r["affected_versions"], r["fixed_version"]) == ("DEMO-7", ["2.3", "2.4"], "2.5")
-    assert not any(v in r["hazard"] for v in r["affected_versions"]), "the hazard reaches the agent"
+    assert (r["model"], r["affected_batches"], r["action"]) == ("B-4471", ["2.3", "2.4"], "2.5")
+    assert not any(v in r["hazard"] for v in r["affected_batches"]), "the hazard reaches the agent"
     parties = {s["party_id"]: s for s in scn["parties"]}
-    assert list(parties) == ["harbour-fire", "queen-st-alarm", "lakeside-systems", "dist-north", "dist-east"]
+    assert list(parties) == ["harbour-market", "queen-st-grocer", "lakeside-foods", "dist-north", "dist-east"]
     assert all(s["tier"] == 1 for s in parties.values())
-    assert [s["type"] for s in parties.values()] == ["installer"] * 3 + ["distributor"] * 2
+    assert [s["type"] for s in parties.values()] == ["store"] * 3 + ["distributor"] * 2
     assert sum(s["shipped_in"] for s in parties.values()) == 2400
     for sid, name, order_system, qty in (("dist-north", "Distributor North", "north", 1300),
                                    ("dist-east", "Distributor East", "east", 860)):
@@ -85,20 +85,20 @@ def test_recall_and_the_shipment_list(scn):
     corner = scn["directory"][0]
     assert corner == base["directory"][0]
     assert (corner["type"], corner["tier"], corner["phone_env"], corner["slice"]) == ("owner", 3, "PHONE_CORNER", True)
-    base["sim"]["corner-properties"].pop("fix_check")
-    assert scn["sim"] == base["sim"], "the slice scripts are recall_1's, without Corner Properties' fix"
+    base["sim"]["corner-mart"].pop("removal_check")
+    assert scn["sim"] == base["sim"], "the slice scripts are recall_1's, without Corner Mart' fix"
 
 
 def test_profile_counts(scn):
     truth = scn["sim_truth"]
     assert len(truth) == 36
     assert Counter(e["profile"] for e in truth.values()) == PROFILES
-    assert truth["queen-st-alarm"]["profile"] == "forwarder"
-    assert truth["lakeside-systems"]["profile"] == "straight"
-    simulated = ({slugify(a["name"]) for a in accounts(scn)} | {"queen-st-alarm", "lakeside-systems"}
+    assert truth["queen-st-grocer"]["profile"] == "forwarder"
+    assert truth["lakeside-foods"]["profile"] == "straight"
+    simulated = ({slugify(a["name"]) for a in accounts(scn)} | {"queen-st-grocer", "lakeside-foods"}
                  | {d["party_id"] for d in scn["directory"] if not d.get("slice")})
     assert set(truth) == simulated
-    assert not {"harbour-fire", "corner-properties"} & set(truth), "the two real phones have no profile"
+    assert not {"harbour-market", "corner-mart"} & set(truth), "the two real phones have no profile"
     assert all({"name", "type", "tier", "upstream", "profile", "description", "truth", "params"} <= set(e)
                for e in truth.values())
 
@@ -114,9 +114,9 @@ def test_order_systems_list_21_accounts_that_add_up(scn):
         for a in rows:
             assert set(a) == {"account", "name", "phone", "qty_shipped", "qty_in_stock"}
             entry = scn["sim_truth"][slugify(a["name"])]
-            assert (entry["type"], entry["tier"], entry["upstream"]) == ("installer", 2, f"dist-{order_system}")
+            assert (entry["type"], entry["tier"], entry["upstream"]) == ("store", 2, f"dist-{order_system}")
             assert entry["truth"]["received"] == a["qty_shipped"]
-            assert entry["truth"]["in_stock"] == a["qty_in_stock"]
+            assert entry["truth"]["held"] == a["qty_in_stock"]
     assert len(accounts(scn)) == 21
 
 
@@ -128,12 +128,12 @@ def test_every_party_and_the_whole_batch_conserve(scn):
         assert inflow == outflow(t), sid
         assert all(isinstance(t[b], int) and t[b] >= 0 for b in BUCKETS), sid
     # The two real-phone parties' truths are their scripts' accepted answers.
-    harbour = scn["sim"]["harbour-fire"]["initial"][-1]["claim"]
-    corner = scn["sim"]["corner-properties"]["initial"][-1]["claim"]
-    assert sum(harbour.get(b, 0) for b in BUCKETS) == shipped["harbour-fire"]
+    harbour = scn["sim"]["harbour-market"]["initial"][-1]["claim"]
+    corner = scn["sim"]["corner-mart"]["initial"][-1]["claim"]
+    assert sum(harbour.get(b, 0) for b in BUCKETS) == shipped["harbour-market"]
     held = sum(sum(e["truth"][b] for b in BUCKETS) for e in scn["sim_truth"].values())
     held += sum(harbour.get(b, 0) for b in BUCKETS) + sum(corner.get(b, 0) for b in BUCKETS)
-    assert held == 2400, "every panel of the batch ends in stock, installed, fixed or returned somewhere"
+    assert held == 2400, "every tin of the batch ends in stock, on_shelf, fixed or returned somewhere"
     sent_by_dists = sum(e["truth"]["received"] for e in scn["sim_truth"].values() if e["tier"] == 2)
     assert sent_by_dists == shipped["dist-north"] + shipped["dist-east"], "the distributors forwarded everything"
 
@@ -150,9 +150,9 @@ def test_the_graph_one_three_hop_chain_and_short_receivers(scn):
                 assert truth[f["to_party_id"]]["upstream"] == sid
     assert {d["party_id"]: named[d["party_id"]] for d in directory} == {d["party_id"]: 1 for d in directory}
     assert len(directory) == 14 and all(d["tier"] == 3 for d in directory)
-    assert Counter(d["type"] for d in directory) == {"owner": 13, "installer": 1}
+    assert Counter(d["type"] for d in directory) == {"owner": 13, "store": 1}
 
-    upstream = {sid: e["upstream"] for sid, e in truth.items()} | {"corner-properties": "queen-st-alarm"}
+    upstream = {sid: e["upstream"] for sid, e in truth.items()} | {"corner-mart": "queen-st-grocer"}
 
     def hops(sid):
         return 0 if upstream.get(sid) is None else 1 + hops(upstream[sid])
@@ -177,7 +177,7 @@ def test_the_graph_one_three_hop_chain_and_short_receivers(scn):
         sent = next(f["qty"] for f in sender["truth"]["forwards"] if f["to_party_id"] == sid)
         assert lie["extra"] == e["params"]["short_by"] > 0
         assert e["truth"]["received"] == sent + lie["extra"] - e["params"]["short_by"]
-        assert sender["truth"]["in_stock"] >= lie["extra"], "the first claim moves the extra panels out of stock"
+        assert sender["truth"]["held"] >= lie["extra"], "the first claim moves the extra tins out of stock"
 
     (unreachable,) = [e for e in truth.values() if e["profile"] == "unreachable"]
     assert unreachable["tier"] == 2 and unreachable["upstream"].startswith("dist-")
@@ -197,7 +197,7 @@ def test_profile_parameters(scn):
         if e["profile"] == "over_reporter":
             assert p["over_report_by"] > 0
         if e["profile"] == "reviser":
-            assert p["revise"]["after_hours"] == 48.0 and 1 <= p["revise"]["delta"] <= t["in_stock"]
+            assert p["revise"]["after_hours"] == 48.0 and 1 <= p["revise"]["delta"] <= t["held"]
     variants = Counter("hours" if e["params"].get("answer_hours") else "attempt"
                        for e in scn["sim_truth"].values() if e["profile"] == "no_answer")
     assert variants["hours"] >= 1 and variants["attempt"] >= 1
@@ -219,7 +219,7 @@ def test_schedule_and_expected(scn):
     assert scn["schedule"] == {"sim_start": 9.0, "seconds_per_sim_hour": 30, "hold_slice_in_demo": True,
                                "order_system_change_at": {"north": 81.5, "east": 82.0}, "rep_report_at": 201.0,
                                "days": 10}
-    assert scn["expected"]["final"] == {"open_units": 40, "disputed_units": 15, "awaiting_fix": 25, "parties": 40,
+    assert scn["expected"]["final"] == {"open_units": 40, "disputed_units": 15, "on_shelf": 25, "parties": 40,
                                         "at_start": 5}
     assert scn["expected"]["parties_by_tier"] == {"1": 5, "2": 21, "3": 14}
     assert scn["expected"]["profiles"] == PROFILES
@@ -238,7 +238,7 @@ def broken(scn, change):
 def test_check_refuses_a_scenario_that_breaks_an_invariant(scn):
     gen.check(scn)
     assert "does not conserve" in broken(scn, lambda s: s["sim_truth"]["guildwood-alarm"]["truth"].update(
-        in_stock=s["sim_truth"]["guildwood-alarm"]["truth"]["in_stock"] + 1))
+        held=s["sim_truth"]["guildwood-alarm"]["truth"]["held"] + 1))
     assert "profile counts" in broken(scn, lambda s: s["sim_truth"]["guildwood-alarm"].update(profile="callback"))
     assert "fictional" in broken(scn, lambda s: s["order_systems"]["east"]["accounts"][0].update(phone="+14165551234"))
     assert "short_by" in broken(scn, lambda s: s["sim_truth"]["larkspur-residences"]["params"].update(short_by=1))
@@ -246,11 +246,11 @@ def test_check_refuses_a_scenario_that_breaks_an_invariant(scn):
         qty_shipped=1))
     assert "three hops" in broken(scn, lambda s: s["sim_truth"]["willow-creek-towers"].update(
         upstream="birchmount-fire-protection"))
-    assert "recall_1's" in broken(scn, lambda s: s["sim"]["lakeside-systems"]["initial"][0].update(say="hi"))
+    assert "recall_1's" in broken(scn, lambda s: s["sim"]["lakeside-foods"]["initial"][0].update(say="hi"))
     assert "fix script" in broken(scn, lambda s: s["sim_truth"]["maple-court"]["truth"].pop("fix"))
-    assert "installs at a building owner's site" in broken(
-        scn, lambda s: s["sim_truth"]["bloor-alarm"]["truth"].update(installed=1, in_stock=76))
-    assert "connected panels" in broken(scn, lambda s: s["connected_panels"].pop())
+    assert "installs at a store's site" in broken(
+        scn, lambda s: s["sim_truth"]["bloor-alarm"]["truth"].update(on_shelf=1, held=76))
+    assert "connected tins" in broken(scn, lambda s: s["connected_panels"].pop())
     assert "signal" in broken(scn, lambda s: next(p for p in s["connected_panels"] if not p["signal"]).update(
         signal=True))
 
@@ -272,10 +272,10 @@ def test_start_recall_accepts_the_long_run(client, db, assert_balance):
     out = start_recall(client, db, load_scenario("recall_long"), all_sim=True, env={})
     assert out["recall_id"] == "RCL-2026-020"
     parties = {s["party_id"]: s for s in db.parties.find({"recall_id": "RCL-2026-020"})}
-    assert set(parties) == {"harbour-fire", "queen-st-alarm", "lakeside-systems", "dist-north", "dist-east"}
+    assert set(parties) == {"harbour-market", "queen-st-grocer", "lakeside-foods", "dist-north", "dist-east"}
     assert (parties["dist-north"]["channel"], parties["dist-north"]["phone"], parties["dist-north"]["order_system"]) == \
         ("order_system", None, "north")
-    assert parties["harbour-fire"]["channel"] == "sim" and parties["harbour-fire"]["slice"] is True
+    assert parties["harbour-market"]["channel"] == "sim" and parties["harbour-market"]["slice"] is True
     recall = db.recalls.find_one({"_id": "RCL-2026-020"})
     assert len(recall["directory"]) == 14 and recall["open_units"] == 2400
     run = get_run(db, "RCL-2026-020")
@@ -285,32 +285,32 @@ def test_start_recall_accepts_the_long_run(client, db, assert_balance):
     assert_balance("RCL-2026-020")
 
 
-# ---------------------------------------------------------------- owners and connected panels
+# ---------------------------------------------------------------- owners and connected tins
 
 def test_every_building_owner_follows_a_fix_script(scn):
-    owners = {sid: e for sid, e in scn["sim_truth"].items() if e["type"] == "owner"}
+    owners = {sid: e for sid, e in scn["sim_truth"].items() if e["type"] == "store"}
     assert len(owners) == 12
     for sid, e in owners.items():
         t, fix = e["truth"], e["truth"]["fix"]
-        assert t["installed"] > 0 and t["fixed"] == 0, sid
+        assert t["on_shelf"] > 0 and t["held"] == 0, sid
         assert 9.0 + 48 <= fix["at"] <= 9.0 + 96, "two to four simulated days into the run"
-        assert (fix["model"], fix["version_after"]) == ("DEMO-7", "2.5")
+        assert (fix["model"], fix["version_after"]) == ("B-4471", "2.5")
         assert fix["version_before"] in ("2.3", "2.4")
-    assert all("fix" not in e["truth"] and e["truth"]["installed"] == 0
-               for e in scn["sim_truth"].values() if e["type"] == "installer")
+    assert all("fix" not in e["truth"] and e["truth"]["on_shelf"] == 0
+               for e in scn["sim_truth"].values() if e["type"] == "store")
 
 
 def test_the_24_connected_panels(scn):
-    panels = scn["connected_panels"]
-    assert len(panels) == 24 and len({p["serial"] for p in panels}) == 24
-    assert all(re.match(r"^D7-4471-\d{4}$", p["serial"]) and p["model"] == "DEMO-7" for p in panels)
-    corner = next(p for p in panels if p["party_id"] == "corner-properties")
+    tins = scn["connected_panels"]
+    assert len(tins) == 24 and len({p["serial"] for p in tins}) == 24
+    assert all(re.match(r"^D7-4471-\d{4}$", p["serial"]) and p["model"] == "B-4471" for p in tins)
+    corner = next(p for p in tins if p["party_id"] == "corner-mart")
     assert (corner["serial"], corner["site_label"], corner["sw_version"], corner["fixed_at"]) == (
-        "D7-4471-0193", "Corner Properties, Tower 2", "2.4", None)
-    signal = sorted(p["site_label"] for p in panels if p["signal"])
+        "D7-4471-0193", "Corner Mart, Tower 2", "2.4", None)
+    signal = sorted(p["site_label"] for p in tins if p["signal"])
     assert signal == ["Bayview Annex", "Maple Court", "Spadina Works"]
     truth = scn["sim_truth"]
-    per_owner = Counter(p["party_id"] for p in panels if p["party_id"] != "corner-properties")
+    per_owner = Counter(p["party_id"] for p in tins if p["party_id"] != "corner-mart")
     for sid, n in per_owner.items():
-        assert truth[sid]["type"] == "owner" and n <= truth[sid]["truth"]["installed"]
-        assert all(p["fixed_at"] == truth[sid]["truth"]["fix"]["at"] for p in panels if p["party_id"] == sid)
+        assert truth[sid]["type"] == "store" and n <= truth[sid]["truth"]["on_shelf"]
+        assert all(p["fixed_at"] == truth[sid]["truth"]["fix"]["at"] for p in tins if p["party_id"] == sid)

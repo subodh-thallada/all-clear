@@ -79,8 +79,8 @@ class Run:
         return att
 
     def run_1(self) -> "Run":
-        """Recall 1 up to the closing gate: 15 panels disputed on Queen St -> Corner Properties."""
-        for sid in ("harbour-fire", "lakeside-systems", "queen-st-alarm", "corner-properties"):
+        """Recall 1 up to the closing gate: 15 tins disputed on Queen St -> Corner Mart."""
+        for sid in ("harbour-market", "lakeside-foods", "queen-st-grocer", "corner-mart"):
             self.call(sid, self.claims(sid))
         return self
 
@@ -107,7 +107,7 @@ def run1(client, db, assert_balance):
 # ------------------------------------------------------------- summarize
 
 def test_summarize_harbour_fire_over_reported_then_corrected(db, run1):
-    att = run1.attempts[("harbour-fire", "initial")]
+    att = run1.attempts[("harbour-market", "initial")]
     claims, party, edges, directory, names = _inputs(db, att)
     summary, tags, entities = summarize(att, claims, party, edges, directory=directory, party_names=names)
     assert summary == ("First answer was 60 on hand against 40 shipped; "
@@ -118,23 +118,23 @@ def test_summarize_harbour_fire_over_reported_then_corrected(db, run1):
 
 
 def test_summarize_queen_st_forwards_to_corner_properties(db, run1):
-    att = run1.attempts[("queen-st-alarm", "initial")]
+    att = run1.attempts[("queen-st-grocer", "initial")]
     ep = db.episodes.find_one({"_id": episode_id(att["_id"])})
-    # Written when the call ended, before Corner Properties answered: no dispute yet.
-    assert ep["summary"] == "Reported 50 on hand, 30 sold and 40 forwarded to Corner Properties."
+    # Written when the call ended, before Corner Mart answered: no dispute yet.
+    assert ep["summary"] == "Reported 50 on hand, 30 sold and 40 forwarded to Corner Mart."
     assert ep["tags"] == ["answered", "counts_matched", "forwards_to"]
-    assert ep["entities"] == {"forwards_to": "Corner Properties"}
+    assert ep["entities"] == {"forwards_to": "Corner Mart"}
 
 
 def test_summarize_canonicalises_the_spoken_party_name():
     attempt = {"_id": "att_q", "state": "completed"}
-    party = {"party_id": "queen-st-alarm", "name": "Queen St Alarm"}
+    party = {"party_id": "queen-st-grocer", "name": "Queen St Grocer"}
     claim = {"status": "accepted",
-             "raw": {"in_stock": 80, "forwarded_qty": 40, "forwarded_to_name": " the corner properties "}}
+             "raw": {"held": 80, "forwarded_qty": 40, "forwarded_to_name": " the corner mart "}}
     directory = load_scenario("recall_1")["directory"]
     summary, tags, entities = summarize(attempt, [claim], party, [], directory=directory)
-    assert entities == {"forwards_to": "Corner Properties"}
-    assert summary == "Reported 50 on hand, 30 sold and 40 forwarded to Corner Properties."
+    assert entities == {"forwards_to": "Corner Mart"}
+    assert summary == "Reported 50 on hand, 30 sold and 40 forwarded to Corner Mart."
     # Not in the directory: the stub's name (the first spelling heard) wins, else the words as spoken.
     claim["raw"]["forwarded_to_name"] = "bobs deli"
     assert summarize(attempt, [claim], party, [], party_names={"bobs-deli": "Bob's Deli"})[2] == \
@@ -143,28 +143,28 @@ def test_summarize_canonicalises_the_spoken_party_name():
 
 
 def test_summarize_corner_properties_received_and_disputed(db, run1):
-    att = run1.attempts[("corner-properties", "initial")]
+    att = run1.attempts[("corner-mart", "initial")]
     claims, party, edges, directory, names = _inputs(db, att)
     summary, tags, entities = summarize(att, claims, party, edges, directory=directory, party_names=names)
-    assert summary == ("Reported 25 received from Queen St Alarm and 25 on hand. "
-                       "Queen St Alarm reported sending 40, so 15 are disputed.")
+    assert summary == ("Reported 25 received from Queen St Grocer and 25 on hand. "
+                       "Queen St Grocer reported sending 40, so 15 are disputed.")
     assert tags == ["answered", "counts_matched", "received_transfer", "disputed"]
-    assert entities == {"received_from": "Queen St Alarm"}
+    assert entities == {"received_from": "Queen St Grocer"}
     # The sender's side of the same dispute, summarised now.
-    q_att = run1.attempts[("queen-st-alarm", "initial")]
+    q_att = run1.attempts[("queen-st-grocer", "initial")]
     q_summary, q_tags, _ = summarize(q_att, *_inputs(db, q_att)[:3], directory=directory, party_names=names)
-    assert q_summary.endswith("Corner Properties reported receiving 25, so 15 are disputed.")
+    assert q_summary.endswith("Corner Mart reported receiving 25, so 15 are disputed.")
     assert "disputed" in q_tags and "forwards_to" in q_tags
 
 
 def test_summarize_lakeside_destroyed(db, run1):
-    ep = db.episodes.find_one({"party_id": "lakeside-systems", "recall_id": R1})
+    ep = db.episodes.find_one({"party_id": "lakeside-foods", "recall_id": R1})
     assert ep["summary"] == "Reported 20 on hand and 60 destroyed."
     assert ep["tags"] == ["answered", "counts_matched", "destroyed"]
 
 
 def test_summarize_outcomes_without_claims():
-    party = {"party_id": "lakeside-systems", "name": "Lakeside Systems"}
+    party = {"party_id": "lakeside-foods", "name": "Lakeside Foods"}
     no_answer = {"_id": "att_n", "state": "no_answer", "intent_at": T0, "dialed_at": T0 + timedelta(seconds=1),
                  "ended_at": T0 + timedelta(seconds=21)}
     assert summarize(no_answer, [], party, []) == ("No answer after 20 s of ringing.", ["no_answer"], {})
@@ -180,8 +180,8 @@ def test_summarize_outcomes_without_claims():
 
 def test_summarize_never_corrected_goes_to_a_human():
     attempt = {"_id": "att_h", "state": "completed"}
-    party = {"party_id": "harbour-fire", "name": "Harbour Fire", "escalation": "human"}
-    over = {"status": "rejected", "code": "over_count", "raw": {"in_stock": 60}, "reported_total": 60,
+    party = {"party_id": "harbour-market", "name": "Harbour Market", "escalation": "human"}
+    over = {"status": "rejected", "code": "over_count", "raw": {"held": 60}, "reported_total": 60,
             "shipped_in": 40, "reject_reason": "60 reported, 40 shipped"}
     summary, tags, _ = summarize(attempt, [over, dict(over)], party, [])
     assert summary == ("Reported 60 on hand against 40 shipped and never corrected it; nothing was booked. "
@@ -191,10 +191,10 @@ def test_summarize_never_corrected_goes_to_a_human():
 
 def test_summarize_other_rejection_then_accepted():
     attempt = {"_id": "att_d", "state": "completed"}
-    party = {"party_id": "harbour-fire", "name": "Harbour Fire"}
-    refused = {"status": "rejected", "code": "delivery_note_required", "raw": {"in_stock": 30},
+    party = {"party_id": "harbour-market", "name": "Harbour Market"}
+    refused = {"status": "rejected", "code": "delivery_note_required", "raw": {"held": 30},
                "reject_reason": "ask for the delivery note before taking counts"}
-    booked = {"status": "accepted", "raw": {"in_stock": 30, "delivery_note": "DN-51877"}}
+    booked = {"status": "accepted", "raw": {"held": 30, "delivery_note": "DN-51877"}}
     summary, tags, _ = summarize(attempt, [refused, booked], party, [])
     assert summary == ("First answer was refused (ask for the delivery note before taking counts); "
                        "then reported 18 on hand and 12 sold.")
@@ -222,11 +222,11 @@ def test_summarize_keeps_the_hour_an_answered_call_was_placed_at():
 # ------------------------------------------------------------------ write
 
 def test_write_episode_shape_and_link(db, run1):
-    att = run1.attempts[("harbour-fire", "initial")]
+    att = run1.attempts[("harbour-market", "initial")]
     ep = db.episodes.find_one({"_id": episode_id(att["_id"])})
-    profile = run1.party("harbour-fire")["profile"]
+    profile = run1.party("harbour-market")["profile"]
     assert ep["_id"] == f"ep_{att['_id']}"
-    assert (ep["recall_id"], ep["party_id"], ep["attempt_id"]) == (R1, "harbour-fire", att["_id"])
+    assert (ep["recall_id"], ep["party_id"], ep["attempt_id"]) == (R1, "harbour-market", att["_id"])
     assert ep["party_profile"] == profile and ep["valid"] is True
     assert ep["embedding_model"] == "hash-256" and len(ep["embedding"]) == 256
     assert ep["embedding"] == pytest.approx(HashEmbedder().embed([profile])[0])
@@ -235,7 +235,7 @@ def test_write_episode_shape_and_link(db, run1):
 
 
 def test_write_episode_is_idempotent(db, run1):
-    att = run1.attempts[("lakeside-systems", "initial")]
+    att = run1.attempts[("lakeside-foods", "initial")]
     assert write_episode_for_attempt(db, HashEmbedder(), att) is None     # written by the run already
     db.episodes.delete_one({"_id": episode_id(att["_id"])})
 
@@ -256,11 +256,11 @@ def test_write_episode_is_idempotent(db, run1):
 
 def test_write_episode_skips_live_attempts_and_profileless_parties(client, db, assert_balance):
     run = Run(client, db, assert_balance, "recall_1")
-    live = open_attempt(db, recall_id=R1, party_id="harbour-fire", channel="sim", now=run.tick())
+    live = open_attempt(db, recall_id=R1, party_id="harbour-market", channel="sim", now=run.tick())
     assert write_episode_for_attempt(db, HashEmbedder(), live) is None
     complete(db, live["_id"], "no_answer", now=run.tick())
 
-    db.parties.update_one({"recall_id": R1, "party_id": "harbour-fire"}, {"$unset": {"profile": ""}})
+    db.parties.update_one({"recall_id": R1, "party_id": "harbour-market"}, {"$unset": {"profile": ""}})
     assert write_episode_for_attempt(db, HashEmbedder(), live) is None
     assert db.episodes.count_documents({}) == 0
     # Marked as considered, so a worker selecting attempts without episode_id sees it once.
@@ -274,7 +274,7 @@ def test_write_episode_waits_out_an_embedding_outage(db, run1):
         def embed(self, texts):
             raise OSError("connection refused")
 
-    att = run1.attempts[("lakeside-systems", "initial")]
+    att = run1.attempts[("lakeside-foods", "initial")]
     db.episodes.delete_one({"_id": episode_id(att["_id"])})
     db.attempts.update_one({"_id": att["_id"]}, {"$unset": {"episode_id": ""}})
     assert write_episode_for_attempt(db, Down(), att) is None
@@ -284,19 +284,19 @@ def test_write_episode_waits_out_an_embedding_outage(db, run1):
 
 def test_actionable_episodes_are_announced_on_the_wall(db, run1):
     lines = {row["party_id"]: row for row in db.feed.find({"kind": "memory_note"})}
-    assert set(lines) == {"harbour-fire", "queen-st-alarm"}
-    assert lines["queen-st-alarm"]["text"] == \
-        "Remembered for next time: Queen St Alarm passes stock on to Corner Properties"
-    assert lines["harbour-fire"]["detail"]["tags"] == ["over_reported"]
+    assert set(lines) == {"harbour-market", "queen-st-grocer"}
+    assert lines["queen-st-grocer"]["text"] == \
+        "Remembered for next time: Queen St Grocer passes stock on to Corner Mart"
+    assert lines["harbour-market"]["detail"]["tags"] == ["over_reported"]
 
 
 # --------------------------------------------------------------- retrieve
 
 def test_retrieve_local_ranks_the_parties_own_episode_first(db, run1, on_atlas):
-    profile = run1.party("harbour-fire")["profile"]
+    profile = run1.party("harbour-market")["profile"]
     hits, how = mem.retrieve(db, HashEmbedder(), profile, k=3, mode="local")
     assert how == "local" and len(hits) == 3
-    assert hits[0]["party_id"] == "harbour-fire" and hits[0]["recall_id"] == R1
+    assert hits[0]["party_id"] == "harbour-market" and hits[0]["recall_id"] == R1
     assert hits[0]["score"] == pytest.approx(1.0)
     assert all("embedding" not in h for h in hits)
     assert [h["score"] for h in hits] == sorted((h["score"] for h in hits), reverse=True)
@@ -310,9 +310,9 @@ def test_retrieve_local_ranks_the_parties_own_episode_first(db, run1, on_atlas):
 
 
 def test_local_fallback_scores_only_this_models_vectors(db, run1):
-    profile = run1.party("harbour-fire")["profile"]
+    profile = run1.party("harbour-market")["profile"]
     same_vector = HashEmbedder().embed([profile])[0]
-    base = {"recall_id": "RCL-X", "party_id": "harbour-fire", "party_profile": profile, "summary": "",
+    base = {"recall_id": "RCL-X", "party_id": "harbour-market", "party_profile": profile, "summary": "",
             "tags": ["over_reported"], "entities": {}, "created_at": T0}
     db.episodes.insert_many([
         {**base, "_id": "ep_other_model", "valid": True, "embedding": same_vector, "embedding_model": "voyage-4"},
@@ -328,8 +328,8 @@ def test_local_fallback_scores_only_this_models_vectors(db, run1):
 def test_wait_until_searchable_locally(db, run1, on_atlas):
     if on_atlas:
         pytest.skip("the Atlas variant is test_vector_search_on_atlas")
-    att = run1.attempts[("queen-st-alarm", "initial")]
-    profile = run1.party("queen-st-alarm")["profile"]
+    att = run1.attempts[("queen-st-grocer", "initial")]
+    profile = run1.party("queen-st-grocer")["profile"]
     assert mem.wait_until_searchable(db, HashEmbedder(), profile, episode_id(att["_id"]), timeout_s=5)
     assert not mem.wait_until_searchable(db, HashEmbedder(), profile, "ep_missing", timeout_s=0)
 
@@ -341,56 +341,56 @@ def _hit(party_id, tags, *, entities=None, score=0.9, ep="ep_1"):
             "score": score}
 
 
-QUEEN = {"party_id": "queen-st-alarm", "tier": "direct"}
+QUEEN = {"party_id": "queen-st-grocer", "tier": "direct"}
 
 
 def test_policy_suspects_the_partner_from_the_parties_own_episode():
-    hits = [_hit("queen-st-alarm", ["answered", "forwards_to"], entities={"forwards_to": "Corner Properties"},
+    hits = [_hit("queen-st-grocer", ["answered", "forwards_to"], entities={"forwards_to": "Corner Mart"},
                  score=0.99, ep="ep_q")]
-    assert mem.policy(hits, QUEEN) == [{"action": "suspect_party", "name": "Corner Properties", "episode_id": "ep_q",
-                                        "from_party": "queen-st-alarm", "score": 0.99}]
+    assert mem.policy(hits, QUEEN) == [{"action": "suspect_party", "name": "Corner Mart", "episode_id": "ep_q",
+                                        "from_party": "queen-st-grocer", "score": 0.99}]
 
 
 def test_policy_ignores_an_inherited_forwards_to():
-    hits = [_hit("parkdale-grocer", ["forwards_to"], entities={"forwards_to": "Corner Properties"})]
+    hits = [_hit("parkdale-grocer", ["forwards_to"], entities={"forwards_to": "Corner Mart"})]
     assert mem.policy(hits, QUEEN) == []
 
 
 def test_policy_applies_an_inherited_over_reported():
-    hits = [_hit("queen-st-alarm", ["counts_matched"], ep="ep_own"),
-            _hit("harbour-fire", ["over_reported"], ep="ep_h")]
+    hits = [_hit("queen-st-grocer", ["counts_matched"], ep="ep_own"),
+            _hit("harbour-market", ["over_reported"], ep="ep_h")]
     assert mem.policy(hits, QUEEN) == [{"action": "ask_delivery_note", "episode_id": "ep_h",
-                                        "from_party": "harbour-fire"}]
+                                        "from_party": "harbour-market"}]
     # A downstream party has no shipment record, so there is no delivery note to ask for.
-    assert mem.policy(hits, {"party_id": "corner-properties", "tier": "downstream"}) == []
+    assert mem.policy(hits, {"party_id": "corner-mart", "tier": "downstream"}) == []
 
 
 def test_policy_deduplicates_and_needs_a_name():
-    hits = [_hit("queen-st-alarm", ["forwards_to", "over_reported"], entities={"forwards_to": "Corner Properties"},
+    hits = [_hit("queen-st-grocer", ["forwards_to", "over_reported"], entities={"forwards_to": "Corner Mart"},
                  ep="ep_a"),
-            _hit("queen-st-alarm", ["forwards_to", "over_reported"], entities={"forwards_to": "corner properties"},
+            _hit("queen-st-grocer", ["forwards_to", "over_reported"], entities={"forwards_to": "corner mart"},
                  ep="ep_b"),
-            _hit("queen-st-alarm", ["forwards_to"], ep="ep_c")]
+            _hit("queen-st-grocer", ["forwards_to"], ep="ep_c")]
     assert [(a["action"], a["episode_id"]) for a in mem.policy(hits, QUEEN)] == \
         [("suspect_party", "ep_a"), ("ask_delivery_note", "ep_a")]
 
 
 def test_policy_reads_stored_memory_checks_too():
-    stored = [{"episode_id": "ep_q", "party_id": "queen-st-alarm", "tags": ["forwards_to"],
-               "entities": {"forwards_to": "Corner Properties"}, "score": 1.0}]
+    stored = [{"episode_id": "ep_q", "party_id": "queen-st-grocer", "tags": ["forwards_to"],
+               "entities": {"forwards_to": "Corner Mart"}, "score": 1.0}]
     assert mem.policy(stored, QUEEN)[0]["episode_id"] == "ep_q"
 
 
 def test_policy_remembers_the_parties_own_answering_hour_only():
     """A similar party's opening hours are not this party's: only the party's
     own answered call times its second call, and the most similar one wins."""
-    hits = [_hit("harbour-fire", ["answered"], entities={"answered_hour": 9}, ep="ep_h"),
-            _hit("queen-st-alarm", ["no_answer"], ep="ep_q_miss"),
-            _hit("queen-st-alarm", ["answered"], entities={"answered_hour": 14}, ep="ep_q14"),
-            _hit("queen-st-alarm", ["answered"], entities={"answered_hour": 16}, ep="ep_q16"),
-            _hit("queen-st-alarm", ["answered"], entities={"answered_hour": 25}, ep="ep_bad")]
+    hits = [_hit("harbour-market", ["answered"], entities={"answered_hour": 9}, ep="ep_h"),
+            _hit("queen-st-grocer", ["no_answer"], ep="ep_q_miss"),
+            _hit("queen-st-grocer", ["answered"], entities={"answered_hour": 14}, ep="ep_q14"),
+            _hit("queen-st-grocer", ["answered"], entities={"answered_hour": 16}, ep="ep_q16"),
+            _hit("queen-st-grocer", ["answered"], entities={"answered_hour": 25}, ep="ep_bad")]
     actions = mem.policy(hits, QUEEN)
-    assert actions == [{"action": "call_hour", "hour": 14, "episode_id": "ep_q14", "from_party": "queen-st-alarm"}]
+    assert actions == [{"action": "call_hour", "hour": 14, "episode_id": "ep_q14", "from_party": "queen-st-grocer"}]
     assert mem.memory_hour({"actions": actions}) == 14
     assert mem.party_update({"mode": "local", "actions": actions}) == {
         "memory": {"mode": "local", "actions": actions}, "memory_hour": 14}
@@ -413,28 +413,28 @@ def test_run_1_teaches_run_2(client, db, assert_balance):
     Run(client, db, assert_balance, "recall_1").run_1()
     run2 = Run(client, db, assert_balance, "recall_2", start=T0 + timedelta(hours=1))
     directory = db.recalls.find_one({"_id": R2})["directory"]
-    q_ep = db.episodes.find_one({"recall_id": R1, "party_id": "queen-st-alarm"})
-    h_ep = db.episodes.find_one({"recall_id": R1, "party_id": "harbour-fire"})
+    q_ep = db.episodes.find_one({"recall_id": R1, "party_id": "queen-st-grocer"})
+    h_ep = db.episodes.find_one({"recall_id": R1, "party_id": "harbour-market"})
 
-    queen = mem.check_party(db, HashEmbedder(), run2.party("queen-st-alarm"))
+    queen = mem.check_party(db, HashEmbedder(), run2.party("queen-st-grocer"))
     assert queen["mode"] in ("atlas", "local")
     top = queen["hits"][0]
-    assert (top["party_id"], top["recall_id"], top["episode_id"]) == ("queen-st-alarm", R1, q_ep["_id"])
+    assert (top["party_id"], top["recall_id"], top["episode_id"]) == ("queen-st-grocer", R1, q_ep["_id"])
     assert top["score"] == pytest.approx(1.0)
     assert set(top) == {"episode_id", "party_id", "recall_id", "score", "tags", "summary", "entities"}
     suspects = [a for a in queen["actions"] if a["action"] == "suspect_party"]
-    assert suspects == [{"action": "suspect_party", "name": "Corner Properties", "episode_id": q_ep["_id"],
-                         "from_party": "queen-st-alarm", "score": top["score"]}]
-    assert resolve_party(suspects[0]["name"], directory)[0] == "corner-properties"
+    assert suspects == [{"action": "suspect_party", "name": "Corner Mart", "episode_id": q_ep["_id"],
+                         "from_party": "queen-st-grocer", "score": top["score"]}]
+    assert resolve_party(suspects[0]["name"], directory)[0] == "corner-mart"
 
-    harbour = mem.check_party(db, HashEmbedder(), run2.party("harbour-fire"))
-    assert {"action": "ask_delivery_note", "episode_id": h_ep["_id"], "from_party": "harbour-fire"} \
+    harbour = mem.check_party(db, HashEmbedder(), run2.party("harbour-market"))
+    assert {"action": "ask_delivery_note", "episode_id": h_ep["_id"], "from_party": "harbour-market"} \
         in harbour["actions"]
     assert not [a for a in harbour["actions"] if a["action"] == "suspect_party"]
 
-    lakeside = mem.check_party(db, HashEmbedder(), run2.party("lakeside-systems"))
+    lakeside = mem.check_party(db, HashEmbedder(), run2.party("lakeside-foods"))
     assert not [a for a in lakeside["actions"] if a["action"] == "suspect_party"]
-    corner = {**next(d for d in directory if d["party_id"] == "corner-properties"), "tier": "downstream"}
+    corner = {**next(d for d in directory if d["party_id"] == "corner-mart"), "tier": "downstream"}
     assert mem.check_party(db, HashEmbedder(), corner)["actions"] == []
 
 
@@ -459,22 +459,22 @@ class NoAnswerVoice:
 def test_the_hour_a_party_answered_in_one_recall_times_its_second_call_in_the_next(client, db, settings,
                                                                                    assert_balance):
     """Spec "Contact ladder" step 2, "call at an hour retrieved from memory":
-    Lakeside Systems picked up at 14:20 in recall 1. In recall 2 nobody picks up
+    Lakeside Foods picked up at 14:20 in recall 1. In recall 2 nobody picks up
     its first call at 09:00, and the second goes at 14:00 that day, not +4 h,
     because the memory check before its first contact put the remembered
     hour on parties.memory_hour (worker pool, real harness, real ladder)."""
     run1 = Run(client, db, assert_balance, "recall_1")
-    att = open_attempt(db, recall_id=R1, party_id="lakeside-systems", channel="sim", now=run1.tick())
+    att = open_attempt(db, recall_id=R1, party_id="lakeside-foods", channel="sim", now=run1.tick())
     db.attempts.update_one({"_id": att["_id"]}, {"$set": {"intent_sim": 14 + 20 / 60}})      # d0 14:20
     mark_dialed(db, att["_id"], conversation_id=f"conv_{att['_id']}", call_sid=f"CA{att['_id']}", now=run1.tick())
-    submit_claim(client, db, recall_id=R1, party_id="lakeside-systems", attempt_id=att["_id"], source="sim",
-                 raw=run1.claims("lakeside-systems")[0], now=run1.tick())
+    submit_claim(client, db, recall_id=R1, party_id="lakeside-foods", attempt_id=att["_id"], source="sim",
+                 raw=run1.claims("lakeside-foods")[0], now=run1.tick())
     complete(db, att["_id"], "completed", now=run1.tick())
     ep = write_episode_for_attempt(db, HashEmbedder(), db.attempts.find_one({"_id": att["_id"]}))
     assert ep["entities"] == {"answered_hour": 14}
 
     rid = start_recall(client, db, load_scenario("recall_2"), all_sim=True, env={}, emit=False)["recall_id"]
-    db.parties.update_many({"recall_id": rid, "party_id": {"$ne": "lakeside-systems"}}, {"$set": {"next_action_at": None}})
+    db.parties.update_many({"recall_id": rid, "party_id": {"$ne": "lakeside-foods"}}, {"$set": {"next_action_at": None}})
     voice = NoAnswerVoice(db)
     pool = WorkerPool(settings, db, client, providers={"sim": voice, "voice": voice},
                       probes={"sim": SimProbe(db), "voice": SimProbe(db)},
@@ -482,17 +482,17 @@ def test_the_hour_a_party_answered_in_one_recall_times_its_second_call_in_the_ne
                       failpoints=Failpoints(db, env={}, worker=settings.worker_name), workers=1, recall_id=rid)
     assert pool.work_once(f"{settings.worker_name}/w1") == "executed"
 
-    party = db.parties.find_one({"recall_id": rid, "party_id": "lakeside-systems"})
-    assert voice.calls == ["lakeside-systems"]
+    party = db.parties.find_one({"recall_id": rid, "party_id": "lakeside-foods"})
+    assert voice.calls == ["lakeside-foods"]
     assert party["memory"]["actions"] == [{"action": "call_hour", "hour": 14, "episode_id": ep["_id"],
-                                           "from_party": "lakeside-systems"}]
+                                           "from_party": "lakeside-foods"}]
     assert party["memory_hour"] == 14
     assert party["last_outcome"]["outcome"] == "no_answer"
     assert (party["ladder_step"], party["next_action_at"]) == (2, 14.0), "the second call goes at the remembered hour"
 
 
 def test_check_party_off_records(db, run1):
-    party = run1.party("harbour-fire")
+    party = run1.party("harbour-market")
     now = T0 + timedelta(days=1)
 
     class Down:
@@ -515,15 +515,15 @@ def test_check_party_off_records(db, run1):
 
 def test_contacts_to_full_discovery(client, db):
     scn = load_scenario("recall_1")
-    corner = next(d for d in scn["directory"] if d["party_id"] == "corner-properties")
+    corner = next(d for d in scn["directory"] if d["party_id"] == "corner-mart")
 
     def recall(rid, stub_after_s, attempts_at_s):
         start_recall(client, db, scn, all_sim=True, mode="sim", recall_id=rid, now=T0, emit=False)
-        for sid, at in zip(["harbour-fire", "lakeside-systems", "queen-st-alarm"], attempts_at_s):
+        for sid, at in zip(["harbour-market", "lakeside-foods", "queen-st-grocer"], attempts_at_s):
             open_attempt(db, recall_id=rid, party_id=sid, channel="sim", now=T0 + timedelta(seconds=at))
-        db.parties.insert_one(stub_party(rid, "corner-properties", "Corner Properties", corner, "claim:queen-st-alarm",
+        db.parties.insert_one(stub_party(rid, "corner-mart", "Corner Mart", corner, "claim:queen-st-grocer",
                                         T0 + timedelta(seconds=stub_after_s)))
-        open_attempt(db, recall_id=rid, party_id="corner-properties", channel="sim",
+        open_attempt(db, recall_id=rid, party_id="corner-mart", channel="sim",
                      now=T0 + timedelta(seconds=stub_after_s + 1))
 
     recall("RCL-T-NOMEM", stub_after_s=40, attempts_at_s=[1, 2, 3])   # found by Queen St's claim
@@ -595,9 +595,9 @@ def _checked(db, recall_id: str) -> bool:
 
 
 def _corner_properties_vs_queen_st(db, recall_id: str):
-    """(Corner Properties' first attempt opened, Queen St Alarm's accepted claim booked)."""
-    first = db.attempts.find_one({"recall_id": recall_id, "party_id": "corner-properties"}, sort=[("intent_at", 1)])
-    claim = db.claims.find_one({"recall_id": recall_id, "party_id": "queen-st-alarm", "status": "accepted"},
+    """(Corner Mart' first attempt opened, Queen St Grocer's accepted claim booked)."""
+    first = db.attempts.find_one({"recall_id": recall_id, "party_id": "corner-mart"}, sort=[("intent_at", 1)])
+    claim = db.claims.find_one({"recall_id": recall_id, "party_id": "queen-st-grocer", "status": "accepted"},
                                sort=[("created_at", 1)])
     assert first is not None and claim is not None, (first, claim)
     return first["intent_at"], claim["created_at"]
@@ -607,22 +607,22 @@ def _corner_properties_vs_queen_st(db, recall_id: str):
 @pytest.mark.timeout(600)
 def test_11_memory_reaches_corner_properties_before_queen_st_alarm_answers(client, db, settings, assert_balance):
     """Spec test 11: run recall 1, then recall 2; repeat recall 2 with memory
-    disabled. With memory, Corner Properties' attempt starts before Queen St
+    disabled. With memory, Corner Mart' attempt starts before Queen St
     Grocer's claim; without it, after. Every party is simulated and every
     piece is real: the worker pool, the harness, the memory check
     (MemoryHooks), the episodes the maintenance thread writes, and the
-    simulator, where Corner Properties' recall-2 reply waits for Queen St
+    simulator, where Corner Mart' recall-2 reply waits for Queen St
     Grocer's claim (must_follow) exactly as the real party could not know of
-    the second batch before Queen St Alarm did."""
+    the second batch before Queen St Grocer did."""
     system = _System(client, db, settings)
     try:
         r1 = system.start("recall_1", memory=False)
         system.run(r1, lambda: _checked(db, r1) and db.attempts.count_documents(
             {"recall_id": r1, "episode_id": {"$exists": False}}) == 0, "recall 1 did not settle with its episodes")
         assert_balance(r1)
-        queen_ep = db.episodes.find_one({"recall_id": r1, "party_id": "queen-st-alarm", "tags": "forwards_to"})
-        assert queen_ep is not None and queen_ep["entities"]["forwards_to"] == "Corner Properties"
-        profile = db.parties.find_one({"recall_id": r1, "party_id": "queen-st-alarm"})["profile"]
+        queen_ep = db.episodes.find_one({"recall_id": r1, "party_id": "queen-st-grocer", "tags": "forwards_to"})
+        assert queen_ep is not None and queen_ep["entities"]["forwards_to"] == "Corner Mart"
+        profile = db.parties.find_one({"recall_id": r1, "party_id": "queen-st-grocer"})["profile"]
         assert mem.wait_until_searchable(db, HashEmbedder(), profile, queen_ep["_id"], timeout_s=120)
 
         with_memory = system.start("recall_2", memory=True)
@@ -634,13 +634,13 @@ def test_11_memory_reaches_corner_properties_before_queen_st_alarm_answers(clien
 
     for rid in (with_memory, without):
         assert_balance(rid)
-    corner = db.parties.find_one({"recall_id": with_memory, "party_id": "corner-properties"})
+    corner = db.parties.find_one({"recall_id": with_memory, "party_id": "corner-mart"})
     assert (corner["found_via"], corner["memory_source"]["episode_id"]) == ("memory", queen_ep["_id"])
     attempt_at, claim_at = _corner_properties_vs_queen_st(db, with_memory)
-    assert attempt_at < claim_at, "with memory, Corner Properties is called before Queen St Alarm's claim"
-    assert db.parties.find_one({"recall_id": without, "party_id": "corner-properties"})["found_via"] == "claim"
+    assert attempt_at < claim_at, "with memory, Corner Mart is called before Queen St Grocer's claim"
+    assert db.parties.find_one({"recall_id": without, "party_id": "corner-mart"})["found_via"] == "claim"
     attempt_at, claim_at = _corner_properties_vs_queen_st(db, without)
-    assert attempt_at > claim_at, "without memory, Corner Properties is found only by Queen St Alarm's claim"
+    assert attempt_at > claim_at, "without memory, Corner Mart is found only by Queen St Grocer's claim"
     assert mem.contacts_to_full_discovery(db, with_memory) < mem.contacts_to_full_discovery(db, without)
 
 
@@ -722,21 +722,21 @@ def test_vector_search_on_atlas(client, db, assert_balance, on_atlas):
     run = Run(client, db, assert_balance, "recall_1").run_1()
     built = ensure_vector_index(db, emb.dims)
     assert built["ok"], built
-    att = run.attempts[("harbour-fire", "initial")]
-    profile = run.party("harbour-fire")["profile"]
+    att = run.attempts[("harbour-market", "initial")]
+    profile = run.party("harbour-market")["profile"]
     assert mem.wait_until_searchable(db, emb, profile, episode_id(att["_id"]), timeout_s=120, mode="atlas")
     hits, how = mem.retrieve(db, emb, profile, k=3, mode="atlas")
     assert how == "atlas"
-    assert hits[0]["party_id"] == "harbour-fire" and hits[0]["score"] == pytest.approx(1.0, abs=1e-3)
+    assert hits[0]["party_id"] == "harbour-market" and hits[0]["score"] == pytest.approx(1.0, abs=1e-3)
     assert all("embedding" not in h for h in hits)
-    # Memory is past recalls: the next recall's Queen St Alarm suspects Corner
+    # Memory is past recalls: the next recall's Queen St Grocer suspects Corner
     # Mart; the same party asked again inside recall 1 learns nothing from it.
-    next_recall = {**run.party("queen-st-alarm"), "recall_id": "RCL-2026-018"}
+    next_recall = {**run.party("queen-st-grocer"), "recall_id": "RCL-2026-018"}
     checked = mem.check_party(db, emb, next_recall, mode="atlas")
     assert checked["mode"] == "atlas"
-    assert any(a["action"] == "suspect_party" and a["name"] == "Corner Properties" for a in checked["actions"])
-    same = mem.check_party(db, emb, run.party("queen-st-alarm"), mode="atlas")
-    assert all(h["recall_id"] != run.party("queen-st-alarm")["recall_id"] for h in same["hits"])
+    assert any(a["action"] == "suspect_party" and a["name"] == "Corner Mart" for a in checked["actions"])
+    same = mem.check_party(db, emb, run.party("queen-st-grocer"), mode="atlas")
+    assert all(h["recall_id"] != run.party("queen-st-grocer")["recall_id"] for h in same["hits"])
 
 
 def test_tags_are_the_documented_vocabulary():

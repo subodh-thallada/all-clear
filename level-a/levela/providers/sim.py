@@ -661,8 +661,8 @@ _BODY_IDS = ("attempt_id", "party_id", "system__conversation_id", "system__call_
 
 def _script_key(purpose: str, scripts: dict) -> str:
     """The script a call plays: the purpose's own script when the party has
-    one (a fix check scripted as the installer's visit), else the initial
-    script, replayed (a fix check before the visit hears the same answer).
+    one (a removal check scripted as the store's visit), else the initial
+    script, replayed (a removal check before the visit hears the same answer).
     A question call has no script, so a party with a ground truth answers it
     from its profile."""
     if purpose in ("dispute_followup", "ask_question") or purpose in scripts:
@@ -731,7 +731,7 @@ MAX_TRIES = 5
 STALE_FIRING_S = 60.0            # a firing event older than this was left by a dead process
 RECALL_REFRESH_S = 5.0           # how often the scheduler looks for newly opened long-run recalls
 MIN_WAIT_S = 0.01
-BUCKETS = ("in_stock", "installed", "fixed", "returned")
+BUCKETS = ("sold", "on_shelf", "held", "returned")
 
 
 def event_id(recall_id: str, party_id: str, kind: str) -> str:

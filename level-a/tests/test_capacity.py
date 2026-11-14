@@ -37,12 +37,12 @@ def _version(db):
 
 
 def test_two_workers_race_for_the_last_slot_and_the_loser_retries_and_finds_none(client, db, recall, monkeypatch):
-    open_attempt(db, recall_id=RID, party_id="harbour-fire", channel="voice")       # one of two slots taken
-    db.parties.update_one({"recall_id": RID, "party_id": "harbour-fire"}, {"$set": {"next_action_at": None}})
+    open_attempt(db, recall_id=RID, party_id="harbour-market", channel="voice")       # one of two slots taken
+    db.parties.update_one({"recall_id": RID, "party_id": "harbour-market"}, {"$set": {"next_action_at": None}})
     parties = {}
     for wid in ("w1", "w2"):
         parties[wid] = claim.claim_next(db, worker_id=wid, sim_now=SIM_NOW, recall_id=RID)
-    assert {s["party_id"] for s in parties.values()} == {"lakeside-systems", "queen-st-alarm"}
+    assert {s["party_id"] for s in parties.values()} == {"lakeside-foods", "queen-st-grocer"}
     before = _version(db)
 
     # Both transactions count before either writes: a true race for the last slot.
@@ -90,18 +90,18 @@ def test_two_workers_race_for_the_last_slot_and_the_loser_retries_and_finds_none
 def test_slots_are_counted_from_live_voice_attempts(client, db, recall):
     claim.set_max_live(db, 1)
     assert claim.slots(db) == {"max_live": 1, "live": 0, "free": 1}
-    open_attempt(db, recall_id=RID, party_id="lakeside-systems", channel="sim")          # simulated: no slot
-    held = claim.take_slot_and_intent(db, _intent(db, "harbour-fire"))
+    open_attempt(db, recall_id=RID, party_id="lakeside-foods", channel="sim")          # simulated: no slot
+    held = claim.take_slot_and_intent(db, _intent(db, "harbour-market"))
     assert held is not None and claim.slots(db)["free"] == 0
-    assert claim.take_slot_and_intent(db, _intent(db, "queen-st-alarm")) is None
+    assert claim.take_slot_and_intent(db, _intent(db, "queen-st-grocer")) is None
     with pytest.raises(AttemptRefused) as refused:
         claim.set_max_live(db, 5)
-        claim.take_slot_and_intent(db, _intent(db, "harbour-fire"))
+        claim.take_slot_and_intent(db, _intent(db, "harbour-market"))
     assert "E11000" in refused.value.message and refused.value.index == "one_live_attempt_per_party"
 
     claim.set_max_live(db, 1)
     complete(db, held["_id"], "completed")            # the call ended: its slot is free again
-    inside = run_txn(client, lambda s: claim.take_slot_and_intent(db, _intent(db, "queen-st-alarm"),
+    inside = run_txn(client, lambda s: claim.take_slot_and_intent(db, _intent(db, "queen-st-grocer"),
                                                                  session=s))
     assert inside is not None and claim.slots(db) == {"max_live": 1, "live": 1, "free": 0}
-    assert db.parties.find_one({"recall_id": RID, "party_id": "queen-st-alarm"})["state"] == "contacting"
+    assert db.parties.find_one({"recall_id": RID, "party_id": "queen-st-grocer"})["state"] == "contacting"

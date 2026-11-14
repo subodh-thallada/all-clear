@@ -35,11 +35,11 @@ log = logging.getLogger(__name__)
 
 # Every tag an episode can carry, in the order they are written.
 TAGS = ("answered", "no_answer", "failed", "abandoned", "counts_matched", "over_reported", "forwards_to",
-        "received_transfer", "disputed", "panels_returned", "awaiting_fix", "fixed", "needs_human")
+        "received_transfer", "disputed", "tins_sold", "tins_returned", "left_on_shelf", "held", "needs_human")
 # The only two tags the memory policy acts on (memory.retrieve.policy).
 ACTIONABLE_TAGS = frozenset({"forwards_to", "over_reported"})
 _STATE_TAG = {"completed": "answered", "no_answer": "no_answer", "failed": "failed", "abandoned": "abandoned"}
-_BUCKET_WORDS = (("in_stock", "in stock"), ("installed", "installed"), ("fixed", "fixed"), ("returned", "returned"))
+_BUCKET_WORDS = (("sold", "sold"), ("on_shelf", "on the shelf"), ("held", "held"), ("returned", "returned"))
 
 
 def utcnow() -> datetime:
@@ -59,7 +59,7 @@ def summarize(attempt: dict, claims: list, party: dict, edges: list, *, director
 
     claims: this attempt's claims in the order they were made.
     edges: the recall's transfers; only those touching this party are used.
-    directory: the recall's directory, so a party spoken as "the corner properties"
+    directory: the recall's directory, so a party spoken as "the corner mart"
         is remembered by its directory name, the name a later recall resolves.
     party_names: party_id -> name for the parties on those edges.
     """
@@ -89,12 +89,14 @@ def summarize(attempt: dict, claims: list, party: dict, edges: list, *, director
             tags.add("received_transfer")
             if sender:
                 entities["received_from"] = sender
+        if final["sold"] > 0:
+            tags.add("tins_sold")
         if final["returned"] > 0:
-            tags.add("panels_returned")
-        if final["installed"] > 0:
-            tags.add("awaiting_fix")
-        if final["fixed"] > 0:
-            tags.add("fixed")
+            tags.add("tins_returned")
+        if final["on_shelf"] > 0:
+            tags.add("left_on_shelf")
+        if final["held"] > 0:
+            tags.add("held")
     if any(e.get("state") == "disputed" for e in inbound + outbound):
         tags.add("disputed")
     if party.get("escalation") == "human":
@@ -157,7 +159,7 @@ def _quantities(raw: dict) -> dict | None:
 
 
 def _describe(raw: dict, names: _Names, sender: str | None) -> str:
-    """'25 received from Queen St Alarm and 25 on hand', '40 forwarded to Corner Properties'."""
+    """'25 received from Queen St Grocer and 25 on hand', '40 forwarded to Corner Mart'."""
     q = _quantities(raw)
     if q is None:
         return "counts that could not be read"
@@ -168,7 +170,7 @@ def _describe(raw: dict, names: _Names, sender: str | None) -> str:
     if q["forwarded_qty"]:
         partner = names.canonical(raw.get("forwarded_to_name"))
         parts.append(f"{q['forwarded_qty']} forwarded" + (f" to {partner}" if partner else ""))
-    return _join(parts) if parts else "no panels held"
+    return _join(parts) if parts else "no tins held"
 
 
 def _counts_sentence(accepted, rejected, names: _Names, sender) -> str:

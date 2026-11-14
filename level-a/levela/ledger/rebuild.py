@@ -8,7 +8,7 @@ documents field for field. If it does not, something wrote the ledger outside
 the claim path, and the diff says exactly where.
 
 The replay runs in a scratch database on the same cluster (the ledger's
-validators and indexes installed by setup()), so it goes through the same
+validators and indexes on_shelf by setup()), so it goes through the same
 transactions and the same Atlas validators as the live run, and the live
 database is only read. A claim that forwards to several parties replays as one
 claim and opens the same edges, because the raw body it was booked from is
@@ -34,7 +34,7 @@ BADGE_ID = "badge:rebuild"
 # ever dropped, so a mistyped scratch name cannot destroy someone's data.
 SCRATCH_MARK = "rebuild_scratch"
 
-PARTY_FIELDS = ("shipped_in", "in_stock", "installed", "fixed", "returned", "forwarded", "unresolved", *CHECK_FIELDS,
+PARTY_FIELDS = ("shipped_in", "sold", "on_shelf", "held", "returned", "forwarded", "unresolved", *CHECK_FIELDS,
                 "tier", "type")
 EDGE_FIELDS = ("sender_qty", "recipient_qty", "corroborated_qty", "disputed_qty", "state")
 # pending/contacting/reached follow attempts and calls, not claims, so a party's
@@ -164,7 +164,7 @@ def _direct_party(ship: dict, live: dict | None, recall: dict) -> dict:
     Identity fields come from the live document; a shipment with no party
     document is rebuilt anyway so the comparison reports the missing party."""
     ident = live or {"_id": f"{ship['recall_id']}:{ship['party_id']}", "name": ship["party_id"],
-                     "type": "installer", "tier": 1, "channel": "form", "discovered_by": "shipment"}
+                     "type": "store", "tier": 1, "channel": "form", "discovered_by": "shipment"}
     qty = ship["qty"]
     v2 = v2_fields(tier=ident.get("tier", 1), found_via="shipment", slice_=bool(ident.get("slice")),
                    hold_for_demo=bool(ident.get("hold_for_demo")), followups=ident.get("followups", "auto"),

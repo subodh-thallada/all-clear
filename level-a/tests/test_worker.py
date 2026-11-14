@@ -177,9 +177,9 @@ def test_each_due_party_runs_once_under_a_fresh_lease(db, start, make):
     pool.startup()
     assert [pool.work_once(W1) for _ in range(3)] == ["executed"] * 3
     assert pool.work_once(W1) is None
-    assert sorted(sid for _, sid, _ in harness.runs) == ["harbour-fire", "lakeside-systems", "queen-st-alarm"]
+    assert sorted(sid for _, sid, _ in harness.runs) == ["harbour-market", "lakeside-foods", "queen-st-grocer"]
     assert {(w, epoch) for w, _, epoch in harness.runs} == {(W1, 1)}
-    for sid in ("harbour-fire", "lakeside-systems", "queen-st-alarm"):
+    for sid in ("harbour-market", "lakeside-foods", "queen-st-grocer"):
         row = party(db, rid, sid)
         assert (row["next_action_at"], row["lease_until"], row["lease_owner"]) == (None, FREE_LEASE, None)
         assert row["last_outcome"]["outcome"] == "claim_accepted"
@@ -188,10 +188,10 @@ def test_each_due_party_runs_once_under_a_fresh_lease(db, start, make):
 def test_startup_reports_what_is_due_and_in_doubt(db, start, make):
     rid = start()
     runs.inc(db, rid, "kills", 3)
-    open_attempt(db, recall_id=rid, party_id="harbour-fire", channel="sim", to_number="+14165550141")
+    open_attempt(db, recall_id=rid, party_id="harbour-market", channel="sim", to_number="+14165550141")
     db.operations.insert_one({"_id": "op-1", "recall_id": rid, "kind": "place_hold", "party_id": "dist-north",
                               "idempotency_key": f"{rid}:dist-north:place_hold", "state": "sent"})
-    db.parties.update_one({"recall_id": rid, "party_id": "lakeside-systems"}, {"$set": {"next_action_at": 1e6}})
+    db.parties.update_one({"recall_id": rid, "party_id": "lakeside-foods"}, {"$set": {"next_action_at": 1e6}})
     pool = make()
     assert pool.startup() == {rid: {"kills": 3, "due": 2, "in_doubt": 2, "read": 4, "freed": 0}}
     [line] = feed(db, "worker_resumed")
@@ -207,12 +207,12 @@ def test_startup_reports_what_is_due_and_in_doubt(db, start, make):
 def test_a_failpoint_kills_the_pool_and_the_next_boot_never_calls_twice(db, start, make, voice, failpoint):
     rid = start()
     fast(db, rid)
-    only_due(db, rid, "harbour-fire")
-    arm(db, failpoint, party_id="harbour-fire")
+    only_due(db, rid, "harbour-market")
+    arm(db, failpoint, party_id="harbour-market")
     first = make()
     with pytest.raises(WorkerCrash):
         first.run()
-    assert voice.count("harbour-fire") == (0 if failpoint == "after_intent" else 1)
+    assert voice.count("harbour-market") == (0 if failpoint == "after_intent" else 1)
     assert feed(db, "failpoint_fired")
 
     harness = StubHarness(voice)
@@ -220,11 +220,11 @@ def test_a_failpoint_kills_the_pool_and_the_next_boot_never_calls_twice(db, star
     assert second.startup()[rid]["freed"] == 1, "the dead boot's lease is freed at once"
     if failpoint == "after_mark_dialed":
         assert second.work_once(W1) == "recheck", "the saved call is still in flight: look again, never redial"
-        [att] = db.attempts.find({"party_id": "harbour-fire"})
+        [att] = db.attempts.find({"party_id": "harbour-market"})
         complete(db, att["_id"], "completed")               # the post-call webhook arrives
-    drain(second, until=lambda: harness.finished == ["harbour-fire"])
-    assert voice.count("harbour-fire") == 1
-    states = [a["state"] for a in db.attempts.find({"party_id": "harbour-fire"}).sort("seq", 1)]
+    drain(second, until=lambda: harness.finished == ["harbour-market"])
+    assert voice.count("harbour-market") == 1
+    states = [a["state"] for a in db.attempts.find({"party_id": "harbour-market"}).sort("seq", 1)]
     expected = {"after_intent": ["abandoned", "dialed"], "after_dial_request": ["completed"],
                 "after_mark_dialed": ["completed"]}[failpoint]
     assert states == expected
@@ -234,25 +234,25 @@ def test_a_failpoint_kills_the_pool_and_the_next_boot_never_calls_twice(db, star
 
 def test_an_in_doubt_attempt_inside_its_grace_period_is_left_to_the_provider(db, start, make, settings):
     rid = start()
-    only_due(db, rid, "lakeside-systems")
-    open_attempt(db, recall_id=rid, party_id="lakeside-systems", channel="sim", to_number="+14165550143")
+    only_due(db, rid, "lakeside-foods")
+    open_attempt(db, recall_id=rid, party_id="lakeside-foods", channel="sim", to_number="+14165550143")
     harness = StubHarness(dial=False)
     pool = make(harness, settings_=replace(settings, indoubt_grace_s=30, lease_s=30))
     before = sim_now(db, rid)
     assert pool.work_once(W1) == "recheck"
-    row = party(db, rid, "lakeside-systems")
+    row = party(db, rid, "lakeside-foods")
     assert harness.runs == [] and row["lease_until"] == FREE_LEASE
     assert before + 0.9 <= row["next_action_at"] <= before + 1.1, "30 real seconds at 30 s per sim hour"
-    assert db.attempts.find_one({"party_id": "lakeside-systems"})["state"] == "intent"
+    assert db.attempts.find_one({"party_id": "lakeside-foods"})["state"] == "intent"
 
 
 def test_a_run_that_raises_is_reported_and_its_party_tried_again_later(db, start, make):
     rid = start()
-    only_due(db, rid, "lakeside-systems")
-    pool = make(StubHarness(dial=False, fail={"lakeside-systems": RuntimeError("decider exploded")}))
+    only_due(db, rid, "lakeside-foods")
+    pool = make(StubHarness(dial=False, fail={"lakeside-foods": RuntimeError("decider exploded")}))
     before = sim_now(db, rid)
     assert pool.work_once(W1) == "error"
-    row = party(db, rid, "lakeside-systems")
+    row = party(db, rid, "lakeside-foods")
     assert row["last_outcome"]["outcome"] == "failed" and row["next_action_at"] >= before + 1.0
     [line] = feed(db, "error")
     assert "decider exploded" in line["text"] and line["level"] == "bad" and line["system"] == "worker"
@@ -273,15 +273,15 @@ def test_a_sent_form_link_or_rep_escalation_is_not_in_doubt_at_claim_or_restart(
     Claim-time recovery used to hand them to the order system code, which raised
     outside any try: the party was never released and failed forever."""
     rid = start()
-    only_due(db, rid, "lakeside-systems")
+    only_due(db, rid, "lakeside-foods")
     db.operations.insert_many([
-        _op(rid, "lakeside-systems", "send_form_link", order_system=None, key=f"{rid}:lakeside-systems:form:3"),
-        _op(rid, "lakeside-systems", "escalate_rep", order_system="north")])
+        _op(rid, "lakeside-foods", "send_form_link", order_system=None, key=f"{rid}:lakeside-foods:form:3"),
+        _op(rid, "lakeside-foods", "escalate_rep", order_system="north")])
     harness = StubHarness(dial=False)
     pool = make(harness)
     assert pool.startup()[rid]["in_doubt"] == 0, "the resume line counts only order system calls"
     assert pool.work_once(W1) == "executed"
-    assert harness.runs == [(W1, "lakeside-systems", 1)]
+    assert harness.runs == [(W1, "lakeside-foods", 1)]
     assert {op["state"] for op in db.operations.find({})} == {"sent"}, "neither is touched"
     assert db.adapters.count_documents({}) == 0, "no adapter is seeded for order system None (or any order system)"
     assert feed(db, "error") == []
@@ -292,18 +292,18 @@ def test_a_recovery_that_raises_is_reported_and_releases_the_party_with_a_retry_
     makes recovery raise. The party is released with a retry time and the
     error is on the wall, instead of the lease being held until it lapses."""
     rid = start()
-    only_due(db, rid, "lakeside-systems")
-    db.operations.insert_one(_op(rid, "lakeside-systems", "read_inventory", order_system="north", state="intent"))
+    only_due(db, rid, "lakeside-foods")
+    db.operations.insert_one(_op(rid, "lakeside-foods", "read_inventory", order_system="north", state="intent"))
     harness = StubHarness(dial=False)
     pool = make(harness)
     before = sim_now(db, rid)
     assert pool.work_once(W1) == "error"
-    row = party(db, rid, "lakeside-systems")
+    row = party(db, rid, "lakeside-foods")
     assert (row["lease_until"], row["lease_owner"]) == (FREE_LEASE, None)
     assert row["next_action_at"] >= before + worker_mod.ERROR_RETRY_H and row["ladder_step"] == 1
     assert harness.runs == [], "nothing new starts on a party whose recovery failed"
     [line] = feed(db, "error")
-    assert line["text"].startswith(f"{W1}: recovery on Lakeside Systems failed (LookupError: recall {rid} has no "
+    assert line["text"].startswith(f"{W1}: recovery on Lakeside Foods failed (LookupError: recall {rid} has no "
                                    "distributor on North orders); trying again at")
     assert db.adapters.count_documents({}) == 0, "the missing distributor is found before any adapter is seeded"
 
@@ -327,14 +327,14 @@ def _late_call(db, rid, sid, *, run_status="running", state="no_answer", callbac
 
 def test_a_call_that_outlived_its_run_moves_the_ladder_once_and_is_not_redialled(db, start, make, voice):
     rid = start()
-    only_due(db, rid, "lakeside-systems")
+    only_due(db, rid, "lakeside-foods")
     before = sim_now(db, rid)
-    run_id, att = _late_call(db, rid, "lakeside-systems")
+    run_id, att = _late_call(db, rid, "lakeside-foods")
     harness = StubHarness(voice)
     pool = make(harness)
     assert pool.work_once(W1) == "ladder"
-    assert harness.runs == [] and voice.count("lakeside-systems") == 0, "no new contact in the claim that applied it"
-    row = party(db, rid, "lakeside-systems")
+    assert harness.runs == [] and voice.count("lakeside-foods") == 0, "no new contact in the claim that applied it"
+    row = party(db, rid, "lakeside-foods")
     assert row["ladder_step"] == 2, "no answer on step 1: step 2"
     assert before + 3.9 <= row["next_action_at"] <= sim_now(db, rid) + 4.0, "4 simulated hours after the call"
     assert (row["last_outcome"]["outcome"], row["last_outcome"]["late"], row["lease_until"]) == (
@@ -343,23 +343,23 @@ def test_a_call_that_outlived_its_run_moves_the_ladder_once_and_is_not_redialled
     assert (applied["attempt_id"], applied["outcome"], applied["ladder_step"], applied["by"]) == (
         att["_id"], "no_answer", 2, W1)
     [line] = feed(db, "run_ended")
-    assert line["text"].startswith("Lakeside Systems: attempt 1 ended after its run did (no answer). Ladder step 2")
+    assert line["text"].startswith("Lakeside Foods: attempt 1 ended after its run did (no answer). Ladder step 2")
 
     # When the timer comes due, the party is worked at step 2: the call is applied once only.
     db.parties.update_one({"_id": row["_id"]}, {"$set": {"next_action_at": sim_now(db, rid)}})
     assert pool.work_once(W1) == "executed"
-    assert [sid for _, sid, _ in harness.runs] == ["lakeside-systems"]
-    assert party(db, rid, "lakeside-systems")["ladder_step"] == 2
+    assert [sid for _, sid, _ in harness.runs] == ["lakeside-foods"]
+    assert party(db, rid, "lakeside-foods")["ladder_step"] == 2
 
 
 def test_a_callback_asked_for_on_a_call_that_outlived_its_run_keeps_its_hour(db, start, make, voice):
     rid = start()
-    only_due(db, rid, "lakeside-systems")
+    only_due(db, rid, "lakeside-foods")
     hour = sim_now(db, rid) + 20.0
-    run_id, _ = _late_call(db, rid, "lakeside-systems", run_status="stopped", state="completed", callback_at=hour)
+    run_id, _ = _late_call(db, rid, "lakeside-foods", run_status="stopped", state="completed", callback_at=hour)
     harness = StubHarness(voice)
     assert make(harness).work_once(W1) == "ladder"
-    row = party(db, rid, "lakeside-systems")
+    row = party(db, rid, "lakeside-foods")
     assert (row["ladder_step"], row["next_action_at"]) == (1, hour), "same step, the party's own hour"
     assert row["last_outcome"]["outcome"] == "callback_requested" and harness.runs == []
 
@@ -369,17 +369,17 @@ def test_a_late_call_whose_timer_has_passed_is_due_at_once_on_the_next_step(db, 
     clock = simclock.get_clock(db, rid, max_age_s=0)
     began = simclock.server_now(db.client) - timedelta(seconds=clock.real_seconds(5.0))
     runs.set_clock(db, rid, replace(clock, real_start=began))          # the run is five simulated hours old
-    only_due(db, rid, "lakeside-systems")
-    _, att = _late_call(db, rid, "lakeside-systems", run_status="refused")
+    only_due(db, rid, "lakeside-foods")
+    _, att = _late_call(db, rid, "lakeside-foods", run_status="refused")
     ended = began + timedelta(seconds=clock.real_seconds(0.5))         # the call ended half an hour in
     db.attempts.update_one({"_id": att["_id"]}, {"$set": {"ended_at": ended}})
     harness = StubHarness(voice)
     pool = make(harness)
     assert pool.work_once(W1) == "ladder"
-    assert party(db, rid, "lakeside-systems")["ladder_step"] == 2
+    assert party(db, rid, "lakeside-foods")["ladder_step"] == 2
     assert pool.work_once(W1) == "executed", "due at once, and the late call is not applied twice"
-    assert [sid for _, sid, _ in harness.runs] == ["lakeside-systems"]
-    assert party(db, rid, "lakeside-systems")["ladder_step"] == 2
+    assert [sid for _, sid, _ in harness.runs] == ["lakeside-foods"]
+    assert party(db, rid, "lakeside-foods")["ladder_step"] == 2
 
 
 def test_a_party_of_a_recall_that_closed_meanwhile_gets_no_timer(db, start, make):
@@ -395,32 +395,32 @@ def test_a_party_of_a_recall_that_closed_meanwhile_gets_no_timer(db, start, make
 
 def test_a_memory_suspect_is_contacted_before_the_party_that_named_it(db, start, make, monkeypatch):
     rid = start("recall_2", memory=True)
-    db.parties.update_one({"recall_id": rid, "party_id": "queen-st-alarm"}, {"$set": {"priority": 90}})
+    db.parties.update_one({"recall_id": rid, "party_id": "queen-st-grocer"}, {"$set": {"priority": 90}})
     memory = StubMemory({
-        "queen-st-alarm": [{"action": "suspect_party", "name": "corner market", "episode_id": "ep_att_qsg",
-                             "from_party": "queen-st-alarm"}],
-        "harbour-fire": [{"action": "ask_delivery_note", "episode_id": "ep_att_hm"}],
+        "queen-st-grocer": [{"action": "suspect_party", "name": "corner market", "episode_id": "ep_att_qsg",
+                             "from_party": "queen-st-grocer"}],
+        "harbour-market": [{"action": "ask_delivery_note", "episode_id": "ep_att_hm"}],
     })
     monkeypatch.setattr(worker_mod, "SUSPECT_HEAD_START_S", 0.5)
     harness = StubHarness(dial=False)
     pool = make(harness, memory=memory)
     assert pool.work_once(W1) == "suspects"
-    cm, qsg = party(db, rid, "corner-properties"), party(db, rid, "queen-st-alarm")
-    assert (cm["name"], cm["found_via"], cm["discovered_by"], cm["priority"]) == ("Corner Properties", "memory", "memory", 91)
-    assert cm["memory_source"] == {"episode_id": "ep_att_qsg", "from_party": "queen-st-alarm"}
+    cm, qsg = party(db, rid, "corner-mart"), party(db, rid, "queen-st-grocer")
+    assert (cm["name"], cm["found_via"], cm["discovered_by"], cm["priority"]) == ("Corner Mart", "memory", "memory", 91)
+    assert cm["memory_source"] == {"episode_id": "ep_att_qsg", "from_party": "queen-st-grocer"}
     assert qsg["memory"]["actions"][0]["action"] == "suspect_party" and qsg["ladder_step"] == 1
     assert qsg["next_action_at"] > cm["next_action_at"], "the suspect goes first"
     assert db.runs.find_one({"_id": runs.run_id(rid)})["planner_wake"] is True
 
     drain(pool, until=lambda: len(harness.finished) == 4)
     order = harness.finished
-    assert order.index("corner-properties") < order.index("queen-st-alarm")
-    assert sorted(memory.checked) == ["corner-properties", "harbour-fire", "lakeside-systems", "queen-st-alarm"]
-    assert party(db, rid, "harbour-fire")["memory"]["actions"] == [
+    assert order.index("corner-mart") < order.index("queen-st-grocer")
+    assert sorted(memory.checked) == ["corner-mart", "harbour-market", "lakeside-foods", "queen-st-grocer"]
+    assert party(db, rid, "harbour-market")["memory"]["actions"] == [
         {"action": "ask_delivery_note", "episode_id": "ep_att_hm"}]
     [suspect] = feed(db, "memory_suspect")
-    assert suspect["text"] == ("Memory: Queen St Alarm forwarded to Corner Properties last time - contacting "
-                               "Corner Properties now") and suspect["system"] == "memory"
+    assert suspect["text"] == ("Memory: Queen St Grocer forwarded to Corner Mart last time - contacting "
+                               "Corner Mart now") and suspect["system"] == "memory"
     assert any("delivery note" in line["text"] for line in feed(db, "memory_note"))
 
 
@@ -467,10 +467,10 @@ def test_maintenance_closes_stale_calls_and_writes_each_episode_once(db, start, 
     memory = StubMemory()
     pool = make(memory=memory, settings_=replace(settings, stale_call_s=0.0))
     pool.startup()
-    live = open_attempt(db, recall_id=rid, party_id="lakeside-systems", channel="sim", to_number="+14165550143")
+    live = open_attempt(db, recall_id=rid, party_id="lakeside-foods", channel="sim", to_number="+14165550143")
     placed = voice.place_call(to_number="+14165550143", dynamic_variables={}, attempt_id=live["_id"])
     mark_dialed(db, live["_id"], call_sid=placed.call_sid)
-    ended = open_attempt(db, recall_id=rid, party_id="harbour-fire", channel="sim", to_number="+14165550141")
+    ended = open_attempt(db, recall_id=rid, party_id="harbour-market", channel="sim", to_number="+14165550141")
     mark_dialed(db, ended["_id"], call_sid="CAother")
     complete(db, ended["_id"], "no_answer")
     out = pool.maintain_once()
@@ -489,15 +489,15 @@ def _planner(db, client, settings, gate, planner_id="worker-test/planner", repai
 
 def test_the_planner_ranks_by_unresolved_disputes_and_questions_through_the_gate(client, db, settings, start):
     rid = start()
-    db.parties.update_one({"recall_id": rid, "party_id": "lakeside-systems"}, {"$set": {"open_questions": ["q-01"]}})
-    db.edges.insert_one({"_id": f"{rid}:queen-st-alarm>corner-properties", "recall_id": rid, "from_party": "queen-st-alarm",
-                         "to_party": "corner-properties", "sender_qty": 40, "recipient_qty": 25, "corroborated_qty": 25,
+    db.parties.update_one({"recall_id": rid, "party_id": "lakeside-foods"}, {"$set": {"open_questions": ["q-01"]}})
+    db.edges.insert_one({"_id": f"{rid}:queen-st-grocer>corner-mart", "recall_id": rid, "from_party": "queen-st-grocer",
+                         "to_party": "corner-mart", "sender_qty": 40, "recipient_qty": 25, "corroborated_qty": 25,
                          "disputed_qty": 15, "state": "disputed"})
     gate = StubGate(db)
     planner = _planner(db, client, settings, gate)
     [summary] = planner.tick()
     assert {(a["party_id"], a["priority"]) for t, a, _ in gate.calls if t == "set_priority"} == {
-        ("harbour-fire", 40), ("queen-st-alarm", 150), ("lakeside-systems", 130)}
+        ("harbour-market", 40), ("queen-st-grocer", 150), ("lakeside-foods", 130)}
     run = gate.calls[0][2]
     assert (run["kind"], run["party_id"], run["worker"], run["lease_epoch"], run["budget"]) == (
         "planner", None, "worker-test/planner", 1, {"tool_calls": 3})
@@ -523,24 +523,24 @@ def test_one_planner_at_a_time(client, db, settings):
 def test_the_planner_escalates_stuck_parties_and_asks_for_order_system_repairs(client, db, settings, start):
     rid = start()
     now = sim_now(db, rid)
-    db.parties.update_one({"recall_id": rid, "party_id": "lakeside-systems"},
+    db.parties.update_one({"recall_id": rid, "party_id": "lakeside-foods"},
                          {"$set": {"ladder_step": 4, "next_action_at": now - planner_mod.STUCK_AFTER_H - 1}})
-    db.parties.update_one({"recall_id": rid, "party_id": "harbour-fire"},
+    db.parties.update_one({"recall_id": rid, "party_id": "harbour-market"},
                          {"$set": {"ladder_step": 4, "next_action_at": now - 1}})
     db.parties.insert_many([{**stub_party(rid, f"dist-{p}", f"Distributor {p}", None, "shipment", None),
                             "channel": "order_system", "order_system": p, "order_system_paused": True,
                             "order_system_failure": "field qty_in_stock missing"}
                            for p in ("north", "east")])
     db.adapters.insert_one({"_id": "east:v2", "order_system": "east", "version": 2, "status": "candidate"})
-    db.parties.update_one({"recall_id": rid, "party_id": "harbour-fire"},          # being worked on right now
+    db.parties.update_one({"recall_id": rid, "party_id": "harbour-market"},          # being worked on right now
                          [{"$set": {"lease_owner": "w1", "lease_until": {"$add": ["$$NOW", 60_000]}}}])
     gate, repairs = StubGate(db), []
     summary = _planner(db, client, settings, gate, repairs=repairs).pass_once(rid)
-    assert [a["party_id"] for t, a, _ in gate.calls if t == "escalate"] == ["lakeside-systems"]
+    assert [a["party_id"] for t, a, _ in gate.calls if t == "escalate"] == ["lakeside-foods"]
     assert sorted(a["party_id"] for t, a, _ in gate.calls if t == "set_priority") == [
-        "lakeside-systems", "queen-st-alarm"], "a leased party's priority waits for the next pass"
+        "lakeside-foods", "queen-st-grocer"], "a leased party's priority waits for the next pass"
     assert summary["repairs"] == ["north"] and repairs == ["north"]
-    assert party(db, rid, "lakeside-systems")["ladder_step"] == 5
+    assert party(db, rid, "lakeside-foods")["ladder_step"] == 5
 
 
 def _distributors(db, rid, paused: dict):
@@ -608,14 +608,14 @@ def test_restart_adopts_an_in_doubt_call_whose_party_reconciled_while_the_worker
     party is never due again. The restart still adopts the attempt from the
     tool event (no redial) instead of leaving it in doubt."""
     rid = start()
-    att = open_attempt(db, recall_id=rid, party_id="lakeside-systems", channel="sim", to_number="+14165550143",
+    att = open_attempt(db, recall_id=rid, party_id="lakeside-foods", channel="sim", to_number="+14165550143",
                        extra={"owner": {"worker": "worker-test/w1", "epoch": 1}})
     db.attempts.update_one({"_id": att["_id"]}, {"$set": {"intent_at": simclock.server_now(db.client)
                                                           - timedelta(seconds=60)}})
-    db.tool_events.insert_one({"kind": "tool_call", "attempt_id": att["_id"], "party_id": "lakeside-systems",
+    db.tool_events.insert_one({"kind": "tool_call", "attempt_id": att["_id"], "party_id": "lakeside-foods",
                                "recall_id": rid, "conversation_id": "conv_sim_1", "call_sid": "CAsim1",
                                "payload": {}, "received_at": simclock.server_now(db.client)})
-    db.parties.update_one({"recall_id": rid, "party_id": "lakeside-systems"},
+    db.parties.update_one({"recall_id": rid, "party_id": "lakeside-foods"},
                          {"$set": {"state": "reconciled", "next_action_at": None, "lease_epoch": 1}})
     pool = make()
     pool.startup()
@@ -627,9 +627,9 @@ def test_restart_adopts_an_in_doubt_call_whose_party_reconciled_while_the_worker
 
 def test_maintenance_leaves_a_live_runs_in_doubt_attempt_to_that_run(db, start, make, voice):
     rid = start()
-    att = open_attempt(db, recall_id=rid, party_id="lakeside-systems", channel="sim", to_number="+14165550143",
+    att = open_attempt(db, recall_id=rid, party_id="lakeside-foods", channel="sim", to_number="+14165550143",
                        extra={"owner": {"worker": "worker-test/w1", "epoch": 4}})
-    db.parties.update_one({"recall_id": rid, "party_id": "lakeside-systems"}, [
+    db.parties.update_one({"recall_id": rid, "party_id": "lakeside-foods"}, [
         {"$set": {"lease_epoch": 4, "lease_owner": "worker-test/w1",
                   "lease_until": {"$add": ["$$NOW", 60000]}}}])
     pool = make()

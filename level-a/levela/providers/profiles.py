@@ -2,7 +2,7 @@
 
 Every simulated party in scenarios/recall_long.json has an entry in
 `sim_truth`: a profile name, a ground truth that conserves (what really
-happened to its panels) and the profile's parameters. This module turns one
+happened to its tins) and the profile's parameters. This module turns one
 contact into the party's reply. It is pure (no database, no clock, no
 threads), so every behaviour is tested without a network; SimNetwork plays
 the reply on a call and drives the party-initiated events.
@@ -14,30 +14,31 @@ the reply on a call and drives the party-initiated events.
 |                | `answer_hours` (once reached, it always answers)               |
 | callback       | the first time, asks to be called back at `callback_hour` the  |
 |                | next day; after that answers with the truth                    |
-| over_reporter  | first reports `over_report_by` more in stock than it received, |
-|                | and after the database refuses that, the truth (one call)      |
+| over_reporter  | first reports `over_report_by` more on the shelf than it       |
+|                | received, and after the database refuses that, the truth (one  |
+|                | call)                                                          |
 | reviser        | answers the truth; `revise.after_hours` later it sends a       |
-|                | corrected count through its form (`revise.delta` panels moved  |
-|                | from in stock to returned)                                     |
+|                | corrected count through its form (`revise.delta` tins moved    |
+|                | from the shelf to returned)                                    |
 | forwarder      | reports its forwards (forwarded_qty + forwarded_to_name for    |
 |                | one destination, a `forwards` list for several); with          |
 |                | `misreport` it first claims `extra` more went to one party     |
-|                | (taken from in stock) and gives the truth on the follow-up     |
+|                | (taken from the shelf) and gives the truth on the follow-up    |
 | short_receiver | reports what it really received, `short_by` fewer than its     |
 |                | sender first claims, and stands by it on follow-up             |
 | unreachable    | never answers and ignores form links; the distributor's rep    |
 |                | reports for it at `rep_reports_at` once the party is escalated |
 
-Truth: `{received? (tiers 2-3), in_stock, installed, returned,
-forwards: [{to_party_id, to_name, qty}], fix?, other_batches: {batch: count}}`.
-An installer installs panels at a building owner's site, which is a forward
-to the owner. A building owner's truth has its panels `installed` and a fix
-script, `fix: {at, model, version_before, version_after}`: before simulated
-hour `at` its panels are installed, the display shows `version_before` and
-the sounder does not ring on the test; from `at` on (the installer has
-visited) they are fixed, the display shows `version_after` and the sounder
-rings. An owner answers the three checks on every call (model_seen,
-version_seen, sounder_test), so a fix check after `at` books them fixed.
+Truth: `{received? (tiers 2-3), sold, on_shelf, held, returned,
+forwards: [{to_party_id, to_name, qty}], removal?, other_batches: {batch:
+count}}`. A store that passes tins to another store books a forward to it.
+Every store follows a removal script, `removal: {at, batch}`: before
+simulated hour `at` its tins are on the shelf and the till still sells them;
+from `at` on (staff have pulled them) they are held and the till refuses the
+sale. A store answers the three checks on every call: the batch code read
+under a tin (batch_seen), a sold count read off the till (sold_source
+"till_report") and whether the till refused a scanned tin (block_test), so a
+removal check after `at` books them held.
 
 Questions are answered from the truth: a question naming a batch ("Did you
 also receive batch L-4480?") is answered from `other_batches`. Values by
@@ -53,11 +54,11 @@ from ..clock import hour_of_day, next_morning
 
 PROFILES = ("straight", "no_answer", "callback", "over_reporter", "reviser", "forwarder", "short_receiver",
             "unreachable")
-PURPOSES = ("initial", "retry", "receipt", "dispute_followup", "ask_question", "fix_check")
+PURPOSES = ("initial", "retry", "receipt", "dispute_followup", "ask_question", "removal_check")
 
 ANSWER, NO_ANSWER, BUSY, CALLBACK = "answer", "no_answer", "busy", "callback"
 
-BUCKETS = ("in_stock", "installed", "fixed", "returned")
+BUCKETS = ("sold", "on_shelf", "held", "returned")
 DEFAULT_ANSWER_ON_ATTEMPT = 3       # a no_answer party with no stated hours
 DEFAULT_CALLBACK_HOUR = 9
 DEFAULT_FORM_AFTER_H = 2.0          # a party that answers its phone also fills in a form it is sent
@@ -72,7 +73,7 @@ class Context:
     this call included. reached_before: an earlier call was picked up.
     callbacks_before: earlier calls that ended with a callback request.
     open_questions: [{id, text, answer_type}]. told_qty: the other side's
-    number on a dispute follow-up. sender_name: who forwarded panels to it.
+    number on a dispute follow-up. sender_name: who forwarded tins to it.
     """
     purpose: str = "initial"
     attempt: int = 1
@@ -133,7 +134,7 @@ def respond(profile: str, truth: dict, params: dict | None, context: Context) ->
     if profile == "callback" and context.callbacks_before == 0:
         hour = int(params.get("callback_hour", DEFAULT_CALLBACK_HOUR))
         return Reply(kind=CALLBACK, callback_at=next_morning(context.sim_now, hour),
-                     say=[f"The manager has the job sheets and is on site until tomorrow. Can you call back "
+                     say=[f"The manager has the delivery notes and is off until tomorrow. Can you call back "
                           f"tomorrow at {hour}:00?"])
     claims, says = _claims(profile, truth, params, context)
     answers, answer_says = answers_for(context.open_questions, truth)
@@ -171,17 +172,17 @@ def _claims(profile: str, truth: dict, params: dict, ctx: Context) -> tuple[list
         body = claim_body(truth, sim_now=now)
         return [body], [_followup_line(profile, truth, params, told, now)]
     if profile == "over_reporter" and not ctx.reached_before:
-        wrong = claim_body(truth, sim_now=now, in_stock_extra=int(params.get("over_report_by", 0)))
+        wrong = claim_body(truth, sim_now=now, shelf_extra=int(params.get("over_report_by", 0)))
         right = claim_body(truth, sim_now=now)
         return [wrong, right], [spoken(wrong, ctx.sender_name),
                                 "Sorry, I was reading the wrong line. " + spoken(right, ctx.sender_name)]
-    misreport = params.get("misreport") if profile == "forwarder" and ctx.purpose != "fix_check" else None
+    misreport = params.get("misreport") if profile == "forwarder" and ctx.purpose != "removal_check" else None
     body = claim_body(truth, sim_now=now, misreport=misreport)
     return [body], [spoken(body, ctx.sender_name)]
 
 
 def _followup_line(profile: str, truth: dict, params: dict, told: int | None, sim_now: float) -> str:
-    """A forwarder that over-reported checks its job sheets and corrects;
+    """A forwarder that over-reported checks its delivery notes and corrects;
     everyone else stands by its count."""
     lies = {m["to_party_id"]: m["extra"] for m in params.get("misreport") or []} if profile == "forwarder" else {}
     corrected = [f for f in truth.get("forwards") or [] if f["to_party_id"] in lies]
@@ -189,47 +190,49 @@ def _followup_line(profile: str, truth: dict, params: dict, told: int | None, si
     if corrected:
         extra = sum(lies[f["to_party_id"]] for f in corrected)
         sent = ", ".join(f"{f['qty']} went to {f['to_name']}" for f in corrected)
-        return f"Checked the job sheets. {sent}. The other {extra} are still in our stock room. " + spoken(body)
+        return f"Checked the delivery notes. {sent}. The other {extra} are still on our shelf. " + spoken(body)
     if "received" in truth and told is not None and told != truth["received"]:
-        return f"No, {truth['received']}. I have the installer's invoice. " + spoken(body)
+        return f"No, {truth['received']}. I have the delivery note. " + spoken(body)
     return "Yes, those numbers are right. " + spoken(body)
 
 
 # ------------------------------------------------------------------ bodies
 
-def fixed_by(truth: dict, sim_now: float | None) -> bool:
-    """Whether a building owner's installer has updated its panels by sim_now."""
-    fix = truth.get("fix")
-    return bool(fix) and sim_now is not None and sim_now >= float(fix["at"])
+def removed_by(truth: dict, sim_now: float | None) -> bool:
+    """Whether a store's staff have pulled its tins from the shelf by sim_now."""
+    removal = truth.get("removal")
+    return bool(removal) and sim_now is not None and sim_now >= float(removal["at"])
 
 
-def claim_body(truth: dict, *, sim_now: float | None = None, in_stock_extra: int = 0,
+def claim_body(truth: dict, *, sim_now: float | None = None, shelf_extra: int = 0,
                misreport: list | None = None) -> dict:
     """The submit_count body for a truth at simulated hour sim_now (without
     the call's ids).
 
-    in_stock_extra inflates in stock (an over-report). misreport moves `extra`
-    panels from in stock to the forward to one party (a sender's first-call
-    error). A building owner (a truth with a fix script) moves its installed
-    panels to fixed once the fix is done, and answers the three checks.
+    shelf_extra inflates the tins on the shelf (an over-report). misreport
+    moves `extra` tins from the shelf to the forward to one party (a sender's
+    first-call error). A store (a truth with a removal script) moves its
+    tins from the shelf to held once staff have pulled them, and answers the
+    three checks; a sold count is read off the till.
     """
     body = {"received_qty": int(truth["received"])} if "received" in truth else {}
     body.update({b: int(truth.get(b, 0)) for b in BUCKETS})
-    fix = truth.get("fix")
-    if fix:
-        done = fixed_by(truth, sim_now)
+    removal = truth.get("removal")
+    if removal:
+        done = removed_by(truth, sim_now)
         if done:
-            body["fixed"] += body["installed"]
-            body["installed"] = 0
-        body.update(model_seen=fix["model"], version_seen=fix["version_after" if done else "version_before"],
-                    sounder_test=done)
-    body["in_stock"] += in_stock_extra
+            body["held"] += body["on_shelf"]
+            body["on_shelf"] = 0
+        body.update(batch_seen=removal["batch"], block_test=done)
+    if body["sold"]:
+        body["sold_source"] = "till_report"
+    body["on_shelf"] += shelf_extra
     forwards = [dict(f) for f in truth.get("forwards") or []]
     for lie in misreport or []:
         for f in forwards:
             if f["to_party_id"] == lie["to_party_id"]:
                 f["qty"] += lie["extra"]
-                body["in_stock"] -= lie["extra"]
+                body["on_shelf"] -= lie["extra"]
     if len(forwards) == 1:
         body["forwarded_qty"], body["forwarded_to_name"] = forwards[0]["qty"], forwards[0]["to_name"]
     elif forwards:
@@ -243,20 +246,21 @@ def spoken(body: dict, sender_name: str = "") -> str:
     if "received_qty" in body:
         source = f" from {sender_name}" if sender_name else ""
         parts.append(f"We received {body['received_qty']}{source}.")
-    held = [f"{body[k]} {label}" for k, label in (("in_stock", "in stock"), ("installed", "installed"),
-                                                  ("fixed", "updated"), ("returned", "sent back"))
+    said = [f"{body[k]} {label}" for k, label in (("sold", "sold"), ("on_shelf", "on the shelf"),
+                                                  ("held", "pulled and held"), ("returned", "sent back"))
             if body.get(k)]
-    parts.append((", ".join(held) + ".") if held else "None left in stock.")
+    parts.append((", ".join(said) + ".") if said else "None on the shelf.")
     sent = ([(body["forwarded_qty"], body["forwarded_to_name"])] if body.get("forwarded_qty")
             else [(f["qty"], f["to_name"]) for f in body.get("forwards") or []])
     if sent:
         items = [f"{qty} to {name}" for qty, name in sent]
         joined = items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
-        parts.append(f"We installed or passed on {joined}.")
-    if "version_seen" in body:
-        rang = "rang" if body.get("sounder_test") else "did not ring"
-        parts.append(f"The front says {body['model_seen']}, the display shows {body['version_seen']}, "
-                     f"and the sounder {rang} on the test.")
+        parts.append(f"We passed on {joined}.")
+    if body.get("sold_source") == "till_report":
+        parts.append("The sold count is off the till's sales report.")
+    if "batch_seen" in body:
+        refused = "refused the sale" if body.get("block_test") else "still sells it"
+        parts.append(f"The batch code under the tin reads {body['batch_seen']}, and the till {refused}.")
     return " ".join(parts)
 
 
@@ -292,7 +296,7 @@ def answer_line(question: dict, truth: dict) -> str:
     batch, count = _batch_count(question, truth)
     if batch is None:
         return "No, nothing like that here."
-    return f"Yes, we got {count} panels of batch {batch}." if count else f"No, we never had batch {batch}."
+    return f"Yes, we got {count} tins of batch {batch}." if count else f"No, we never had batch {batch}."
 
 
 # ------------------------------------------------------------------ party-initiated events
@@ -320,8 +324,8 @@ def form_plan(profile: str, truth: dict, params: dict | None, sim_now: float) ->
 
 def revision_plan(profile: str, truth: dict, params: dict | None, accepted_at: float) -> FormPlan | None:
     """A reviser's correction, sent through its form `revise.after_hours`
-    after its count was accepted: `revise.delta` panels that were in stock
-    have since gone back to the supplier."""
+    after its count was accepted: `revise.delta` tins that were on the shelf
+    have since gone back to the company."""
     revise = (params or {}).get("revise")
     if profile != "reviser" or not revise:
         return None
@@ -331,9 +335,9 @@ def revision_plan(profile: str, truth: dict, params: dict | None, accepted_at: f
 
 
 def revised_truth(truth: dict, delta: int) -> dict:
-    if not 0 < delta <= int(truth.get("in_stock", 0)):
-        raise ValueError(f"a revision cannot move {delta} panels from {truth.get('in_stock', 0)} in stock")
-    return {**truth, "in_stock": truth["in_stock"] - delta, "returned": int(truth.get("returned", 0)) + delta}
+    if not 0 < delta <= int(truth.get("on_shelf", 0)):
+        raise ValueError(f"a revision cannot move {delta} tins from {truth.get('on_shelf', 0)} on the shelf")
+    return {**truth, "on_shelf": truth["on_shelf"] - delta, "returned": int(truth.get("returned", 0)) + delta}
 
 
 def rep_report_at(profile: str, params: dict | None) -> float | None:

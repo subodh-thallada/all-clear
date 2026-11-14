@@ -13,15 +13,15 @@ printing "ok" or "MISSING" for each. Exit status: 0 everything seen,
     start      start a recall (default recall_long in demo mode: slice and order system change held)
     status     the wall's numbers on one screen
     run        0:00  run in progress: clock, parties found, 0 duplicates, invariants
-    judge      0:15  pause random kills; release Harbour Fire and Lakeside Systems
-    caught     0:35  Atlas rejects Harbour Fire's count; the correction is accepted
-    kill-arm   1:00  arm after_dial_request on Corner Properties; release Corner Properties and
-                     Queen St Alarm (scripts/kill_demo.sh runs this, then the worker)
-    kill       1:05  failpoint fired, Corner Properties found, 15 disputed, resume line,
-                     attempt adopted, Corner Properties called once
+    judge      0:15  pause random kills; release Harbour Market and Lakeside Foods
+    caught     0:35  Atlas rejects Harbour Market's count; the correction is accepted
+    kill-arm   1:00  arm after_dial_request on Corner Mart; release Corner Mart and
+                     Queen St Grocer (scripts/kill_demo.sh runs this, then the worker)
+    kill       1:05  failpoint fired, Corner Mart found, 15 disputed, resume line,
+                     attempt adopted, Corner Mart called once
     order system     1:45  switch North orders to v2: contract failure, repaired adapter, retry
     memory     2:20  switch East orders to v2: adapter from memory, no model call
-    close      2:35  press Close: Atlas refuses while panels are unexplained
+    close      2:35  press Close: Atlas refuses while tins are unexplained
     wrap       2:50  resume random kills; the wrap lines
 
 Extras for the run-up and for questions:
@@ -56,7 +56,7 @@ DEFAULT_TIMEOUT_S = 60.0
 # supervisor); allow this much clock difference between them.
 SKEW = timedelta(seconds=5)
 KILL_FAILPOINT = "after_dial_request"
-HARBOUR, QUEEN, LAKESIDE, CORNER = "harbour-fire", "queen-st-alarm", "lakeside-systems", "corner-properties"
+HARBOUR, QUEEN, LAKESIDE, CORNER = "harbour-market", "queen-st-grocer", "lakeside-foods", "corner-mart"
 DISPUTED_PANELS = 15
 
 
@@ -174,7 +174,7 @@ def has_line(kind: str, *, party_id: str | None = None, system: str | None = Non
 
 
 def after_fire(kind: str, *, party_id: str | None = None):
-    """A `kind` line written after the kill failpoint fired on Corner Properties:
+    """A `kind` line written after the kill failpoint fired on Corner Mart:
     the run's earlier resume lines prove nothing about this kill."""
     def met(v: View, _b: View) -> bool:
         fired = [_parse_at(ln.get("at")) for ln in v.lines("failpoint_fired", party_id=CORNER)]
@@ -247,9 +247,9 @@ def live_workers(api: Api) -> list[dict]:
 
 
 def act_kill_arm(ctx: Context) -> list[str]:
-    """Arm first, so Corner Properties cannot be dialled before the failpoint is
-    waiting for it; then let Corner Properties (and, unless --no-release, Queen St
-    Alarm's held reply, which names Corner Properties) go."""
+    """Arm first, so Corner Mart cannot be dialled before the failpoint is
+    waiting for it; then let Corner Mart (and, unless --no-release, Queen St
+    Alarm's held reply, which names Corner Mart) go."""
     running = live_workers(ctx.api)
     if running and not ctx.args.force:
         names = ", ".join(f"{w.get('name')} (heartbeat {w.get('heartbeat_age_s')} s ago)" for w in running)
@@ -273,7 +273,7 @@ def _switch(order_system: str) -> Callable[[Context], list[str]]:
 def act_close(ctx: Context) -> list[str]:
     res = ctx.api.post("/admin/close", {"recall_id": ctx.recall_id})
     if res.get("closed"):
-        return ["the recall CLOSED: every panel is explained (this is not the demo's ending)"]
+        return ["the recall CLOSED: every tin is explained (this is not the demo's ending)"]
     return [f"close refused: {res.get('open_units')} open units"]
 
 
@@ -344,7 +344,7 @@ BEATS = (
     Beat("run", "0:00", "Run in progress",
          "The wall: started at 4:55, the simulated day, 40 parties from 5, steps, kills survived, "
          "0 duplicate effects.",
-         "Nothing counts in a recall until every panel is explained. This agent will not close one until "
+         "Nothing counts in a recall until every tin is explained. This agent will not close one until "
          "the mass balance holds.",
          None,
          (Expect("a run is in progress on an open recall",
@@ -353,44 +353,44 @@ BEATS = (
           Expect("parties found during the run", lambda v, _b: (v.run.get("parties") or {}).get("found", 0) > 0),
           Expect("0 duplicate effects", lambda v, _b: v.run.get("duplicates") == 0),
           Expect("4 of 4 invariants hold at the last check", _invariants_hold),
-          Expect("Harbour Fire is held for the live part", _held(HARBOUR, True))),
+          Expect("Harbour Market is held for the live part", _held(HARBOUR, True))),
          timeout_s=5.0),
     Beat("judge", "0:15", "Judge call",
-         "A team phone rings. A judge plays Harbour Fire's manager and is invited to lie.",
+         "A team phone rings. A judge plays Harbour Market's manager and is invited to lie.",
          "", act_judge,
          (Expect("random kills paused", lambda v, _b: (v.run.get("supervisor") or {}).get("paused") is True),
-          Expect("Harbour Fire released to the timers", _held(HARBOUR, False)),
-          Expect("a call to Harbour Fire is placed", _call_live_or_placed(HARBOUR)),
-          Expect("Lakeside Systems answered in the background", has_line("claim_accepted", party_id=LAKESIDE)))),
+          Expect("Harbour Market released to the timers", _held(HARBOUR, False)),
+          Expect("a call to Harbour Market is placed", _call_live_or_placed(HARBOUR)),
+          Expect("Lakeside Foods answered in the background", has_line("claim_accepted", party_id=LAKESIDE)))),
     Beat("caught", "0:35", "Caught",
          "Wall feed: rejected by Atlas, 60 reported, 40 shipped. The agent challenges, the judge corrects, "
          "the claim is accepted.",
          "The model did not catch that. The database did.",
          None,
-         (Expect("Atlas rejected Harbour Fire's count", has_line("claim_rejected", party_id=HARBOUR)),
+         (Expect("Atlas rejected Harbour Market's count", has_line("claim_rejected", party_id=HARBOUR)),
           Expect("the corrected count was accepted", has_line("claim_accepted", party_id=HARBOUR))),
          timeout_s=180.0),
     Beat("kill-arm", "1:00", "Hidden party (the kill is armed)",
-         "Queen St Alarm's claim creates Corner Properties on the wall.",
+         "Queen St Grocer's claim creates Corner Mart on the wall.",
          "", act_kill_arm,
          (Expect(f"failpoint {KILL_FAILPOINT} armed for {CORNER}",
                  lambda v, _b: ((v.state.get("failpoints") or {}).get(KILL_FAILPOINT) or {}).get("party_id")
                  == CORNER),),
          timeout_s=5.0),
     Beat("kill", "1:05", "Kill",
-         "The worker dials Corner Properties on a teammate's phone and dies. The phone rings once. The teammate "
-         "says received 25. The edge turns disputed: 15 panels. Restart the worker: documents read, the "
+         "The worker dials Corner Mart on a teammate's phone and dies. The phone rings once. The teammate "
+         "says received 25. The edge turns disputed: 15 tins. Restart the worker: documents read, the "
          "attempt adopted, no second ring.",
          "The call was requested and the worker died before saving it. A naive agent redials. Ours finds "
          "the evidence first.",
          None,
-         (Expect("Corner Properties found from Queen St Alarm's claim", lambda v, _b: v.party(CORNER) is not None),
-          Expect("the failpoint fired on the call to Corner Properties", has_line("failpoint_fired", party_id=CORNER)),
-          Expect(f"the claim landed: {DISPUTED_PANELS} panels disputed", _disputed),
+         (Expect("Corner Mart found from Queen St Grocer's claim", lambda v, _b: v.party(CORNER) is not None),
+          Expect("the failpoint fired on the call to Corner Mart", has_line("failpoint_fired", party_id=CORNER)),
+          Expect(f"the claim landed: {DISPUTED_PANELS} tins disputed", _disputed),
           Expect("the worker resumed: documents read, nothing replayed", after_fire("worker_resumed")),
           Expect("the in-doubt attempt was adopted, not redialled",
                  after_fire("attempt_adopted", party_id=CORNER)),
-          Expect("Corner Properties was called exactly once", _party_called_once(CORNER))),
+          Expect("Corner Mart was called exactly once", _party_called_once(CORNER))),
          timeout_s=300.0),
     Beat("order_system", "1:45", "Order system changes",
          "The contract failure, the flagged operations, the repaired adapter, the canary matching, and only "
@@ -415,18 +415,18 @@ BEATS = (
           Expect("flagged operations retried; none left flagged", _retried("east"))),
          timeout_s=90.0),
     Beat("close", "2:35", "Closing gate",
-         "Press Close. Atlas refuses and the wall shows the open panels. The three metrics sit side by side.",
-         "Fifteen panels are unexplained, so Atlas will not let the recall close.",
+         "Press Close. Atlas refuses and the wall shows the open tins. The three metrics sit side by side.",
+         "Fifteen tins are unexplained, so Atlas will not let the recall close.",
          act_close,
          (Expect("Atlas refused the close", has_line("close_refused")),
-          Expect("the recall is still open with panels unexplained",
+          Expect("the recall is still open with tins unexplained",
                  lambda v, _b: (v.state.get("recall") or {}).get("status") == "open"
                  and (v.metrics.get("open_units") or 0) > 0)),
          timeout_s=15.0),
     Beat("wrap", "2:50", "Wrap",
          "One sentence each: what is real, what is simulated, why it matters.",
          "What is real here: the calls, the kills and every refusal by the database. What is simulated: the "
-         "clock, the other parties and the order system. Today this is fire alarm panels. A different product is a different recall document on the same engine.",
+         "clock, the other parties and the order system. Today this is fire alarm tins. A different product is a different recall document on the same engine.",
          act_wrap,
          (Expect("random kills resumed", lambda v, _b: (v.run.get("supervisor") or {}).get("paused") is False),),
          timeout_s=10.0),
@@ -525,7 +525,7 @@ def status_lines(state: dict) -> list[str]:
             f"Random kills {'paused' if (run.get('supervisor') or {}).get('paused') else 'on'}   "
             f"Saboteur {'on' if (run.get('saboteur') or {}).get('on') else 'off'}",
         ]
-    lines.append(f"Located {_pair(m.get('panels_located'))}   Fixed or returned {_pair(m.get('fixed_or_returned'))}   "
+    lines.append(f"Located {_pair(m.get('tins_located'))}   Fixed or returned {_pair(m.get('held_or_returned'))}   "
                  f"Open {m.get('open_units')} (disputed {m.get('disputed_units')})   "
                  f"Mass balance {m.get('mass_balance')} of {m.get('units_total')}")
     for s in state.get("systems") or []:
@@ -581,14 +581,14 @@ def parse_args(argv):
     s.add_argument("--speed", type=float, default=None, metavar="SECONDS",
                    help="seconds per simulated hour (default: the scenario's schedule)")
     s.add_argument("--sim-party", action="append", default=[],
-                   help="simulate this voice party too, e.g. corner-properties when the second phone is flaky")
+                   help="simulate this voice party too, e.g. corner-mart when the second phone is flaky")
     s.add_argument("--all-sim", action="store_true", help="simulate every party (recall_2, the memory fallback)")
     sub.add_parser("status", help="the wall's numbers on one screen")
     for beat in BEATS + EXTRAS:
         b = sub.add_parser(beat.command, help=f"{beat.at} {beat.title}")
         if beat.command == "kill-arm":
             b.add_argument("--no-release", action="store_true",
-                           help="Queen St Alarm was already released: only arm and release Corner Properties")
+                           help="Queen St Grocer was already released: only arm and release Corner Mart")
             b.add_argument("--force", action="store_true", help="arm even though a worker is running")
         elif beat.command == "saboteur":
             b.add_argument("--seconds", type=float, default=20.0)

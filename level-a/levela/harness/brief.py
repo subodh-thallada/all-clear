@@ -39,7 +39,7 @@ LINE_MAX = 220
 LIVE = ("intent", "dialed", "connected")
 NOT_YET_CLAIMED = ("pending", "contacting", "reached")
 
-RULES = ("You decide the next action for one party of a panel recall. Counts count only when the party "
+RULES = ("You decide the next action for one party of a tin recall. Counts count only when the party "
          "itself gives them and the database accepts them, so never report an outcome yourself. Use only the "
          "tools listed. Make exactly one tool call, or none when nothing is owed now.")
 PLANNER_RULES = ("You rank the recall's work. You may set priorities, add a question, escalate a party, propose a "
@@ -96,7 +96,7 @@ def gather(ctx, party: dict, sim_now: float) -> dict:
         "questions": open_questions(ctx.db, party),
         "attempts": len(attempts),
         "live_attempt": next((a["_id"] for a in attempts if a["state"] in LIVE), None),
-        "dispute": None, "order_system": None, "fix_check": False, "fix_check_at": None,
+        "dispute": None, "order_system": None, "removal_check": False, "removal_check_at": None,
     }
     kind, reason = _kind(ctx, party, facts, attempts, edges, names)
     facts.update(kind=kind, reason=reason)
@@ -187,13 +187,13 @@ def _kind(ctx, party: dict, facts: dict, attempts: list, edges: list, names: dic
         return "ask_question", "open questions"
     if dispute is not None:
         return None, "disputed, follow-ups wait for the operator"
-    check_at = party.get("fix_check_at")
-    if party.get("installed") and check_at is not None:
+    check_at = party.get("removal_check_at")
+    if party.get("on_shelf") and check_at is not None:
         if facts["sim_now"] >= check_at:
-            facts["fix_check"] = True
-            return "contact_party", f"fix check: {party['installed']} panels installed and not yet fixed"
-        facts["fix_check_at"] = check_at
-        return None, f"fix check due {fmt(check_at)}"
+            facts["removal_check"] = True
+            return "contact_party", f"removal check: {party['on_shelf']} tins still on the shelf"
+        facts["removal_check_at"] = check_at
+        return None, f"removal check due {fmt(check_at)}"
     return None, "counts on the books; waiting on a counterpart" if state == "claimed" else "reconciled"
 
 
@@ -341,7 +341,7 @@ def _probe(db, party: dict, reads: list[dict]) -> dict | None:
 
 def gather_planner(ctx, sim_now: float) -> dict:
     """The planner's one view (V2 §5): parties by state and tier, the ten with
-    the most unexplained panels (with the priority the rule wants), the oldest
+    the most unexplained tins (with the priority the rule wants), the oldest
     due time and the failure classes of the last simulated day."""
     rid = ctx.recall["_id"]
     disputed = {row["_id"]: row["n"] for row in ctx.db.edges.aggregate([

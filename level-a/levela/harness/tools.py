@@ -206,7 +206,7 @@ def _attempt_doc(call: Call, history: list, key: str) -> dict:
         session=s)} if ids else {}
     purpose, extra, told, note = _purpose(run.kind, party, history, edges, names)
     inbound = [e for e in edges if e["to_party"] == party["party_id"]]
-    # A party asked about panels it received - any party below tier 1, or a
+    # A party asked about tins it received - any party below tier 1, or a
     # tier 1 party a forwarder shipped to - is told who sent them and asked
     # for the receipt (the prompt asks for received_qty when receipt is yes).
     owed = [e for e in inbound if e.get("state") == "awaiting_recipient"]
@@ -222,7 +222,7 @@ def _attempt_doc(call: Call, history: list, key: str) -> dict:
         "attempt_number": str(len(history) + 1), "sim_time": fmt(call.sim_now),
     })
     # questions, question_ids, ask_counts: the form agent/prompt.md reads
-    # ("q-02: text (answer: yes or no, and how many panels)."), built by the
+    # ("q-02: text (answer: yes or no, and how many tins)."), built by the
     # module that owns the question schema. A question-only run takes no counts.
     variables.update(questions_.call_variables(call.db, party, take_counts=run.kind != "ask_question", session=s))
     return {"_id": aid, "recall_id": party["recall_id"], "party_id": party["party_id"],
@@ -246,10 +246,10 @@ def _purpose(kind: str, party: dict, history: list, edges: list, names: dict) ->
         # The run kind is the purpose: the simulator plays a question-only call
         # (no script, no counts) and the profiles answer it by this name.
         return "ask_question", {}, "", ""
-    if party.get("state") in ("claimed", "reconciled") and party.get("installed"):
-        # Counts are on the books with panels installed and not fixed: the
-        # fix check asks the counts and the three checks again.
-        return "fix_check", {}, "", ""
+    if party.get("state") in ("claimed", "reconciled") and party.get("on_shelf"):
+        # Counts are on the books with tins still on the shelf: the removal
+        # check asks the counts and the three checks again.
+        return "removal_check", {}, "", ""
     return ("retry" if history else "initial"), {}, "", ""
 
 

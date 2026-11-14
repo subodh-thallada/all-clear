@@ -198,15 +198,15 @@ def _order_system_of(db, party: dict) -> tuple[str, dict]:
 
 
 def account_party_doc(recall: dict, distributor: dict, row: dict, *, now: datetime, sim: float) -> dict:
-    """A tier 2 installer for one order system account, due at once. The id
+    """A tier 2 store for one order system account, due at once. The id
     follows the directory (or the name's slug), so a party named earlier by a
     claim or by memory is the same party; the phone is the order system's, and
-    the model and affected versions are the distributor's (the recall's)."""
+    the batch code is the distributor's (the recall's)."""
     party_id, entry = resolve_party(row["name"], recall.get("directory"))
     entry = {**(entry or {}), "name": row["name"], "channel": "sim", "phone": row["phone"], "tier": 2,
-             "type": "installer"}
+             "type": "store"}
     return stub_party(recall["_id"], party_id, row["name"], entry, "order_system", now,
-                      product=product_fields(distributor), tier=2, type_="installer", next_action_at=sim)
+                      product=product_fields(distributor), tier=2, type_="store", next_action_at=sim)
 
 
 def upsert_accounts(db, recall: dict, distributor: dict, rows: list[dict], *, now: datetime,
@@ -233,7 +233,7 @@ def upsert_accounts(db, recall: dict, distributor: dict, rows: list[dict], *, no
 
 def book_forwards_claim(client, db, *, recall_id: str, party_id: str, evidence_id: str, forwards: list[dict],
                         now: datetime) -> dict:
-    """The distributor's claim from its order system: every panel it shipped went to
+    """The distributor's claim from its order system: every tin it shipped went to
     the listed accounts (V2 §9 forwards; one edge per destination, booked in
     the ledger's one transaction). This is the one place the order system books
     through the ledger, so a change to the ledger's claim interface is fixed
@@ -563,8 +563,8 @@ def _read(ctx, op: dict, adapter: dict, order_system) -> tuple[list[dict] | None
 
 
 def _read_accounts(ctx, op: dict, *, adapter: dict, order_system, distributor: dict, fresh: bool) -> dict:
-    """Accounts become tier 2 installers, and the distributor's claim books every
-    panel it shipped to them. The ledger is written before the op is verified,
+    """Accounts become tier 2 stores, and the distributor's claim books every
+    tin it shipped to them. The ledger is written before the op is verified,
     so a kill in between repeats idempotent writes instead of losing them."""
     rows, early = _read(ctx, op, adapter, order_system)
     if early is not None:
@@ -591,7 +591,7 @@ def _read_accounts(ctx, op: dict, *, adapter: dict, order_system, distributor: d
     accepted = bool(claim and claim.get("accepted"))
     _emit(ctx, done, "order_system_accounts",
           f"accounts read: {len(rows)} accounts for batch {op['request']['batch']}, {len(created)} new parties, "
-          f"{shipped:,} panels forwarded" + ("" if accepted or not forwards else
+          f"{shipped:,} tins forwarded" + ("" if accepted or not forwards else
                                            f" (claim refused: {(claim or {}).get('reason')})"),
           level="good" if accepted or not forwards else "bad", sim=sim,
           detail={"created": created, "claim": claim})
@@ -632,7 +632,7 @@ def _read_all_inventory(ctx, op: dict, rows: list[dict], adapter: dict, distribu
               for a in accounts if a.get("account") in by_account]
     if writes:
         db.parties.bulk_write(writes, ordered=False)
-    value = {"accounts": len(writes), "in_stock": {a: r["qty_in_stock"] for a, r in sorted(by_account.items())}}
+    value = {"accounts": len(writes), "held": {a: r["qty_in_stock"] for a, r in sorted(by_account.items())}}
     done = verify(db, op, readback_at=sim, readback_value=value, adapter_version=adapter["version"], sent_at=sim)
     if done is None:
         return _outcome(get(db, op["_id"]), "moved", note="the operation changed during the read")

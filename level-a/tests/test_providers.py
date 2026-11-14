@@ -53,7 +53,7 @@ def twilio_settings(settings):
 
 def place(voice, **variables):
     return voice.place_call(to_number=TO, attempt_id="att_0001",
-                            dynamic_variables={"party_id": "harbour-fire", **variables})
+                            dynamic_variables={"party_id": "harbour-market", **variables})
 
 
 # ---------------------------------------------------------------- ElevenLabs
@@ -66,7 +66,7 @@ def test_elevenlabs_request_body_and_headers(eleven_settings):
         return json_reply(200, {"success": True, "message": "ok", "conversation_id": "conv_1", "callSid": "CA1"})
 
     voice = ElevenLabsVoice(eleven_settings, http=mock_http(handler))
-    placed = place(voice, party_name="Harbour Fire", told_qty=25, sender_name=None, shipped_in=40)
+    placed = place(voice, party_name="Harbour Market", told_qty=25, sender_name=None, shipped_in=40)
 
     assert placed == PlacedCall("conv_1", "CA1", {"success": True, "message": "ok", "conversation_id": "conv_1",
                                                   "callSid": "CA1"})
@@ -77,7 +77,7 @@ def test_elevenlabs_request_body_and_headers(eleven_settings):
     assert json.loads(req.content) == {
         "agent_id": "agent_test", "agent_phone_number_id": "phnum_test", "to_number": TO,
         "conversation_initiation_client_data": {"dynamic_variables": {
-            "party_id": "harbour-fire", "party_name": "Harbour Fire", "told_qty": "25", "sender_name": "",
+            "party_id": "harbour-market", "party_name": "Harbour Market", "told_qty": "25", "sender_name": "",
             "attempt_id": "att_0001"}},
         "telephony_call_config": {"ringing_timeout_secs": 20},
     }
@@ -273,7 +273,7 @@ def test_sim_voice_posts_to_the_simulator():
     assert req.method == "POST" and str(req.url) == "http://api.test/sim/calls"
     assert req.headers["x-tool-secret"] == "tool-secret"
     assert json.loads(req.content) == {"to_number": TO, "attempt_id": "att_0001", "dynamic_variables": {
-        "party_id": "harbour-fire", "ask_delivery_note": "yes", "told_qty": "", "attempt_id": "att_0001"}}
+        "party_id": "harbour-market", "ask_delivery_note": "yes", "told_qty": "", "attempt_id": "att_0001"}}
 
 
 @pytest.mark.parametrize("handler, expected", [
@@ -301,12 +301,12 @@ def test_http_poster_posts_tool_bodies_and_raw_webhooks():
         return httpx.Response(200)
 
     poster = HttpPoster("http://api.test/", "tool-secret", http=mock_http(handler))
-    assert poster.post_tool({"attempt_id": "att_1", "in_stock": 5}) == {"accepted": True, "message": "Recorded."}
+    assert poster.post_tool({"attempt_id": "att_1", "held": 5}) == {"accepted": True, "message": "Recorded."}
     raw = b'{"type": "post_call_transcription", "data": {}}'
     assert poster.post_hook(raw, {"ElevenLabs-Signature": "t=1,v0=ab", "Content-Type": "application/json"}) == 200
     tool, hook = seen
     assert str(tool.url) == "http://api.test/tools/submit_count" and tool.headers["x-tool-secret"] == "tool-secret"
-    assert json.loads(tool.content) == {"attempt_id": "att_1", "in_stock": 5}
+    assert json.loads(tool.content) == {"attempt_id": "att_1", "held": 5}
     assert str(hook.url) == "http://api.test/hooks/post_call" and hook.content == raw
     assert hook.headers["elevenlabs-signature"] == "t=1,v0=ab"
 
@@ -348,7 +348,7 @@ def test_client_poster_through_fastapi_testclient():
 
 # ---------------------------------------------------------------- FakeVoice
 
-def fake_call(voice, attempt_id="att_1", party_id="harbour-fire", to=TO):
+def fake_call(voice, attempt_id="att_1", party_id="harbour-market", to=TO):
     return voice.place_call(to_number=to, attempt_id=attempt_id, dynamic_variables={"party_id": party_id})
 
 
@@ -359,16 +359,16 @@ def test_fake_voice_records_and_fabricates_ids():
     assert placed.conversation_id.startswith("conv_fake_")
     (entry,) = voice.calls
     assert entry["placed"] and entry["fault"] is None and entry["attempt_id"] == "att_1"
-    assert entry["to"] == TO and entry["party_id"] == "harbour-fire" and entry["call_sid"] == placed.call_sid
-    assert voice.count() == 1 and voice.count("harbour-fire") == 1 and voice.count("corner-properties") == 0
+    assert entry["to"] == TO and entry["party_id"] == "harbour-market" and entry["call_sid"] == placed.call_sid
+    assert voice.count() == 1 and voice.count("harbour-market") == 1 and voice.count("corner-mart") == 0
     assert isinstance(voice.probe, CallsProbe)
 
 
 def test_fake_voice_faults():
-    voice = FakeVoice(faults={"att_drop": "drop_response", "att_before": "fail_before", "lakeside-systems": "reject"})
+    voice = FakeVoice(faults={"att_drop": "drop_response", "att_before": "fail_before", "lakeside-foods": "reject"})
     raises_exactly(ProviderTimeout, lambda: fake_call(voice, "att_drop"))
     raises_exactly(ProviderTimeout, lambda: fake_call(voice, "att_before"))
-    raises_exactly(ProviderError, lambda: fake_call(voice, "att_rej", party_id="lakeside-systems"))
+    raises_exactly(ProviderError, lambda: fake_call(voice, "att_rej", party_id="lakeside-foods"))
     fake_call(voice, "att_ok")
     assert [(c["attempt_id"], c["placed"]) for c in voice.calls] == [
         ("att_drop", True), ("att_before", False), ("att_rej", False), ("att_ok", True)]
@@ -377,10 +377,10 @@ def test_fake_voice_faults():
 
 
 def test_fake_voice_fault_lookup_order_and_callable():
-    voice = FakeVoice(faults={"att_1": "reject", "harbour-fire": "fail_before", "*": "drop_response"})
+    voice = FakeVoice(faults={"att_1": "reject", "harbour-market": "fail_before", "*": "drop_response"})
     raises_exactly(ProviderError, lambda: fake_call(voice, "att_1"))
     raises_exactly(ProviderTimeout, lambda: fake_call(voice, "att_2"))
-    raises_exactly(ProviderTimeout, lambda: fake_call(voice, "att_3", party_id="corner-properties"))
+    raises_exactly(ProviderTimeout, lambda: fake_call(voice, "att_3", party_id="corner-mart"))
     assert [c["fault"] for c in voice.calls] == ["reject", "fail_before", "drop_response"]
 
     seen = []
@@ -393,7 +393,7 @@ def test_fake_voice_fault_lookup_order_and_callable():
     fake_call(voice2, "a")
     raises_exactly(ProviderTimeout, lambda: fake_call(voice2, "b"))
     fake_call(voice2, "c")
-    assert seen == [("a", "harbour-fire", 0, 0), ("b", "harbour-fire", 1, 1), ("c", "harbour-fire", 2, 2)]
+    assert seen == [("a", "harbour-market", 0, 0), ("b", "harbour-market", 1, 1), ("c", "harbour-market", 2, 2)]
     assert voice2.count() == 3
 
 

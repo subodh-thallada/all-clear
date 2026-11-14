@@ -1,18 +1,18 @@
 {
   "scenario_id": "recall_long_mini",
   "synthetic": true,
-  "about": "Test fixture with the shape of recall_long.json at a small scale: two slice installers and an order system distributor on the shipment records (tier 1), order system accounts (tier 2) and a building owner named by a claim (tier 3) in the directory, a long-run schedule. All phone numbers are fictional 555-01xx numbers.",
+  "about": "Test fixture with the shape of recall_long.json at a small scale: two slice stores and an order system distributor on the shipment records (tier 1), order system accounts (tier 2) and a store named by a claim (tier 3) in the directory, a long-run schedule. All phone numbers are fictional 555-01xx numbers.",
   "recall": {
     "_id": "RCL-LONG-MINI",
     "batch_code": "B-4471",
     "batch_spoken": "B, four four seven one",
-    "model": "DEMO-7",
-    "product": "DEMO-7 fire alarm control panel",
-    "supplier": "Kestrel Life Safety",
+    "model": "B-4471",
+    "product": "Maple Farm milk powder 800 g",
+    "supplier": "Maple Farm Foods",
     "hazard": "The sounder circuit may fail to activate in an alarm",
-    "affected_versions": ["2.3", "2.4"],
-    "fixed_version": "2.5",
-    "unit": "panel",
+    "affected_batches": ["2.3", "2.4"],
+    "action": "2.5",
+    "unit": "tin",
     "units_total": 400
   },
   "schedule": {
@@ -26,9 +26,9 @@
   },
   "parties": [
     {
-      "party_id": "harbour-fire",
-      "name": "Harbour Fire",
-      "type": "installer",
+      "party_id": "harbour-market",
+      "name": "Harbour Market",
+      "type": "store",
       "tier": 1,
       "channel": "voice",
       "phone_env": "PHONE_HARBOUR",
@@ -39,15 +39,15 @@
       "slice": true
     },
     {
-      "party_id": "queen-st-alarm",
-      "name": "Queen St Alarm",
-      "type": "installer",
+      "party_id": "queen-st-grocer",
+      "name": "Queen St Grocer",
+      "type": "store",
       "tier": 1,
       "channel": "sim",
       "phone": "+14165550142",
       "shipped_in": 60,
       "delivery_note": "DN-48214",
-      "profile": "Fire alarm installer on Queen St W with a large stock room.",
+      "profile": "Fire alarm store on Queen St W with a large stock room.",
       "slice": true
     },
     {
@@ -62,13 +62,13 @@
   ],
   "directory": [
     {
-      "party_id": "corner-properties",
-      "name": "Corner Properties",
+      "party_id": "corner-mart",
+      "name": "Corner Mart",
       "aliases": [
-        "the corner properties",
-        "corner property"
+        "the corner mart",
+        "corner mart"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "voice",
       "phone_env": "PHONE_CORNER",
@@ -79,7 +79,7 @@
     {
       "party_id": "bloor-alarm",
       "name": "Bloor Alarm",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "channel": "sim",
       "phone": "+14165550127",
@@ -90,22 +90,22 @@
     {
       "party_id": "annex-fire",
       "name": "Annex Fire",
-      "type": "installer",
+      "type": "store",
       "tier": 2,
       "channel": "sim",
       "phone": "+14165550128",
       "account": "N-009",
       "distributor": "dist-north",
-      "profile": "Fire alarm installer in the Annex, an account of Distributor North."
+      "profile": "Fire alarm store in the Annex, an account of Distributor North."
     },
     {
       "party_id": "dundas-lofts",
       "name": "Dundas Lofts",
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+14165550129",
-      "profile": "Loft building whose panels the Annex Fire installed."
+      "profile": "Loft building whose tins the Annex Fire on_shelf."
     }
   ]
 }

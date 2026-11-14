@@ -41,7 +41,7 @@ def assert_due_again(db, ctx, party_id):
 # ---------------------------------------------------------------- test 29
 
 def test_29_a_subagent_that_loops_is_stopped_at_its_tool_budget(db, world):
-    party, fence = lease(db, "queen-st-alarm", W5)
+    party, fence = lease(db, "queen-st-grocer", W5)
     out = execute(world.ctx, party, worker_id=W5, fence=fence, decider=saboteur.SaboteurDecider("loop"),
                   saboteur="loop")
 
@@ -49,11 +49,11 @@ def test_29_a_subagent_that_loops_is_stopped_at_its_tool_budget(db, world):
     run = db.task_runs.find_one({"_id": out["run_id"]})
     assert run["status"] == "stopped" and run["used"]["tool_calls"] == 6
     assert feed_texts(db, "gate_stopped") == [
-        "STOPPED w5 (saboteur): budget_exceeded after 6 tool calls. Party queen-st-alarm is due again"]
-    assert_due_again(db, world.ctx, "queen-st-alarm")
+        "STOPPED w5 (saboteur): budget_exceeded after 6 tool calls. Party queen-st-grocer is due again"]
+    assert_due_again(db, world.ctx, "queen-st-grocer")
     episode = db.episodes.find_one({"_id": f"ep_{out['run_id']}"})
     assert episode["kind"] == "failure" and episode["failure_class"] == "budget_exceeded"
-    assert episode["party_id"] == "queen-st-alarm"
+    assert episode["party_id"] == "queen-st-grocer"
     assert db.attempts.count_documents({}) == 0 and world.voice.count() == 0
 
 
@@ -74,15 +74,15 @@ def test_29_a_decider_that_never_returns_is_stopped_at_its_time_budget(db, setti
     start(client, db, seconds_per_sim_hour=0.5)
     ctx = make_ctx(settings, client, db, InstantVoice(client, db))
     decider = NeverReturns()
-    party, fence = lease(db, "harbour-fire", W5)
+    party, fence = lease(db, "harbour-market", W5)
     try:
         out = execute(ctx, party, worker_id=W5, fence=fence, decider=decider)
     finally:
         decider.release.set()
     assert out["status"] == "stopped" and out["failure_class"] == "budget_exceeded" and out["released"]
     assert feed_texts(db, "gate_stopped") == [
-        "STOPPED w5: budget_exceeded after 2 simulated hours. Party harbour-fire is due again"]
-    assert_due_again(db, ctx, "harbour-fire")
+        "STOPPED w5: budget_exceeded after 2 simulated hours. Party harbour-market is due again"]
+    assert_due_again(db, ctx, "harbour-market")
     assert db.episodes.count_documents({"kind": "failure", "failure_class": "budget_exceeded"}) == 1
     decision = db.traces.find_one({"run_id": out["run_id"], "kind": "decision"})
     assert decision["output"] is None and decision["brief"]["text"].startswith("RULES")
@@ -129,14 +129,14 @@ def test_loop_mode_is_stopped_and_the_party_is_due_again(db, world):
 
 
 def test_stale_acts_with_an_old_epoch_and_its_release_writes_nothing(db, world):
-    lease(db, "lakeside-systems", W2, epoch=4)
-    before = db.parties.find_one({"_id": f"{RID}:lakeside-systems"})
+    lease(db, "lakeside-foods", W2, epoch=4)
+    before = db.parties.find_one({"_id": f"{RID}:lakeside-foods"})
     out = saboteur.run_once(world.ctx, "stale")
 
     assert out["decision"]["rule"] == "lease" and out["release_wrote"] is False
     assert feed_texts(db, "gate_refused") == [
-        "REFUSED w2 (saboteur): place_call on lakeside-systems. Rule: lease. Holder is w2, epoch 4"]
-    after = db.parties.find_one({"_id": f"{RID}:lakeside-systems"})
+        "REFUSED w2 (saboteur): place_call on lakeside-foods. Rule: lease. Holder is w2, epoch 4"]
+    after = db.parties.find_one({"_id": f"{RID}:lakeside-foods"})
     assert {k: after[k] for k in ("lease_owner", "lease_epoch", "lease_until", "next_action_at")} == \
            {k: before[k] for k in ("lease_owner", "lease_epoch", "lease_until", "next_action_at")}
     assert db.attempts.count_documents({}) == 0
@@ -171,15 +171,15 @@ def test_the_pool_runs_the_saboteur_while_the_switch_is_on_and_every_refusal_is_
     nothing ran the saboteur. Now each pass while the switch is on is one
     misdeed, in mode order, as w5 (the demo pool has four threads), and the
     gate's refusal is on the feed."""
-    lease(db, "lakeside-systems", W2, epoch=4)
+    lease(db, "lakeside-foods", W2, epoch=4)
     pool = _pool(settings, db, client, world.voice, workers=4)
     assert pool.sabotage_once() == [], "the switch is off"
 
     _switch(client, settings, on=True, seconds=30)
     first = pool.sabotage_once()
-    assert [(o["recall_id"], o["mode"], o["party_id"]) for o in first] == [(RID, "wrong_party", "lakeside-systems")]
+    assert [(o["recall_id"], o["mode"], o["party_id"]) for o in first] == [(RID, "wrong_party", "lakeside-foods")]
     assert feed_texts(db, "gate_refused") == [
-        "REFUSED w5 (saboteur): place_call on lakeside-systems. Rule: lease. Holder is w2, epoch 4"]
+        "REFUSED w5 (saboteur): place_call on lakeside-foods. Rule: lease. Holder is w2, epoch 4"]
     [second] = pool.sabotage_once()
     assert second["mode"] == "wrong_tool" and second["run"]["rule"] == "allowlist"
     assert feed_texts(db, "gate_refused")[1].startswith(

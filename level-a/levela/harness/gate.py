@@ -18,7 +18,7 @@ run at its limit, writes nothing at all. Every refusal writes a trace naming
 the rule and, except a budget stop (the run reports that itself, once the
 party is due again), a feed line on the wall:
 
-    REFUSED w5 (saboteur): place_call on queen-st-alarm. Rule: lease. Holder is w2, epoch 9
+    REFUSED w5 (saboteur): place_call on queen-st-grocer. Rule: lease. Holder is w2, epoch 9
 """
 from __future__ import annotations
 

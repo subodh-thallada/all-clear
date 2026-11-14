@@ -5,7 +5,7 @@ hour, with the API (hosting the simulator and the invariant scheduler) and a
 pool of eight worker threads in this process and the two mock order systems as
 processes. The workers run until ten simulated days have passed and nothing
 is due before day 10 or in flight. Pass: 40 parties (5 at the start),
-only the slice's 15 disputed panels open, the mass balance equal to the
+only the slice's 15 disputed tins open, the mass balance equal to the
 recall's units at every sample (a snapshot read about every 5 simulated
 hours) and at every hourly invariant check, and the whole run inside three
 minutes on CI's local MongoDB.
@@ -204,7 +204,7 @@ def assert_ends_like_test_16(db, recall_id, samples, check: dict | None = None) 
     assert n == final["parties"], f"{n} parties, not {final['parties']}: {open_detail(db, recall_id)}"
     assert db.parties.count_documents({"recall_id": recall_id, "found_via": "shipment"}) == final["at_start"]
     m = metrics(db, recall_id)
-    assert (m["open_units"], m["disputed_units"]) == (final["open_units"], final["open_units"]),         f"only the slice's disputed panels stay open: {m}; still open: {open_detail(db, recall_id)}"
+    assert (m["open_units"], m["disputed_units"]) == (final["open_units"], final["open_units"]),         f"only the slice's disputed tins stay open: {m}; still open: {open_detail(db, recall_id)}"
     broken = [(round(h, 1), v) for h, v in samples if v != total]
     assert samples and not broken, f"mass balance broke at {broken[:5]}"
     run = db.runs.find_one({"_id": f"run:{recall_id}"})

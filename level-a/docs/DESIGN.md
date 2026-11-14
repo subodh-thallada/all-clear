@@ -249,8 +249,8 @@ Assert the mass balance after every ledger write in ledger tests.
 6. **Grace period before abandoning** (`INDOUBT_GRACE_S`): ElevenLabs may still be creating the Twilio call; abandoning too early would redial.
 7. **Ownership + heartbeats**: a worker only resolves another worker's in-doubt attempts after that worker's heartbeat is stale — two workers can run at once.
 8. **Level-triggered safety net**: a periodic reconcile beside the change stream, so a lost or expired resume token cannot strand a party.
-9. **Simulated calls outlive the worker.** The simulator is hosted by the API process, so the kill demo's fallback (Corner Properties simulated) behaves like a real call: the claim lands while the worker is down.
-10. **Demo pacing is data.** `mode: demo` honours `demo_hold`; `followups: manual` keeps the dispute open until the closing-gate beat (the spec's automatic follow-ups would otherwise resolve it in two seconds, and a follow-up to Corner Properties would ring the teammate's phone a second time during the kill beat).
+9. **Simulated calls outlive the worker.** The simulator is hosted by the API process, so the kill demo's fallback (Corner Mart simulated) behaves like a real call: the claim lands while the worker is down.
+10. **Demo pacing is data.** `mode: demo` honours `demo_hold`; `followups: manual` keeps the dispute open until the closing-gate beat (the spec's automatic follow-ups would otherwise resolve it in two seconds, and a follow-up to Corner Mart would ring the teammate's phone a second time during the kill beat).
 11. **Failpoints can be scoped** to a party or channel, so a simulated party's dial cannot trip the demo failpoint.
 12. **Admin endpoints are authenticated** (the API is on a public host).
 13. **forwards_to memory applies only to the episode's own party** (seed kit finding 7); `over_reported` may be inherited.

@@ -45,9 +45,9 @@ log = logging.getLogger("call_once")
 
 E164 = re.compile(r"^\+[1-9]\d{6,14}$")
 POLL_S = 2.0
-# A tier 1 installer's first call, as the worker builds it: no sender, no
+# A tier 1 store's first call, as the worker builds it: no sender, no
 # receipt, no checks, no dispute, counts to take and no open questions.
-FIRST_CALL = {"party_type": "installer", "receipt": "no", "ask_checks": "no", "purpose": "initial", "sender_name": "", "told_qty": "",
+FIRST_CALL = {"party_type": "store", "receipt": "no", "ask_checks": "no", "purpose": "initial", "sender_name": "", "told_qty": "",
               "followup_note": "", "ask_delivery_note": "no", "ask_counts": "yes",
               "questions": "", "question_ids": ""}
 

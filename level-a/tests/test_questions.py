@@ -103,15 +103,15 @@ def texts(db, kind):
 
 
 def test_spec_32_question_added_mid_run(api, app, client, db, rid, assert_balance):
-    # Mid-run: Harbour Fire is reconciled with no timer left; the other two wait on timers.
-    harbour = dial(db, rid, "harbour-fire")
-    assert say(api, harbour, in_stock=35, returned=5)["accepted"]
+    # Mid-run: Harbour Market is reconciled with no timer left; the other two wait on timers.
+    harbour = dial(db, rid, "harbour-market")
+    assert say(api, harbour, held=35, returned=5)["accepted"]
     assert_balance(rid)
     complete(db, harbour["_id"], "completed")
-    db.parties.update_one({"_id": f"{rid}:harbour-fire"}, {"$set": {"next_action_at": None}})
-    db.parties.update_many({"recall_id": rid, "party_id": {"$in": ["lakeside-systems", "queen-st-alarm"]}},
+    db.parties.update_one({"_id": f"{rid}:harbour-market"}, {"$set": {"next_action_at": None}})
+    db.parties.update_many({"recall_id": rid, "party_id": {"$in": ["lakeside-foods", "queen-st-grocer"]}},
                           {"$set": {"next_action_at": 60.0, "ladder_step": 2}})
-    booked = party(db, rid, "harbour-fire")
+    booked = party(db, rid, "harbour-market")
     assert booked["state"] == "reconciled"
 
     r = ask(api, rid, level=[1, 2, 3])
@@ -119,7 +119,7 @@ def test_spec_32_question_added_mid_run(api, app, client, db, rid, assert_balanc
     q = r.json()
     assert (q["_id"], q["question_id"], q["due"], q["asked_at"], q["applies_to"]) == (
         f"{rid}:q-01", "q-01", 3, 50.0, {"level": [1, 2, 3]})
-    for sid in ("harbour-fire", "lakeside-systems", "queen-st-alarm"):
+    for sid in ("harbour-market", "lakeside-foods", "queen-st-grocer"):
         s = party(db, rid, sid)
         assert (s["open_questions"], s["next_action_at"]) == (["q-01"], 50.0), sid     # all due now
     [line] = db.feed.find({"kind": "question_added"})
@@ -127,53 +127,53 @@ def test_spec_32_question_added_mid_run(api, app, client, db, rid, assert_balanc
     assert db.runs.find_one({"_id": runs.run_id(rid)})["planner_wake_reason"] == "question q-01 added"
 
     # The reconciled party is asked the question only: its counts stay as booked.
-    h = party(db, rid, "harbour-fire")
+    h = party(db, rid, "harbour-market")
     assert {k: h[k] for k in COUNTS} == {k: booked[k] for k in COUNTS}
     assert call_variables(db, h) == {
-        "questions": f"q-01: {L4480} (answer: yes or no, and how many panels).", "question_ids": "q-01",
+        "questions": f"q-01: {L4480} (answer: yes or no, and how many tins).", "question_ids": "q-01",
         "ask_counts": "no"}
-    assert call_variables(db, party(db, rid, "lakeside-systems"))["ask_counts"] == "yes"
+    assert call_variables(db, party(db, rid, "lakeside-foods"))["ask_counts"] == "yes"
 
     # Lakeside answers on its call. An answer books nothing in the ledger.
-    lake = dial(db, rid, "lakeside-systems")
-    assert answer(api, lake, "q-01", "yes, 12 panels") == {"accepted": True, "message": "Recorded. No more questions.",
+    lake = dial(db, rid, "lakeside-foods")
+    assert answer(api, lake, "q-01", "yes, 12 tins") == {"accepted": True, "message": "Recorded. No more questions.",
                                                           "questions_left": 0}
-    s = party(db, rid, "lakeside-systems")
+    s = party(db, rid, "lakeside-foods")
     assert s["answers"] == {"q-01": {"value": {"answer": "yes", "count": 12}, "at": 50.0, "attempt_id": lake["_id"]}}
     assert s["open_questions"] == [] and s["state"] == "reached"
-    assert texts(db, "answer_recorded") == ["Lakeside Systems answered q-01: yes, 12 panels"]
+    assert texts(db, "answer_recorded") == ["Lakeside Foods answered q-01: yes, 12 tins"]
     assert db.tool_events.find_one({"attempt_id": lake["_id"]})["kind"] == "answer"
-    assert db.claims.count_documents({"party_id": "lakeside-systems"}) == 0
+    assert db.claims.count_documents({"party_id": "lakeside-foods"}) == 0
     again = answer(api, lake, "q-01", "Yes, 12")                       # a redelivered tool call
     assert (again["accepted"], again["duplicate"]) == (True, True)
     assert len(texts(db, "answer_recorded")) == 1
 
     # Harbour on a question-only call: answered, still reconciled, no new claim.
-    assert answer(api, dial(db, rid, "harbour-fire", purpose="ask_question"), "q-01", "no")["accepted"]
-    h = party(db, rid, "harbour-fire")
+    assert answer(api, dial(db, rid, "harbour-market", purpose="ask_question"), "q-01", "no")["accepted"]
+    h = party(db, rid, "harbour-market")
     assert h["answers"]["q-01"]["value"] == {"answer": "no", "count": 0}
     assert {k: h[k] for k in COUNTS} == {k: booked[k] for k in COUNTS}
-    assert db.claims.count_documents({"party_id": "harbour-fire"}) == 1
+    assert db.claims.count_documents({"party_id": "harbour-market"}) == 1
     assert_balance(rid)
 
-    # Corner Properties is found later. The hourly pass gives it q-01 and makes it due; the parties
+    # Corner Mart is found later. The hourly pass gives it q-01 and makes it due; the parties
     # that answered, and Queen St (which has it open), are not touched.
-    queen = dial(db, rid, "queen-st-alarm")
-    assert say(api, queen, in_stock=80, forwarded_qty=40, forwarded_to_name="Corner Properties")["accepted"]
+    queen = dial(db, rid, "queen-st-grocer")
+    assert say(api, queen, held=80, forwarded_qty=40, forwarded_to_name="Corner Mart")["accepted"]
     assert_balance(rid)
     db.parties.update_many({"recall_id": rid}, {"$set": {"next_action_at": 70.0}})
     [done] = Scheduler(app.state.settings, client, db, http=None, invariants=AllHold()).tick(force=True)
     assert done["questions"] == {"q-01": 1}
-    corner = party(db, rid, "corner-properties")
+    corner = party(db, rid, "corner-mart")
     assert (corner["level"], corner["open_questions"], corner["next_action_at"]) == (3, ["q-01"], 50.0)
     assert call_variables(db, corner)["ask_counts"] == "yes"
-    for sid in ("harbour-fire", "lakeside-systems", "queen-st-alarm"):
+    for sid in ("harbour-market", "lakeside-foods", "queen-st-grocer"):
         assert party(db, rid, sid)["next_action_at"] == 70.0, sid
-    assert party(db, rid, "queen-st-alarm")["open_questions"] == ["q-01"]
+    assert party(db, rid, "queen-st-grocer")["open_questions"] == ["q-01"]
 
-    # A question for level 3 only reaches only Corner Properties.
+    # A question for level 3 only reaches only Corner Mart.
     assert (ask(api, rid, "Do you still have any on the shelf?", "yes_no", level=[3]).json()["due"]) == 1
-    assert call_variables(db, party(db, rid, "corner-properties"))["question_ids"] == "q-01,q-02"
+    assert call_variables(db, party(db, rid, "corner-mart"))["question_ids"] == "q-01,q-02"
     listed = api.get("/admin/questions", params={"recall_id": rid}, headers=ADMIN).json()["questions"]
     assert [(x["question_id"], x["open"], x["answered"]) for x in listed] == [("q-01", 2, 2), ("q-02", 1, 0)]
 
@@ -216,13 +216,13 @@ def test_spec_32_end_to_end_a_question_added_mid_run_is_asked_and_answered(clien
     started = api.post("/admin/recalls", headers=ADMIN, json={"scenario": "recall_1", "all_sim": True, "mode": "sim",
                                                               "followups": "manual", "memory": False})
     assert started.status_code == 200, started.text
-    parties = ("harbour-fire", "queen-st-alarm", "lakeside-systems", "corner-properties")
+    parties = ("harbour-market", "queen-st-grocer", "lakeside-foods", "corner-mart")
     thread.start()
     try:
         _wait(lambda: metrics(db, R1)["checks_completed"] == [4, 4] and _quiet(db, R1), 90,
               lambda: f"recall 1 did not settle: {metrics(db, R1)}")
         booked = {sid: {k: party(db, R1, sid)[k] for k in COUNTS} for sid in parties}
-        assert booked["harbour-fire"]["state"] == booked["lakeside-systems"]["state"] == "reconciled"
+        assert booked["harbour-market"]["state"] == booked["lakeside-foods"]["state"] == "reconciled"
         claims_before = {sid: db.claims.count_documents({"recall_id": R1, "party_id": sid}) for sid in parties}
         calls_before = {sid: voice.count(sid) for sid in parties}
 
@@ -239,7 +239,7 @@ def test_spec_32_end_to_end_a_question_added_mid_run_is_asked_and_answered(clien
         net.stop()
         net.wait_idle(10)
 
-    asked = f"q-01: {L4480} (answer: yes or no, and how many panels)."
+    asked = f"q-01: {L4480} (answer: yes or no, and how many tins)."
     for sid in parties:
         s = party(db, R1, sid)
         [call] = list(db.attempts.find({"recall_id": R1, "party_id": sid, "purpose": "ask_question"}))
@@ -271,10 +271,10 @@ def test_answers_and_questions_the_api_refuses(api, db, rid):
     assert ask(api, rid, L4480, "yes_no", level=[1]).json()["due"] == 3
     assert ask(api, rid, "Any left?", "count", level=[3]).json()["due"] == 0           # no level-3 party yet
 
-    att = dial(db, rid, "lakeside-systems")
+    att = dial(db, rid, "lakeside-foods")
     r = answer(api, att, "q-01", "maybe")
     assert (r["accepted"], r["stop"], r["questions_left"]) == (False, False, 1) and "yes or no" in r["message"]
-    assert "q-01" not in (party(db, rid, "lakeside-systems").get("answers") or {})
+    assert "q-01" not in (party(db, rid, "lakeside-foods").get("answers") or {})
     for qid in ("q-09", None):
         r = answer(api, att, qid, "yes")
         assert r["accepted"] is False and "There is no question" in r["message"]
@@ -283,11 +283,11 @@ def test_answers_and_questions_the_api_refuses(api, db, rid):
 
     assert answer(api, att, "q-01", "yes")["accepted"]
     assert answer(api, att, "q-01", "no")["accepted"]                   # corrected on the same call
-    assert party(db, rid, "lakeside-systems")["answers"]["q-01"]["value"] == "no"
-    assert texts(db, "answer_recorded") == ["Lakeside Systems answered q-01: yes", "Lakeside Systems corrected q-01: no"]
+    assert party(db, rid, "lakeside-foods")["answers"]["q-01"]["value"] == "no"
+    assert texts(db, "answer_recorded") == ["Lakeside Foods answered q-01: yes", "Lakeside Foods corrected q-01: no"]
 
     unmatched = api.post("/tools/submit_answer", headers=TOOL, json={"attempt_id": att["_id"],
-                                                                     "party_id": "harbour-fire",
+                                                                     "party_id": "harbour-market",
                                                                      "question_id": "q-01", "value": "yes"}).json()
     assert (unmatched["accepted"], unmatched["stop"]) == (False, True)
     assert api.post("/tools/submit_answer", json={"attempt_id": att["_id"]}).status_code == 401
@@ -298,7 +298,7 @@ def test_answers_and_questions_the_api_refuses(api, db, rid):
 
 
 @pytest.mark.parametrize("answer_type, value, stored", [
-    ("yes_no_count", "yes, 12 panels", {"answer": "yes", "count": 12}),
+    ("yes_no_count", "yes, 12 tins", {"answer": "yes", "count": 12}),
     ("yes_no_count", "Yes 1,200", {"answer": "yes", "count": 1200}),
     ("yes_no_count", "no", {"answer": "no", "count": 0}),
     ("yes_no_count", "yes", {"answer": "yes", "count": None}),
@@ -325,8 +325,8 @@ def test_unusable_answers_are_refused(answer_type, value):
 
 
 def test_answer_text_reads_like_the_wall():
-    assert questions.answer_text("yes_no_count", {"answer": "yes", "count": 12}) == "yes, 12 panels"
-    assert questions.answer_text("yes_no_count", {"answer": "yes", "count": 1}) == "yes, 1 panel"
+    assert questions.answer_text("yes_no_count", {"answer": "yes", "count": 12}) == "yes, 12 tins"
+    assert questions.answer_text("yes_no_count", {"answer": "yes", "count": 1}) == "yes, 1 tin"
     assert questions.answer_text("yes_no_count", {"answer": "no", "count": 0}) == "no"
     assert questions.answer_text("count", 3, "case") == "3 cases"
     assert questions.answer_text("text", "back room") == '"back room"'
