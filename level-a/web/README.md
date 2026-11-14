@@ -58,10 +58,13 @@ them:
 
 ## Buttons in live mode
 
-| Button | Request |
-| --- | --- |
-| Release | `POST /admin/release { recall_id, party_id: "slice" }` |
-| Kill the next caller | `POST /admin/failpoint { name: "after_dial_request", channel: "voice" }`. The API cannot kill a process, so the kill beat is the failpoint |
+Each button does exactly what the matching `scripts/demo.py` beat does, so the
+wall and the terminal can be used interchangeably.
+
+| Button | Beat | Requests, in order |
+| --- | --- | --- |
+| Call Harbour | `demo.py judge` | `POST /admin/supervisor { recall_id, paused: true }`, then `POST /admin/release` for `harbour-market` and `lakeside-foods`. Only those two: releasing the whole slice would let Queen St Grocer's reply go and Corner Mart would be dialled before the failpoint is armed |
+| Arm the kill | `demo.py kill-arm` | `POST /admin/failpoint { name: "after_dial_request", party_id: "corner-mart" }`, then `POST /admin/release` for `corner-mart` and `queen-st-grocer`. The API cannot kill a process: the worker that dials Corner Mart dies at the failpoint. For the version where the room watches the worker die and come back, stop the supervisor and run `scripts\kill_demo.ps1` instead |
 | Change order system | `POST /admin/order-system { order_system: "north", action: "switch_v2" }` |
 | Close recall | `POST /admin/close { recall_id }` |
 | ⋯ Arm failpoint, Saboteur | `POST /admin/failpoint`, `POST /admin/saboteur { recall_id, on: true, seconds: 20 }` |

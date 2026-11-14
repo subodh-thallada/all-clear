@@ -7,7 +7,9 @@ export default function Toolbar({ s, actions }) {
   const [more, setMore] = useState(false);
   const live = s.source === 'live';
   const locked = live && !s.admin;
-  const released = !s.parties.some((p) => p.holdForDemo);
+  const released = live
+    ? !s.parties.some((p) => p.holdForDemo && /^(harbour|lakeside)/.test(p.id))
+    : !s.parties.some((p) => p.holdForDemo);
   const northDone = s.systems.north.version !== 1 || s.systems.north.status !== 'active';
   const pick = (fn) => () => {
     setMore(false);
@@ -22,11 +24,12 @@ export default function Toolbar({ s, actions }) {
         </button>
       )}
       <span className="sep" />
-      <button type="button" className="tb" onClick={actions.releaseStores} disabled={released} title="Release the three slice stores (1)">
-        <Icon.Send size={16} /> Release {s.words.parties}
+      <button type="button" className="tb" onClick={actions.releaseStores} disabled={released}
+        title={live ? "The judge's call: pauses random kills and releases Harbour and Lakeside (1)" : 'Release the slice stores (1)'}>
+        <Icon.Send size={16} /> {live ? 'Call Harbour' : `Release ${s.words.parties}`}
       </button>
-      <button type="button" className="tb danger" onClick={() => actions.killWorker()} title={live ? 'Arms the failpoint: the next worker to dial a real phone dies before it saves the call (3)' : 'Kill the worker on the call (3)'}>
-        <Icon.Skull size={16} /> {live ? 'Kill the next caller' : 'Kill a worker'}
+      <button type="button" className="tb danger" onClick={() => actions.killWorker()} title={live ? 'The kill beat: arms the failpoint for Corner Mart, then releases Corner Mart and Queen St Grocer. The worker that dials Corner Mart dies before it saves the call (3)' : 'Kill a worker (3)'}>
+        <Icon.Skull size={16} /> {live ? 'Arm the kill' : 'Kill a worker'}
       </button>
       <button type="button" className="tb" onClick={actions.switchNorth} disabled={northDone} title="Distributor North's order system moves to v2 (4)">
         <Icon.Swap size={16} /> Change order system
