@@ -31,6 +31,11 @@ The token is the only thing POST /form/{token} asks for, so listing it here
 would let any viewer book counts for every party. The operator gets the links
 from POST /admin/recalls (`make demo` prints them) and the parties from the
 links the run sends them.
+
+A screen that sends the admin key (header X-Admin-Token) also gets
+`real_calls`: the recall's real phone calls with the last four digits of the
+number dialled and, once the post-call webhook has saved it, what was said.
+The words of a call and the number stay off the public body.
 """
 from __future__ import annotations
 
@@ -40,7 +45,7 @@ import time
 from collections import Counter, defaultdict
 from datetime import datetime
 
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, FastAPI, Header, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pymongo.errors import PyMongoError
@@ -50,7 +55,7 @@ from ..clock import Clock
 from ..ledger import headline as ledger_headline
 from ..ledger import metrics as ledger_metrics
 from ..orchestrator import attempts, failpoints
-from .deps import aware, jsonable, utcnow, worker_view
+from .deps import aware, jsonable, secret_matches, utcnow, worker_view
 
 log = logging.getLogger("levela.api.wall")
 router = APIRouter()
@@ -123,9 +128,44 @@ def wall_page():
 
 
 @router.get("/wall/state")
-def wall_state(request: Request, recall_id: str | None = None) -> JSONResponse:
+def wall_state(request: Request, recall_id: str | None = None,
+               x_admin_token: str | None = Header(None, alias="X-Admin-Token")) -> JSONResponse:
     st = request.app.state
-    return JSONResponse(st.wall_cache.get(recall_id or "", lambda: build_state(st.db, st.settings, recall_id)))
+    state = st.wall_cache.get(recall_id or "", lambda: build_state(st.db, st.settings, recall_id))
+    if secret_matches(x_admin_token, st.settings.admin_token):
+        # Not cached and not written into the cached body, which the public screen shares.
+        state = {**state, "real_calls": jsonable(real_calls(st.db, (state.get("recall") or {}).get("_id")))}
+    return JSONResponse(state)
+
+
+REAL_CALLS = 12          # the newest real calls of the recall
+REAL_CALL_TURNS = 120    # turns of one call's transcript
+
+
+def real_calls(db, rid: str | None) -> list[dict]:
+    """The recall's real phone calls, newest first: the number dialled only
+    as its last four digits, and the transcript once the post-call webhook
+    has saved it ([{role, message}], hooks._transcript)."""
+    if not rid:
+        return []
+    rows = _safe_find(db.attempts, {"recall_id": rid, "channel": "voice"},
+                      {"party_id": 1, "state": 1, "purpose": 1, "seq": 1, "to_number": 1, "intent_at": 1,
+                       "connected_at": 1, "ended_at": 1, "call_duration_secs": 1, "termination_reason": 1,
+                       "summary": 1, "transcript": 1},
+                      sort=[("intent_at", -1), ("_id", -1)], limit=REAL_CALLS)
+    out = []
+    for a in rows:
+        digits = "".join(ch for ch in str(a.get("to_number") or "") if ch.isdigit())
+        out.append({
+            "_id": a["_id"], "party_id": a.get("party_id"), "state": a.get("state"), "purpose": a.get("purpose"),
+            "seq": a.get("seq"), "phone_tail": digits[-4:] or None, "intent_at": a.get("intent_at"),
+            "connected_at": a.get("connected_at"), "ended_at": a.get("ended_at"),
+            "call_duration_secs": a.get("call_duration_secs"), "termination_reason": a.get("termination_reason"),
+            "summary": a.get("summary"),
+            "transcript": [{"role": t.get("role"), "message": t.get("message")}
+                           for t in (a.get("transcript") or [])[:REAL_CALL_TURNS] if isinstance(t, dict)],
+        })
+    return out
 
 
 @router.get("/wall/text", response_class=PlainTextResponse)

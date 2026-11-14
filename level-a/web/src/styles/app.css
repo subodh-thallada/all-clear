@@ -302,6 +302,18 @@ button.store:hover { background: var(--bg); }
 .tb.primary.on { background: var(--green-deep); }
 .tb.danger { color: var(--red-deep); }
 .tb.icon { padding: 8px; }
+.toolbar { position: relative; }
+.tb.unlock { color: var(--amber); background: var(--amber-bg); }
+.keyprompt {
+  position: absolute; left: 50%; bottom: calc(100% + 10px); transform: translateX(-50%); width: 420px; padding: 14px; z-index: 7;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 12px 32px rgba(15, 27, 45, 0.16);
+}
+.keyprompt p { margin: 0 0 4px; font-size: 13.5px; }
+.keyprompt p.bad { color: var(--red-deep); font-weight: 500; }
+.keyprompt p.hint { color: var(--muted); font-size: 12.5px; margin-bottom: 10px; }
+.keyprompt .row { display: flex; gap: 6px; }
+.keyprompt input { flex: 1; min-width: 0; border: 1px solid var(--line-2); border-radius: 9px; padding: 8px 10px; font: 400 13px/1.2 var(--mono); color: var(--ink); }
+.keyprompt input:focus-visible { outline: 2px solid var(--ink); outline-offset: 1px; }
 .sep { width: 1px; align-self: stretch; background: var(--line); margin: 4px 4px; }
 .more { position: relative; }
 .menu {
@@ -324,6 +336,13 @@ button.store:hover { background: var(--bg); }
 .tabs button[aria-selected='true'] { background: var(--card); color: var(--ink); box-shadow: 0 1px 2px rgba(15, 27, 45, 0.1); }
 .tabs .follow { flex: none; color: var(--green-deep); padding: 8px 10px; }
 
+.memory { flex: none; margin: 12px 18px 0; padding: 12px 14px; border-radius: 12px; background: var(--grey-bg); }
+.memory-head { display: flex; align-items: center; gap: 7px; font-size: 13.5px; }
+.memory-head code { margin-left: auto; font: 400 11.5px/1 var(--mono); color: var(--green-deep); background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px; }
+.memory p { margin: 7px 0 0; font-size: 13px; color: var(--muted); }
+.memory p.then { color: var(--ink); font-weight: 500; }
+.memory .hit { display: flex; gap: 10px; justify-content: space-between; align-items: baseline; margin-top: 7px; padding: 7px 9px; background: var(--card); border-radius: 8px; font-size: 13px; }
+.memory .hit code { font: 400 11.5px/1 var(--mono); color: var(--muted); }
 .talk { flex: 1; min-height: 0; overflow: hidden auto; padding: 14px 18px 6px; display: flex; flex-direction: column; gap: 10px; }
 .talk-head { display: flex; justify-content: space-between; font-size: 12px; color: var(--soft); }
 .talk-head span:first-child { font-weight: 500; color: var(--muted); }
@@ -334,7 +353,7 @@ button.store:hover { background: var(--bg); }
 }
 .bubble small { display: block; font: 500 11.5px/1.2 var(--f); color: var(--muted); margin-bottom: 3px; }
 .bubble.line { align-self: flex-start; background: var(--grey-bg); border-bottom-left-radius: 4px; }
-.bubble.store { align-self: flex-end; background: var(--green-bg); border-bottom-right-radius: 4px; }
+.bubble.store { display: block; width: auto; border: 0; text-align: left; align-self: flex-end; background: var(--green-bg); border-bottom-right-radius: 4px; }
 .bubble.store small { color: var(--green-deep); }
 .bubble.sim { align-self: flex-end; background: var(--grey-bg); font-size: 14px; border-bottom-right-radius: 4px; }
 .verdict {
@@ -367,6 +386,10 @@ button.store:hover { background: var(--bg); }
 .empty p { font-size: 14.5px; color: var(--muted); }
 .empty b { color: var(--ink); font-weight: 600; }
 
+.log-filter { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 18px 0; font-size: 12.5px; color: var(--muted); }
+.log-filter button { border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 5px 9px; font: 500 12px/1 var(--f); color: var(--ink); }
+.log-filter button:hover { background: var(--bg); }
+.log-empty { margin: 14px 18px 0; font-size: 13.5px; color: var(--soft); }
 .log { flex: 1; min-height: 0; overflow: hidden auto; padding: 10px 12px 16px; }
 .log li button { width: 100%; display: grid; grid-template-columns: 70px 1fr; gap: 8px; text-align: left; border: 0; background: none; border-radius: 8px; padding: 7px 8px; font-size: 13px; line-height: 1.35; color: var(--ink); }
 .log li button:hover:not(:disabled) { background: var(--bg); }

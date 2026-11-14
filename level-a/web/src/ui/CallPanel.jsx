@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ms, num } from '../data/format.js';
+import * as Icon from './icons.jsx';
 
 // The call a worker is on: what was said, and what Atlas did about it.
 // A second tab holds the full activity log, for when a judge asks "show me".
@@ -12,21 +13,63 @@ const VERDICT = {
   recorded: ['ok', 'Batch code confirmed'],
 };
 
-function Transcript({ call, source, words }) {
+// What the vector search found about this store before the worker dialled it (parties.memory).
+function Memory({ memory, name }) {
+  if (!memory?.checked_at || memory.mode === 'off') return null;
+  const hits = memory.hits || [];
+  const atlas = memory.mode === 'atlas';
+  const suspect = (memory.actions || []).find((a) => a.action === 'suspect_party');
+  const note = (memory.actions || []).some((a) => a.action === 'ask_delivery_note');
+  return (
+    <div className="memory">
+      <div className="memory-head">
+        <Icon.History size={16} />
+        <b>{atlas ? 'Atlas Vector Search' : 'Vector search, scored in the worker'}</b>
+        <code>$vectorSearch</code>
+      </div>
+      <p>
+        {hits.length
+          ? `Before dialling, it found ${hits.length} similar past ${hits.length === 1 ? 'call' : 'calls'} for ${name}.`
+          : `Before dialling, it found no similar past calls for ${name}. Nothing is remembered about this store yet.`}
+      </p>
+      {hits.map((h) => (
+        <div key={h.episode_id} className="hit">
+          <span>{h.summary || (h.tags || []).join(', ') || h.episode_id}</span>
+          {typeof h.score === 'number' && <code>{h.score.toFixed(2)}</code>}
+        </div>
+      ))}
+      {suspect && <p className="then">So it added {suspect.name} before anyone named it.</p>}
+      {note && <p className="then">So the agent asks for the delivery note before the counts.</p>}
+    </div>
+  );
+}
+
+function Transcript({ call, source, words, admin }) {
   const end = useRef(null);
+  const said = call.words || [];
   useEffect(() => {
     end.current?.scrollIntoView({ block: 'end' });
-  }, [call.rows.length, call.attemptId]);
+  }, [call.rows.length, said.length, call.attemptId]);
 
   return (
     <div className="talk">
       <div className="talk-head">
-        <span>Live transcript</span>
+        <span>{source === 'live' ? 'Conversation' : 'Live transcript'}</span>
         <span>{call.real ? (source === 'fixture' ? 'Agent and store manager, scripted' : 'Real phone') : `Simulated ${words.party}, no voice`}</span>
       </div>
-      {source === 'live' && call.real && !call.rows.some((r) => r.kind === 'line' || r.kind === 'store') && (
-        <p className="hint">The API does not send the words of a call yet. What Atlas decides about it appears here.</p>
+      {source === 'live' && call.real && said.length === 0 && (
+        <p className="hint">
+          {!admin ? 'Unlock the buttons to see what was said on this call.'
+            : call.live ? 'ElevenLabs sends the words when the call ends. What Atlas decides shows here as it happens.'
+              : 'Waiting for the words from ElevenLabs.'}
+        </p>
       )}
+      {said.map((r) => (
+        <div key={`w${r.n}`} className={`bubble ${r.kind}`}>
+          <small>{r.kind === 'line' ? 'Agent' : call.partyName}</small>
+          {r.text}
+        </div>
+      ))}
       {source !== 'live' && call.rows.length === 0 && <p className="hint">{call.state === 'ringing' || call.state === 'requested' ? 'Ringing…' : 'Waiting for the first words'}</p>}
       {call.rows.map((r) => {
         if (r.kind === 'atlas') {
@@ -82,8 +125,19 @@ function Why({ call, words, source }) {
 
 function Activity({ s }) {
   const [open, setOpen] = useState(null);
-  const lines = s.events.slice(-40).reverse();
+  const [everything, setEverything] = useState(false);
+  const real = new Set(s.realParties || []);
+  const filter = s.source === 'live' && !everything;
+  const lines = (filter ? s.events.filter((e) => real.has(e.partyId)) : s.events).slice(-40).reverse();
   return (
+    <>
+    {s.source === 'live' && (
+      <div className="log-filter">
+        <span>{filter ? 'Real phone calls only' : 'Every store, simulated ones too'}</span>
+        <button type="button" onClick={() => setEverything((v) => !v)}>{filter ? 'Show every store' : 'Real calls only'}</button>
+      </div>
+    )}
+    {lines.length === 0 && <p className="log-empty">No real phone call yet. Press Call Harbour.</p>}
     <ol className="log">
       {lines.map((e) => {
         const bad = e.atlas?.verdict === 'refused';
@@ -103,6 +157,7 @@ function Activity({ s }) {
         );
       })}
     </ol>
+    </>
   );
 }
 
@@ -121,7 +176,7 @@ export default function CallPanel({ s, actions }) {
           <b>{call ? call.partyName : 'No call selected'}</b>
           <small>
             {!call ? (s.source === 'live' ? 'No real phone call is live' : 'Release the stores to start the first call')
-              : call.inDoubt ? `No worker holds this call. ${(call.wasHolder || '').toUpperCase()} was killed`
+              : call.inDoubt && call.wasHolder ? `No worker holds this call. ${call.wasHolder.toUpperCase()} was killed`
                 : call.phoneTail ? `Phone ending ${call.phoneTail}` : call.real ? 'Real phone call' : `Simulated ${s.words.party}`}
           </small>
         </div>
@@ -138,7 +193,8 @@ export default function CallPanel({ s, actions }) {
         <Activity s={s} />
       ) : call ? (
         <>
-          <Transcript call={call} source={s.source} words={s.words} />
+          <Memory memory={call.memory} name={call.partyName} />
+          <Transcript call={call} source={s.source} words={s.words} admin={s.admin} />
           <Why call={call} words={s.words} source={s.source} />
         </>
       ) : (

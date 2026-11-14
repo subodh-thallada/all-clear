@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import * as Icon from './icons.jsx';
+import KeyPrompt from './KeyPrompt.jsx';
 
 // The operator's buttons. Fixture: they drive the engine in this browser.
 // Live: they post to the API's admin endpoints.
@@ -16,7 +17,13 @@ export default function Toolbar({ s, actions }) {
     fn();
   };
   return (
-    <div className="toolbar" title={locked ? 'Open the screen with ?key=<admin token> to use these buttons' : undefined}>
+    <div className="toolbar">
+      {live && s.keyAsk && <KeyPrompt s={s} actions={actions} />}
+      {locked && !s.keyAsk && (
+        <button type="button" className="tb unlock" onClick={actions.askKey} title="Paste the admin key to use these buttons">
+          <Icon.Lock size={16} /> Unlock buttons
+        </button>
+      )}
       {!live && (
         <button type="button" className={`tb primary ${s.playing ? 'on' : ''}`} onClick={actions.playAll} title="Run every beat in order (space)">
           {s.playing ? <Icon.Stop size={16} /> : <Icon.Play size={16} />}
