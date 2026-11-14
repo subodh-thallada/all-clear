@@ -86,6 +86,7 @@ export function normalizeParty(p) {
     connected: !!(p.connected || p.connected_panels),
     phoneTail: p.phone_tail ?? null,
     memory: p.memory || null,
+    attempts: typeof p.attempts === 'number' ? p.attempts : Array.isArray(p.attempts) ? p.attempts.length : 0,
     shippedIn: p.shipped_in ?? 0,
     sold: mid,
     onShelf,

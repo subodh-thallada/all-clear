@@ -8,11 +8,23 @@ export default function Toolbar({ s, actions }) {
   const [more, setMore] = useState(false);
   const live = s.source === 'live';
   const locked = live && !s.admin;
+  const [starting, setStarting] = useState(false);
   const harbour = s.parties.find((p) => p.id === 'harbour-market');
   const released = live ? !!harbour && !harbour.holdForDemo : !s.parties.some((p) => p.holdForDemo);
+  // Live: Call Harbour, then the call's own status until Harbour's call has ended, then Start over.
+  const harbourStep = !live || !harbour ? null
+    : harbour.holdForDemo ? 'call'
+      : harbour.liveAttempt ? (harbour.liveAttempt.state === 'connected' ? 'talking' : 'ringing')
+        : harbour.attempts > 0 ? 'done' : 'queued';
   const northDone = s.systems.north.version !== 1 || s.systems.north.status !== 'active';
-  const startOver = () => {
-    if (window.confirm('Start a new run? This run\'s clock is paused and Harbour Market can be called again.')) actions.startOver();
+  const startOver = async () => {
+    if (starting || !window.confirm('Start a new run? This run\'s clock is paused and Harbour Market can be called again.')) return;
+    setStarting(true);
+    try {
+      await actions.startOver();
+    } finally {
+      setStarting(false);
+    }
   };
   const pick = (fn) => () => {
     setMore(false);
@@ -33,7 +45,15 @@ export default function Toolbar({ s, actions }) {
         </button>
       )}
       <span className="sep" />
-      {live && released ? (
+      {live && starting ? (
+        <button type="button" className="tb" disabled><Icon.Play size={16} /> Starting a new run…</button>
+      ) : harbourStep === 'queued' || harbourStep === 'ringing' || harbourStep === 'talking' ? (
+        <button type="button" className="tb status" disabled
+          title="Harbour Market is released. The phone rings when a worker and a phone line are free">
+          <Icon.Phone size={16} />
+          {harbourStep === 'talking' ? 'On the phone with Harbour' : harbourStep === 'ringing' ? 'Ringing Harbour…' : 'Dialling Harbour…'}
+        </button>
+      ) : live && released ? (
         <button type="button" className="tb" onClick={startOver}
           title="Pause this run's clock and start a new run, so Harbour can be called again">
           <Icon.Play size={16} /> Start over
@@ -56,7 +76,7 @@ export default function Toolbar({ s, actions }) {
         </button>
         {more && (
           <div className="menu">
-            {live && <button type="button" onClick={pick(startOver)}>Start a new run</button>}
+            {live && <button type="button" onClick={pick(startOver)} disabled={starting}>Start a new run</button>}
             <button type="button" onClick={pick(actions.armFailpoint)}>{s.failpointArmed ? 'Disarm failpoint' : 'Arm failpoint'} <kbd>2</kbd></button>
             <button type="button" onClick={pick(actions.saboteur)} disabled={!!s.saboteur}>Start the saboteur <kbd>5</kbd></button>
             {!live && <button type="button" onClick={pick(actions.storeEvent)}>Quarantine a tin at a store <kbd>6</kbd></button>}

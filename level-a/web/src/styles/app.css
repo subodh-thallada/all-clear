@@ -301,6 +301,7 @@ button.store:hover { background: var(--bg); }
 .tb.primary:hover { background: #1c2c44; }
 .tb.primary.on { background: var(--green-deep); }
 .tb.danger { color: var(--red-deep); }
+.tb.status:disabled { color: var(--green-deep); }
 .tb.icon { padding: 8px; }
 .toolbar { position: relative; }
 .tb.unlock { color: var(--amber); background: var(--amber-bg); }
