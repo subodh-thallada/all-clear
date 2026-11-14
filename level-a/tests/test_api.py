@@ -26,13 +26,15 @@ from levela.ledger import metrics
 from levela.orchestrator.attempts import complete, mark_dialed, open_attempt
 from levela.orchestrator.failpoints import armed
 from levela.providers.base import PlacedCall
+from support import HELD_CHECKS as HELD
+from support import TILL
 
 TOOL = {"X-Tool-Secret": "test-tool-secret"}
 ADMIN = {"X-Admin-Token": "test-admin-token"}
 STATE_KEYS = {"now", "recall", "recalls", "metrics", "parties", "edges", "feed", "worker", "calls", "failpoints",
               "badges", "memory_ablation", "run", "systems", "workers", "calls_in_flight"}
-PARTY_KEYS = {"party_id", "name", "tier", "channel", "state", "shipped_in", "on_hand", "sold", "returned",
-              "destroyed", "forwarded", "unresolved", "discovered_by", "escalation", "live_attempt",
+PARTY_KEYS = {"party_id", "name", "tier", "channel", "state", "shipped_in", "on_shelf", "sold", "returned",
+              "held", "forwarded", "unresolved", "discovered_by", "escalation", "live_attempt",
               "attempts", "memory", "level", "found_via", "ladder_step", "next_action_at", "next_label",
               "hold_for_demo", "slice", "order_system", "priority", "open_questions", "answered"}
 FEED_KEYS = {"at", "kind", "text", "level", "source", "party_id", "detail", "system", "sim_label"}
@@ -116,7 +118,7 @@ def pin_clock(db, recall_id, hour):
 def test_voice_path_rejects_60_then_accepts_and_ignores_the_duplicate(api, db, rid, assert_balance):
     att = dial(db, rid, "harbour-market")
 
-    r = say(api, att, held=60)
+    r = say(api, att, held=60, **HELD)
     assert {k: v for k, v in r.items() if k != "message"} == {
         "accepted": False, "reason": "60 reported, 40 shipped", "reported_total": 60, "shipped_in": 40,
         "challenges_left": 1, "stop": False}
@@ -136,29 +138,29 @@ def test_voice_path_rejects_60_then_accepts_and_ignores_the_duplicate(api, db, r
     [event] = db.tool_events.find({"attempt_id": att["_id"]})
     assert event["kind"] == "tool_call" and event["recall_id"] == rid and event["source"] == "voice"
     assert event["conversation_id"] == att["conversation_id"] and event["call_sid"] == att["call_sid"]
-    assert event["payload"] == tool_body(att, held=60)
+    assert event["payload"] == tool_body(att, held=60, **HELD)
     assert db.attempts.find_one({"_id": att["_id"]})["state"] == "connected"
     assert db.parties.find_one({"recall_id": rid, "party_id": "harbour-market"})["state"] == "reached"
 
     # Counts arrive from an LLM as strings and integral floats; the ledger coerces them.
-    r = say(api, att, held=35.0, returned=5)
+    r = say(api, att, held=35.0, returned=5, **HELD)
     assert r == {"accepted": True, "message": "Recorded. Thank them and move on.", "challenges_left": 1,
                  "stop": False}
     assert_balance(rid)
     assert texts(db, "claim_accepted") == ["Harbour Market - accepted: 25 on hand, 10 sold, 5 returned"]
     party = db.parties.find_one({"recall_id": rid, "party_id": "harbour-market"})
-    assert (party["on_hand"], party["sold"], party["returned"], party["unresolved"]) == (25, 10, 5, 0)
+    assert (party["on_shelf"], party["sold"], party["returned"], party["unresolved"]) == (25, 10, 5, 0)
 
-    r = say(api, att, held=35, returned=5)
+    r = say(api, att, held=35, returned=5, **HELD)
     assert r["accepted"] is True and r["duplicate"] is True
     assert_balance(rid)
     assert texts(db, "claim_duplicate") == ["Duplicate delivery ignored for Harbour Market (same dedupe key)"]
     assert db.claims.count_documents({"attempt_id": att["_id"], "status": "accepted"}) == 1
 
 
-def test_forwarding_discovers_corner_properties_and_the_receipt_disputes_15(api, db, rid, assert_balance):
+def test_forwarding_discovers_corner_mart_and_the_receipt_disputes_15(api, db, rid, assert_balance):
     queen = dial(db, rid, "queen-st-grocer")
-    r = say(api, queen, held=80, forwarded_qty=40, forwarded_to_name="Corner Mart", source="sim")
+    r = say(api, queen, held=80, forwarded_qty=40, forwarded_to_name="Corner Mart", source="sim", **HELD)
     assert r["accepted"] is True
     assert_balance(rid)
     assert db.claims.find_one({"attempt_id": queen["_id"]})["source"] == "sim"
@@ -177,7 +179,7 @@ def test_forwarding_discovers_corner_properties_and_the_receipt_disputes_15(api,
         "Transfer opened: Queen St Grocer -> Corner Mart, 40 tins awaiting Corner Mart's count"]
 
     mart = dial(db, rid, "corner-mart")
-    r = say(api, mart, received_qty=25, held=25)
+    r = say(api, mart, received_qty=25, held=25, **HELD)
     assert r["accepted"] is True
     assert_balance(rid)
     assert texts(db, "claim_accepted")[-1] == "Corner Mart - accepted: received 25, 25 on hand"
@@ -190,14 +192,14 @@ def test_forwarding_discovers_corner_properties_and_the_receipt_disputes_15(api,
 
 def test_third_rejection_stops_the_call_and_hands_the_party_to_a_person(api, db, rid, assert_balance):
     att = dial(db, rid, "harbour-market")
-    r1 = say(api, att, held=60)
+    r1 = say(api, att, held=60, **HELD)
     assert (r1["challenges_left"], r1["stop"]) == (1, False)
-    r2 = say(api, att, held=70)
+    r2 = say(api, att, held=70, **HELD)
     assert (r2["challenges_left"], r2["stop"]) == (0, False)
     assert "last time" in r2["message"]
     assert_balance(rid)
 
-    r3 = say(api, att, held=80)
+    r3 = say(api, att, held=80, **HELD)
     assert (r3["accepted"], r3["challenges_left"], r3["stop"]) == (False, 0, True)
     assert "Do not ask again" in r3["message"] and "person from the recall team" in r3["message"]
     assert "end the call" in r3["message"]
@@ -205,21 +207,21 @@ def test_third_rejection_stops_the_call_and_hands_the_party_to_a_person(api, db,
     assert db.parties.find_one({"recall_id": rid, "party_id": "harbour-market"})["escalation"] == "human"
     assert len(lines(db, "needs_human")) == 1
 
-    again = say(api, att, held=80)          # the same delivery again: no second hand-off line
+    again = say(api, att, held=80, **HELD)          # the same delivery again: no second hand-off line
     assert again["duplicate"] is True and again["stop"] is True
     assert len(lines(db, "needs_human")) == 1
 
     # The cap stops the questions, not the ledger: a valid answer is still booked.
-    r4 = say(api, att, held=35, returned=5)
+    r4 = say(api, att, held=35, returned=5, **HELD)
     assert r4["accepted"] is True
     assert_balance(rid)
 
 
 def test_a_valid_third_answer_is_accepted_without_escalation(api, db, rid, assert_balance):
     att = dial(db, rid, "harbour-market")
-    say(api, att, held=60)
-    say(api, att, held=70)
-    r = say(api, att, held=35, returned=5)
+    say(api, att, held=60, **HELD)
+    say(api, att, held=70, **HELD)
+    r = say(api, att, held=35, returned=5, **HELD)
     assert (r["accepted"], r["stop"], r["challenges_left"]) == (True, False, 0)
     assert_balance(rid)
     assert "escalation" not in db.parties.find_one({"recall_id": rid, "party_id": "harbour-market"})
@@ -228,8 +230,8 @@ def test_a_valid_third_answer_is_accepted_without_escalation(api, db, rid, asser
 
 def test_bad_or_missing_tool_secret_is_refused(api, db, rid):
     att = dial(db, rid, "harbour-market")
-    assert api.post("/tools/submit_count", json=tool_body(att, held=25)).status_code == 401
-    r = api.post("/tools/submit_count", json=tool_body(att, held=25), headers={"X-Tool-Secret": "nope"})
+    assert api.post("/tools/submit_count", json=tool_body(att, held=25, **HELD)).status_code == 401
+    r = api.post("/tools/submit_count", json=tool_body(att, held=25, **HELD), headers={"X-Tool-Secret": "nope"})
     assert r.status_code == 401
     assert db.tool_events.count_documents({}) == 0 and db.claims.count_documents({}) == 0
 
@@ -250,7 +252,7 @@ def test_unset_secrets_fail_closed_and_the_public_dev_values_need_an_opt_in(clie
     host = TestClient(create_app(replace(unset, atlas_uri="unused", db_name=db.name, scheduler_enabled=False),
                                  client=client, sim_network=StubNetwork()))
     att = dial(db, rid, "harbour-market")
-    r = host.post("/tools/submit_count", json=tool_body(att, held=25),
+    r = host.post("/tools/submit_count", json=tool_body(att, held=25, **HELD),
                   headers={"X-Tool-Secret": DEV_SECRETS["tool_secret"]})
     assert r.status_code == 401
     assert host.post("/admin/reset", headers={"X-Admin-Token": DEV_SECRETS["admin_token"]}).status_code == 401
@@ -260,7 +262,7 @@ def test_unset_secrets_fail_closed_and_the_public_dev_values_need_an_opt_in(clie
 
 def test_tool_bodies_are_read_after_the_secret_and_only_up_to_their_cap(api, db, rid):
     att = dial(db, rid, "harbour-market")
-    padded = {**tool_body(att, held=25), "padding": "x" * MAX_TOOL_BODY}
+    padded = {**tool_body(att, held=25, **HELD), "padding": "x" * MAX_TOOL_BODY}
     assert api.post("/tools/submit_count", json=padded, headers=TOOL).status_code == 413
     assert api.post("/tools/submit_count", json=padded).status_code == 401
     big_report = {"recall_id": rid, "party_id": "harbour-market", "source": "rep", "evidence_id": "op-x",
@@ -300,30 +302,30 @@ def test_a_count_too_large_for_the_database_is_a_rejection_not_a_500(api, db, ri
     """99999999999999999999 is valid JSON; it used to make the BSON encoder
     raise OverflowError while logging the tool event, a 500 the agent cannot read."""
     att = dial(db, rid, "lakeside-foods")
-    body = json.dumps(tool_body(att, returned=60)).replace("}", ', "on_hand": 99999999999999999999}')
+    body = json.dumps(tool_body(att, returned=60)).replace("}", ', "on_shelf": 99999999999999999999}')
     r = api.post("/tools/submit_count", headers={**TOOL, "Content-Type": "application/json"}, content=body)
     assert r.status_code == 200, r.text
     reply = r.json()
     assert (reply["accepted"], reply["stop"]) == (False, False) and "is not a count" in reply["reason"]
     [event] = db.tool_events.find({"attempt_id": att["_id"]})
-    assert event["payload"]["on_hand"] == "99999999999999999999"
+    assert event["payload"]["on_shelf"] == "99999999999999999999"
     assert db.claims.find_one({"attempt_id": att["_id"]})["code"] == "bad_number"
     assert_balance(rid)
 
 
 def test_leaving_out_a_counted_transfer_stops_the_call_without_using_a_challenge(api, db, rid, assert_balance):
     queen = dial(db, rid, "queen-st-grocer")
-    assert say(api, queen, held=80, forwarded_qty=40, forwarded_to_name="Corner Mart")["accepted"]
+    assert say(api, queen, held=80, forwarded_qty=40, forwarded_to_name="Corner Mart", **HELD)["accepted"]
     corner = dial(db, rid, "corner-mart")
-    assert say(api, corner, received_qty=25, held=25)["accepted"]
+    assert say(api, corner, received_qty=25, held=25, **HELD)["accepted"]
     assert_balance(rid)
 
     complete(db, queen["_id"], "completed")
     followup = dial(db, rid, "queen-st-grocer", purpose="dispute_followup")
-    r = say(api, followup, held=120)                     # "none went to Corner Mart"
+    r = say(api, followup, held=120, **HELD)                     # "none went to Corner Mart"
     assert (r["accepted"], r["stop"], r["challenges_left"]) == (False, True, 2)
     assert "end the call" in r["message"] and "Challenge" not in r["message"]
-    r = say(api, followup, held=90, forwarded_qty=30, forwarded_to_name="Bloor Alarm")
+    r = say(api, followup, held=90, forwarded_qty=30, forwarded_to_name="Bloor Foods", **HELD)
     assert (r["accepted"], r["stop"]) == (False, True)
     assert db.claims.find_one({"attempt_id": followup["_id"], "code": "forward_changed"}) is not None
     assert "escalation" not in db.parties.find_one({"recall_id": rid, "party_id": "queen-st-grocer"})
@@ -332,9 +334,9 @@ def test_leaving_out_a_counted_transfer_stops_the_call_without_using_a_challenge
 
 def test_a_direct_party_that_received_a_transfer_keeps_a_zero_receipt(api, db, rid, assert_balance):
     queen = dial(db, rid, "queen-st-grocer")
-    assert say(api, queen, held=110, forwarded_qty=10, forwarded_to_name="Lakeside Foods")["accepted"]
+    assert say(api, queen, held=110, forwarded_qty=10, forwarded_to_name="Lakeside Foods", **HELD)["accepted"]
     lake = dial(db, rid, "lakeside-foods")
-    r = say(api, lake, received_qty=0, held=20, returned=60)    # "we never got any from them"
+    r = say(api, lake, received_qty=0, held=20, returned=60, **HELD)    # "we never got any from them"
     assert r["accepted"] is True
     edge = db.edges.find_one({"recall_id": rid, "to_party": "lakeside-foods"})
     assert (edge["recipient_qty"], edge["state"], edge["disputed_qty"]) == (0, "disputed", 10)
@@ -356,7 +358,7 @@ def test_unknown_attempt_or_wrong_party_is_logged_and_stops(api, db, rid):
     assert db.tool_events.find_one({"attempt_id": "att_00000000000000"})["recall_id"] is None
 
     att = dial(db, rid, "harbour-market")
-    r = api.post("/tools/submit_count", headers=TOOL, json={**tool_body(att, held=25), "party_id": "lakeside-foods"})
+    r = api.post("/tools/submit_count", headers=TOOL, json={**tool_body(att, held=25, **HELD), "party_id": "lakeside-foods"})
     assert (r.json()["accepted"], r.json()["stop"]) == (False, True)
     assert db.claims.count_documents({}) == 0
     assert db.tool_events.count_documents({}) == 2
@@ -366,13 +368,13 @@ def test_unknown_attempt_or_wrong_party_is_logged_and_stops(api, db, rid):
 
 def test_receipt_without_transfer_stops_but_an_idle_zero_receipt_is_ignored(api, db, rid, assert_balance):
     harbour = dial(db, rid, "harbour-market")
-    r = say(api, harbour, held=35, returned=5, received_qty=0)
+    r = say(api, harbour, held=35, returned=5, received_qty=0, **HELD)
     assert r["accepted"] is True
     assert_balance(rid)
     assert "received_qty" not in db.claims.find_one({"attempt_id": harbour["_id"]})["raw"]
 
     lakeside = dial(db, rid, "lakeside-foods")
-    r = say(api, lakeside, received_qty=5, held=80)
+    r = say(api, lakeside, received_qty=5, held=80, **HELD)
     assert (r["accepted"], r["stop"]) == (False, True)
     assert_balance(rid)
     assert texts(db, "claim_rejected") == [
@@ -381,10 +383,10 @@ def test_receipt_without_transfer_stops_but_an_idle_zero_receipt_is_ignored(api,
 
 def test_delivery_note_is_required_when_the_attempt_asks_for_it(api, db, rid, assert_balance):
     att = dial(db, rid, "harbour-market", ask_delivery_note="yes")
-    r = say(api, att, held=35, returned=5)
+    r = say(api, att, held=35, returned=5, **HELD)
     assert (r["accepted"], r["stop"], r["challenges_left"]) == (False, False, 2)
     assert "delivery note" in r["message"]
-    r = say(api, att, held=35, returned=5, delivery_note="DN-48213")
+    r = say(api, att, held=35, returned=5, delivery_note="DN-48213", **HELD)
     assert r["accepted"] is True
     assert_balance(rid)
 
@@ -422,15 +424,15 @@ def test_admin_starts_a_recall_and_replies_with_form_urls(api, db, settings, mon
 
 
 def test_close_is_refused_with_15_open_then_closes_after_the_corrected_claim(api, db, rid, assert_balance):
-    assert say(api, dial(db, rid, "harbour-market"), on_hand=25, sold=10, returned=5)["accepted"]
+    assert say(api, dial(db, rid, "harbour-market"), held=25, sold=10, returned=5, **TILL, **HELD)["accepted"]
     assert_balance(rid)
     lakeside = dial(db, rid, "lakeside-foods")
-    assert say(api, lakeside, held=20, returned=60)["accepted"]
+    assert say(api, lakeside, held=20, returned=60, **HELD)["accepted"]
     assert_balance(rid)
     queen = dial(db, rid, "queen-st-grocer")
-    assert say(api, queen, held=80, forwarded_qty=40, forwarded_to_name="Corner Mart")["accepted"]
+    assert say(api, queen, held=80, forwarded_qty=40, forwarded_to_name="Corner Mart", **HELD)["accepted"]
     assert_balance(rid)
-    assert say(api, dial(db, rid, "corner-mart"), received_qty=25, on_hand=25)["accepted"]
+    assert say(api, dial(db, rid, "corner-mart"), received_qty=25, held=25, **HELD)["accepted"]
     assert_balance(rid)
 
     r = api.post("/admin/close", json={"recall_id": rid}, headers=ADMIN)
@@ -445,7 +447,7 @@ def test_close_is_refused_with_15_open_then_closes_after_the_corrected_claim(api
 
     complete(db, queen["_id"], "completed")
     followup = dial(db, rid, "queen-st-grocer", purpose="dispute_followup")
-    r = say(api, followup, held=95, forwarded_qty=25, forwarded_to_name="Corner Mart")
+    r = say(api, followup, held=95, forwarded_qty=25, forwarded_to_name="Corner Mart", **HELD)
     assert r["accepted"] is True
     assert_balance(rid)
     assert texts(db, "edge_corroborated") == [
@@ -459,7 +461,7 @@ def test_close_is_refused_with_15_open_then_closes_after_the_corrected_claim(api
     assert api.post("/admin/close", json={"recall_id": rid}, headers=ADMIN).json()["already"] is True
     assert len(lines(db, "recall_closed")) == 1
 
-    late = say(api, lakeside, held=19, returned=61)
+    late = say(api, lakeside, held=19, returned=61, **HELD)
     assert (late["accepted"], late["stop"]) == (False, True)
     assert db.claims.find_one({"attempt_id": lakeside["_id"], "status": "rejected"})["code"] == "recall_closed"
     assert api.post("/admin/close", json={"recall_id": "RCL-NOPE"}, headers=ADMIN).status_code == 404
@@ -515,9 +517,9 @@ def test_wall_state_has_the_design_shape_and_the_reconciler_metrics(api, app, db
     # (test_wall_state_cache_expires covers that with a fake clock).
     app.state.wall_cache = wall.StateCache(60.0)
     harbour = dial(db, rid, "harbour-market")
-    say(api, harbour, held=60)
+    say(api, harbour, held=60, **HELD)
     queen = dial(db, rid, "queen-st-grocer")
-    say(api, queen, held=80, forwarded_qty=40, forwarded_to_name="Corner Mart")
+    say(api, queen, held=80, forwarded_qty=40, forwarded_to_name="Corner Mart", **HELD)
     assert_balance(rid)
     db.sim_calls.insert_many([
         {"_id": queen["call_sid"], "recall_id": rid, "party_id": "queen-st-grocer", "status": "completed"},
@@ -569,7 +571,7 @@ def test_wall_state_has_the_design_shape_and_the_reconciler_metrics(api, app, db
     assert state["memory_ablation"] == {"with": 2, "without": 5}
 
     # Cached: a new claim is not visible until the entry expires (or is cleared).
-    say(api, harbour, held=35, returned=5)
+    say(api, harbour, held=35, returned=5, **HELD)
     assert_balance(rid)
     cached = api.get("/wall/state").json()
     assert cached["now"] == state["now"] and cached["metrics"]["open_units"] == 160
@@ -703,7 +705,7 @@ def test_wall_state_v2_run_systems_workers_and_calls_in_flight(settings, client,
     queen = open_attempt(db, recall_id=rid, party_id="queen-st-grocer", channel="voice", to_number="+14165550142")
     mark_dialed(db, queen["_id"], conversation_id="conv_q", call_sid="CAreal1")
     queen = db.attempts.find_one({"_id": queen["_id"]})
-    assert say(live, queen, held=80, forwarded_qty=40, forwarded_to_name="Corner Mart")["accepted"]
+    assert say(live, queen, held=80, forwarded_qty=40, forwarded_to_name="Corner Mart", **HELD)["accepted"]
     assert_balance(rid)
     dial(db, rid, "lakeside-foods")                             # a simulated call, dialled
     db_now = clock.server_now(client)
@@ -818,13 +820,13 @@ def test_report_books_through_the_claim_path_and_verifies_its_evidence(api, db, 
         {"_id": "op-link-old", "recall_id": rid, "kind": "send_form_link", "party_id": "harbour-market",
          "idempotency_key": f"{rid}:harbour-market:form:2", "state": "needs_reverify"}])
 
-    over = report(api, recall_id=rid, party_id="lakeside-foods", source="rep", evidence_id="op-rep", held=90)
+    over = report(api, recall_id=rid, party_id="lakeside-foods", source="rep", evidence_id="op-rep", held=90, **HELD)
     assert (over["accepted"], over["code"], over["reported_total"], over["shipped_in"]) == (False, "over_count", 90, 80)
     assert over["verified"] == [] and db.operations.find_one({"_id": "op-rep"})["state"] == "sent"
     assert_balance(rid)
 
     ok = report(api, recall_id=rid, party_id="lakeside-foods", source="rep", evidence_id="op-rep",
-                held=20, returned=60)
+                held=20, returned=60, **HELD)
     assert ok["accepted"] is True and ok["verified"] == ["op-rep"]
     assert_balance(rid)
     claim = db.claims.find_one({"party_id": "lakeside-foods", "status": "accepted"})
@@ -835,14 +837,14 @@ def test_report_books_through_the_claim_path_and_verifies_its_evidence(api, db, 
     assert {e["kind"] for e in events} == {"rep"} and len(events) == 2
     assert texts(db, "report_received") == ["Lakeside Foods: the distributor's rep reported the counts"] * 2
     assert lines(db, "report_received")[0]["system"] == "phone"
-    assert texts(db, "claim_accepted") == ["Lakeside Foods - accepted: 20 on hand, 60 destroyed"]
+    assert texts(db, "claim_accepted") == ["Lakeside Foods - accepted: 20 on hand, 60 held"]
 
     again = report(api, recall_id=rid, party_id="lakeside-foods", source="rep", evidence_id="op-rep",
-                   held=20, returned=60)
+                   held=20, returned=60, **HELD)
     assert (again["accepted"], again["duplicate"], again["verified"]) == (True, True, [])
 
     form = report(api, recall_id=rid, party_id="harbour-market", source="form", evidence_id="op-link",
-                  held="35", returned=5)
+                  held="35", returned=5, **HELD)
     assert form["accepted"] is True and form["verified"] == ["op-link"]
     assert_balance(rid)
     links = {o["_id"]: o for o in db.operations.find({"kind": "send_form_link"})}
@@ -853,7 +855,7 @@ def test_report_books_through_the_claim_path_and_verifies_its_evidence(api, db, 
 
     db.parties.update_one({"recall_id": rid, "party_id": "queen-st-grocer"}, {"$set": {"order_system": "north"}})
     read = report(api, recall_id=rid, party_id="queen-st-grocer", source="order_system", evidence_id="op-accounts",
-                  held=80, forwarded_qty=40, forwarded_to_name="Corner Mart")
+                  held=80, forwarded_qty=40, forwarded_to_name="Corner Mart", **HELD)
     assert read["accepted"] is True and read["verified"] == []             # op-accounts is not an operation
     assert_balance(rid)
     assert lines(db, "report_received")[-1]["system"] == "North orders"
@@ -868,7 +870,7 @@ def test_report_books_through_the_claim_path_and_verifies_its_evidence(api, db, 
 
 def test_describe_counts_names_every_destination_of_a_multi_forward():
     from levela.api.tools import describe_counts
-    raw = {"on_hand": 5, "forwards": [{"to_name": "Corner Mart", "qty": 12}, {"to_party_id": "annex", "qty": 8}]}
+    raw = {"on_shelf": 5, "forwards": [{"to_name": "Corner Mart", "qty": 12}, {"to_party_id": "annex", "qty": 8}]}
     assert describe_counts(raw) == "5 on hand, 12 forwarded to Corner Mart, 8 forwarded to annex"
 
 

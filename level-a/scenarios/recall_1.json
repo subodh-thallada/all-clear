@@ -1,41 +1,46 @@
 {
   "scenario_id": "recall_1",
   "synthetic": true,
-  "about": "The live slice. Batch B-4471, 240 tins shipped to three stores; one store is hidden. Ends with 15 tins disputed and 25 on_shelf and not fixed at Corner Mart, so the recall cannot close. Corner Mart' removal check (the store's visit, software 2.5, the sounder rings) and the dispute follow-up settle both.",
+  "about": "The live slice. Batch B-4471 of Maple Farm milk powder 800 g, 240 tins shipped to three stores; one store is hidden. Ends with 15 tins disputed and 25 still on the shelf at Corner Mart, so the recall cannot close. Corner Mart's removal check (staff pull the tins, the till refuses the sale) and the dispute follow-up settle both.",
   "recall": {
     "_id": "RCL-2026-017",
     "batch_code": "B-4471",
     "batch_spoken": "B, four four seven one",
-    "model": "B-4471",
     "product": "Maple Farm milk powder 800 g",
-    "supplier": "Maple Farm Foods",
-    "hazard": "The sounder circuit may fail to activate in an alarm",
+    "barcode": "0 62345 18803 5",
+    "company": "Maple Farm Foods",
+    "plant": "Maple Farm plant, Guelph",
+    "defect": "seal_fault",
+    "hazard": "The lid seal may be faulty, so the powder can spoil. Do not use it; bring it back for a refund.",
     "affected_batches": [
-      "2.3",
-      "2.4"
+      "B-4471"
     ],
-    "action": "2.5",
+    "action": "return",
+    "barcode_verified": false,
     "checks": [
       {
-        "id": "model",
+        "id": "batch",
+        "field": "batch_seen",
         "label": "Affected unit",
-        "question": "What model is printed on the front of the tin?",
-        "answer": "model",
-        "rule": "Must be the recalled model"
+        "question": "Read me the batch code printed under one tin.",
+        "answer": "batch code",
+        "rule": "Must be the recalled batch"
       },
       {
-        "id": "version",
-        "label": "Still at risk",
-        "question": "What software version does the display show?",
-        "answer": "version digits",
-        "rule": "A version in the affected list means not fixed"
+        "id": "sold",
+        "field": "sold_source",
+        "label": "Sales are counted",
+        "question": "Open the item sales report on the till. How many have sold since the delivery?",
+        "answer": "a number read from the till",
+        "rule": "sold needs a count read from the till"
       },
       {
-        "id": "sounder",
-        "label": "Fix took effect",
-        "question": "Press the test button. Did the sounder ring?",
+        "id": "block",
+        "field": "block_test",
+        "label": "Removal took effect",
+        "question": "Scan one tin at the till. Did the till refuse the sale?",
         "answer": "yes or no",
-        "rule": "fixed needs yes"
+        "rule": "held needs yes"
       }
     ],
     "unit": "tin",
@@ -52,7 +57,7 @@
       "sim_phone": "+14165550141",
       "shipped_in": 40,
       "delivery_note": "DN-48213",
-      "profile": "Fire alarm contractor on Queens Quay by the Toronto waterfront. A crew of four technicians installs and services tins in mid-rise residential buildings. Buys tins from the supplier by the case. The office manager answers the phone during working hours.",
+      "profile": "Independent grocer on Queens Quay by the Toronto waterfront, open seven days. Buys milk powder from the company by the case. The front-end manager answers the phone during opening hours.",
       "slice": true
     },
     {
@@ -64,7 +69,7 @@
       "phone": "+14165550142",
       "shipped_in": 120,
       "delivery_note": "DN-48214",
-      "profile": "Fire alarm store on Queen St W in Parkdale, Toronto. A busy contractor with a stock room larger than its jobs need. Installs tins for property managers across the west end and keeps its job sheets on paper.",
+      "profile": "Busy grocer on Queen St W in Parkdale, Toronto, with a back room larger than its shelves need. Passes spare stock to small corner stores nearby and keeps its delivery notes on paper.",
       "slice": true
     },
     {
@@ -76,7 +81,7 @@
       "phone": "+14165550143",
       "shipped_in": 80,
       "delivery_note": "DN-48215",
-      "profile": "Fire alarm and sprinkler contractor on Lake Shore Blvd W in Mimico, Etobicoke. Pulls recalled stock the same day and ships it back to the supplier with return slips.",
+      "profile": "Supermarket on Lake Shore Blvd W in Mimico, Etobicoke. Pulls recalled stock the same day and ships it back to the company with return slips.",
       "slice": true
     }
   ],
@@ -87,8 +92,8 @@
       "aliases": [
         "corner mart",
         "the corner mart",
-        "corner mart",
         "korner mart",
+        "corner market",
         "corner mart ltd"
       ],
       "type": "store",
@@ -96,7 +101,7 @@
       "channel": "voice",
       "phone_env": "PHONE_CORNER",
       "sim_phone": "+14165550144",
-      "profile": "Property manager in Parkdale, Toronto, running several mid-rise residential buildings. Buys its fire alarm tins through a local store, not from a distributor. The building manager answers a mobile phone.",
+      "profile": "Small corner store in Parkdale, Toronto. Buys its milk powder from a local grocer, not from a distributor. Its till and stock record are connected. The owner answers a mobile phone.",
       "slice": true
     }
   ],
@@ -108,9 +113,9 @@
           "answers": {
             "delivery_note": "DN-48213"
           },
-          "say": "We've got sixty in stock.",
+          "say": "We've got sixty on the shelf.",
           "claim": {
-            "held": 60
+            "on_shelf": 60
           },
           "expect": {
             "accepted": false,
@@ -123,10 +128,13 @@
           "answers": {
             "delivery_note": "DN-48213"
           },
-          "say": "Sorry, I was reading the wrong job. Thirty in stock, ten already sent back to the supplier.",
+          "say": "Sorry, I was reading the wrong line. The till says ten sold, and we pulled the other thirty into the back room. The batch code reads B-4471, and the till refused the sale.",
           "claim": {
+            "sold": 10,
+            "sold_source": "till_report",
             "held": 30,
-            "returned": 10
+            "batch_seen": "B-4471",
+            "block_test": true
           },
           "expect": {
             "accepted": true
@@ -142,12 +150,15 @@
           "answers": {
             "delivery_note": "DN-48214"
           },
-          "say": "Fifty in stock, thirty returned, and forty on_shelf at Corner Mart' buildings.",
+          "say": "The till says fifty sold. Thirty are pulled and held in the back, and forty went to Corner Mart. The batch code reads B-4471, and the till refused the sale.",
           "claim": {
-            "held": 50,
-            "returned": 30,
+            "sold": 50,
+            "sold_source": "till_report",
+            "held": 30,
             "forwarded_qty": 40,
-            "forwarded_to_name": "Corner Mart"
+            "forwarded_to_name": "Corner Mart",
+            "batch_seen": "B-4471",
+            "block_test": true
           },
           "expect": {
             "accepted": true
@@ -163,12 +174,15 @@
           "answers": {
             "delivery_note": "DN-48214"
           },
-          "say": "Checked the job sheets. Twenty-five went into Corner Mart. The other fifteen are still in our stock room.",
+          "say": "Checked the delivery notes. Twenty-five went to Corner Mart. The other fifteen are still in our back room, held.",
           "claim": {
-            "held": 65,
-            "returned": 30,
+            "sold": 50,
+            "sold_source": "till_report",
+            "held": 45,
             "forwarded_qty": 25,
-            "forwarded_to_name": "Corner Mart"
+            "forwarded_to_name": "Corner Mart",
+            "batch_seen": "B-4471",
+            "block_test": true
           },
           "expect": {
             "accepted": true
@@ -183,10 +197,13 @@
           "answers": {
             "delivery_note": "DN-48215"
           },
-          "say": "Twenty in stock. Sixty already shipped back to the supplier.",
+          "say": "Twenty sold, per the till's sales report. The other sixty are pulled and held for return. The batch code reads B-4471, and the till refused the sale.",
           "claim": {
-            "held": 20,
-            "returned": 60
+            "sold": 20,
+            "sold_source": "till_report",
+            "held": 60,
+            "batch_seen": "B-4471",
+            "block_test": true
           },
           "expect": {
             "accepted": true
@@ -198,12 +215,11 @@
       "initial": [
         {
           "delay_s": 3.0,
-          "say": "We received twenty-five, all on_shelf. The front says B-4471, the display says 2.4, and the sounder did not ring.",
+          "say": "We received twenty-five, all still on the shelf. The batch code reads B-4471, and the till still sells it.",
           "claim": {
             "received_qty": 25,
             "on_shelf": 25,
             "batch_seen": "B-4471",
-            "sold_source": "2.4",
             "block_test": false
           },
           "expect": {
@@ -217,12 +233,11 @@
           "told": {
             "other_side_qty": 40
           },
-          "say": "No, twenty-five. I have the store's invoice.",
+          "say": "No, twenty-five. I have the delivery note.",
           "claim": {
             "received_qty": 25,
             "on_shelf": 25,
             "batch_seen": "B-4471",
-            "sold_source": "2.4",
             "block_test": false
           },
           "expect": {
@@ -233,12 +248,11 @@
       "removal_check": [
         {
           "delay_s": 3.0,
-          "say": "The store came by. All twenty-five are updated: the display shows 2.5 and the sounder rang.",
+          "say": "We pulled all twenty-five into the back. The batch code reads B-4471, and the till now refuses the sale.",
           "claim": {
             "received_qty": 25,
             "held": 25,
             "batch_seen": "B-4471",
-            "sold_source": "2.5",
             "block_test": true
           },
           "expect": {
@@ -249,7 +263,7 @@
     }
   },
   "expected": {
-    "note": "Hand-computed with every party simulated. checks = parties in claimed or reconciled / all parties. located = in stock + on_shelf + fixed + returned. held_or_returned = fixed + returned. open = unresolved + on_shelf + open or disputed transfers. mass_balance must equal 240 after every step.",
+    "note": "Hand-computed with every party simulated. checks = parties in claimed or reconciled / all parties. located = sold + on_shelf + held + returned. held_or_returned = held + returned. open = unresolved + on_shelf + open or disputed transfers. mass_balance must equal 240 after every step.",
     "steps": [
       {
         "step": "start",
@@ -281,7 +295,7 @@
           3
         ],
         "located": 40,
-        "held_or_returned": 10
+        "held_or_returned": 30
       },
       {
         "step": "lakeside-foods initial #1",
@@ -292,7 +306,7 @@
           3
         ],
         "located": 120,
-        "held_or_returned": 70
+        "held_or_returned": 90
       },
       {
         "step": "queen-st-grocer initial #1",
@@ -303,7 +317,7 @@
           4
         ],
         "located": 200,
-        "held_or_returned": 100
+        "held_or_returned": 120
       },
       {
         "step": "close",
@@ -319,7 +333,7 @@
           4
         ],
         "located": 225,
-        "held_or_returned": 100
+        "held_or_returned": 120
       },
       {
         "step": "close",
@@ -335,7 +349,7 @@
           4
         ],
         "located": 240,
-        "held_or_returned": 100
+        "held_or_returned": 135
       },
       {
         "step": "close",
@@ -351,7 +365,7 @@
           4
         ],
         "located": 240,
-        "held_or_returned": 125
+        "held_or_returned": 160
       },
       {
         "step": "close",
@@ -363,9 +377,9 @@
       "disputed_units": 15,
       "on_shelf": 25,
       "open_units": 40,
-      "headline": "NOT ALL CLEAR: 40 tins open (15 disputed, 25 still on a shelf)"
+      "headline": "NOT ALL CLEAR: 40 tins open (25 still on a shelf, 15 disputed)"
     },
-    "edge_after_corner_properties": {
+    "edge_after_corner_mart": {
       "from_party": "queen-st-grocer",
       "to_party": "corner-mart",
       "sender_qty": 40,

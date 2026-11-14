@@ -35,10 +35,10 @@ def run(client, db, assert_balance):
         ("corner-mart", "form", {"received_qty": 25, "held": 25}),                  # disputed
         ("queen-st-grocer", "sim", {"held": 35, "forwards": [
             {"to_name": "Corner Mart", "qty": 25}]}),                                  # corrected
-        ("dist-north", "order_system", {"forwards": [{"to_party_id": "bloor-alarm", "qty": 120},
-                                               {"to_party_id": "annex-fire", "qty": 180}]}),
-        ("annex-fire", "sim", {"received_qty": 180, "held": 100, "forwards": [
-            {"to_name": "Dundas Lofts", "qty": 50}, {"to_name": "Parkdale Court", "qty": 30}]}),
+        ("dist-north", "order_system", {"forwards": [{"to_party_id": "bloor-foods", "qty": 120},
+                                               {"to_party_id": "annex-grocer", "qty": 180}]}),
+        ("annex-grocer", "sim", {"received_qty": 180, "held": 100, "forwards": [
+            {"to_name": "Dundas Mini Mart", "qty": 50}, {"to_name": "Parkdale Court", "qty": 30}]}),
     ]
     for i, (party_id, source, raw) in enumerate(steps):
         submit_claim(client, db, recall_id=RID, party_id=party_id, attempt_id=f"att_r{i}", source=source, raw=raw)
@@ -59,12 +59,12 @@ def test_rebuild_from_the_claims_log_is_identical_until_someone_writes_around_it
     assert db.client[f"{db.name}_rebuild"].list_collection_names() == []      # the scratch is gone
 
     # A write that bypasses submit_claim (it conserves, so no validator objects).
-    db.parties.update_one({"recall_id": RID, "party_id": "bloor-alarm"},
+    db.parties.update_one({"recall_id": RID, "party_id": "bloor-foods"},
                          {"$set": {"shipped_in": 5, "held": 5}})
     second = rebuild(client, db, RID)
     assert not second["identical"]
     assert {(d["id"], d["field"], d["ledger"], d["rebuilt"]) for d in second["diffs"]} == {
-        ("bloor-alarm", "shipped_in", 5, 0), ("bloor-alarm", "held", 5, 0)}
+        ("bloor-foods", "shipped_in", 5, 0), ("bloor-foods", "held", 5, 0)}
     assert db.worker_state.find_one({"_id": BADGE_ID}) is None
     assert db.feed.find_one({"kind": "error", "recall_id": RID})["detail"]["diffs"] == second["diffs"]
 

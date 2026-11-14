@@ -4,9 +4,10 @@ A valid claim books once; an exception mid-transaction writes nothing; the
 same delivery twice posts once. Plus: Atlas-decided rejections with the two
 numbers, the rejection codes, the dedupe key (V2: sorted destinations), the
 five sources and the evidence the form, order system and rep channels log; the
-three checks a store answers, the refusals that name the two values
-that disagree, and the removal check a claim leaves. The mass balance is asserted
-after every write.
+three checks a store answers (the batch code under a tin, a sold count read
+off the till, a till that refused the sale), the refusals that name the two
+values that disagree, and the removal check a claim that leaves tins on the
+shelf sets. The mass balance is asserted after every write.
 """
 from __future__ import annotations
 
@@ -19,6 +20,8 @@ from levela.clock import get_clock, server_now
 from levela.ledger.claims import (CHALLENGE_CODES, REMOVAL_CHECK_H, MAX_COUNT, SOURCES, challenges_used, checks, counts,
                                   dedupe_key, forwards, speakable, storable, submit_claim)
 from levela.ledger.rebuild import rebuild
+from support import HELD_CHECKS as HELD
+from support import TILL
 
 RID = "RCL-2026-017"
 
@@ -41,7 +44,7 @@ def party(db, party_id):
 # ---- spec test 3 --------------------------------------------------------------
 
 def test_valid_claim_is_one_claim_and_one_party_update(client, db, recall, assert_balance):
-    res = claim(client, db, "lakeside-foods", held=20, returned=60)
+    res = claim(client, db, "lakeside-foods", held=20, returned=60, **HELD)
     assert res["accepted"] and res["txn_runs"] == 1 and res["open_units"] == 160
     assert res["message"] == speakable(res) == "Recorded. Thank them and move on."
     s = party(db, "lakeside-foods")
@@ -56,7 +59,7 @@ def test_exception_mid_transaction_writes_nothing(client, db, recall, assert_bal
     before = party(db, "lakeside-foods")
     with pytest.raises(RuntimeError, match="failpoint"):
         submit_claim(client, db, recall_id=RID, party_id="lakeside-foods", attempt_id="att_fail", source="sim",
-                     raw={"held": 20, "returned": 60}, fail_after_party_update=True)
+                     raw={"held": 20, "returned": 60, **HELD}, fail_after_party_update=True)
     assert party(db, "lakeside-foods") == before
     assert db.claims.count_documents({}) == 0
     assert db.recalls.find_one({"_id": RID})["open_units"] == 240
@@ -64,8 +67,8 @@ def test_exception_mid_transaction_writes_nothing(client, db, recall, assert_bal
 
 
 def test_same_claim_twice_posts_once(client, db, recall, assert_balance):
-    first = claim(client, db, "lakeside-foods", held=20, returned=60)
-    again = claim(client, db, "lakeside-foods", held="20", returned=60.0)
+    first = claim(client, db, "lakeside-foods", held=20, returned=60, **HELD)
+    again = claim(client, db, "lakeside-foods", held="20", returned=60.0, batch_seen="b 4471", block_test="yes")
     assert again["duplicate"] and again["accepted"] and again["claim_id"] == first["claim_id"]
     assert again["message"] == "Already recorded. Do not ask again."
     assert db.claims.count_documents({}) == 1
@@ -76,9 +79,9 @@ def test_going_back_to_an_earlier_answer_on_one_call_is_booked_again(client, db,
     """A, then B, then A again on one call: the last answer is the one the
     party confirmed, and claims are absolute, so it is booked (it used to be
     swallowed as a duplicate of the first A while the party kept B)."""
-    first = claim(client, db, "lakeside-foods", attempt="att_aba", held=20, returned=60)
-    second = claim(client, db, "lakeside-foods", attempt="att_aba", held=30, returned=50)
-    back = claim(client, db, "lakeside-foods", attempt="att_aba", held=20, returned=60)
+    first = claim(client, db, "lakeside-foods", attempt="att_aba", held=20, returned=60, **HELD)
+    second = claim(client, db, "lakeside-foods", attempt="att_aba", held=30, returned=50, **HELD)
+    back = claim(client, db, "lakeside-foods", attempt="att_aba", held=20, returned=60, **HELD)
     assert back["accepted"] and not back.get("duplicate")
     assert back["claim_id"] not in (first["claim_id"], second["claim_id"])
     assert back["message"] == "Recorded. Thank them and move on."
@@ -86,7 +89,7 @@ def test_going_back_to_an_earlier_answer_on_one_call_is_booked_again(client, db,
     assert (s["held"], s["returned"]) == (20, 60)
     assert_balance(RID)
     # Delivered again, the correction itself is the duplicate.
-    again = claim(client, db, "lakeside-foods", attempt="att_aba", held="20", returned=60)
+    again = claim(client, db, "lakeside-foods", attempt="att_aba", held="20", returned=60, **HELD)
     assert again["duplicate"] and again["claim_id"] == back["claim_id"]
     assert db.claims.count_documents({"attempt_id": "att_aba"}) == 3
     assert_balance(RID)
@@ -96,14 +99,14 @@ def test_corrections_and_withdrawals_rebuild_identically(client, db, recall, ass
     """The new booking rules read only ledger documents, so replaying the
     claims log reproduces them: a correction booked again, a withdrawn
     transfer and the stub deleted with it."""
-    booked = [claim(client, db, "lakeside-foods", attempt="att_l", held=20, returned=60),
-              claim(client, db, "lakeside-foods", attempt="att_l", held=30, returned=50),
-              claim(client, db, "lakeside-foods", attempt="att_l", held=20, returned=60),
-              claim(client, db, "harbour-market", attempt="att_h", held=30, forwarded_qty=10,
-                    forwarded_to_name="Bloor Alarm"),
-              claim(client, db, "harbour-market", attempt="att_h", held=40)]
+    booked = [claim(client, db, "lakeside-foods", attempt="att_l", held=20, returned=60, **HELD),
+              claim(client, db, "lakeside-foods", attempt="att_l", held=30, returned=50, **HELD),
+              claim(client, db, "lakeside-foods", attempt="att_l", held=20, returned=60, **HELD),
+              claim(client, db, "harbour-market", attempt="att_h", sold=30, forwarded_qty=10,
+                    forwarded_to_name="Bloor Foods", **TILL),
+              claim(client, db, "harbour-market", attempt="att_h", sold=40, **TILL)]
     assert all(r["accepted"] and not r.get("duplicate") for r in booked)
-    assert booked[-1]["removed_parties"] == ["bloor-alarm"]
+    assert booked[-1]["removed_parties"] == ["bloor-foods"]
     assert_balance(RID)
     result = rebuild(client, db, RID, scratch_db_name=f"{db.name}_rb")
     assert result["identical"], result["diffs"]
@@ -111,7 +114,7 @@ def test_corrections_and_withdrawals_rebuild_identically(client, db, recall, ass
 
 
 @pytest.mark.parametrize("value", [10**20, -(10**20), 2**63, "99999999999999999999", 1e20, MAX_COUNT + 1])
-def test_a_count_too_large_to_be_panels_is_a_bad_number_not_a_crash(client, db, recall, assert_balance, value):
+def test_a_count_too_large_to_be_tins_is_a_bad_number_not_a_crash(client, db, recall, assert_balance, value):
     """A 20-digit count used to reach the BSON encoder inside the claim
     transaction and raise OverflowError (a 500 on the form and the tool)."""
     res = claim(client, db, "lakeside-foods", held=value)
@@ -135,7 +138,7 @@ def test_a_delivery_racing_itself_posts_once(client, db, recall, assert_balance)
     results = []
 
     def deliver():
-        results.append(claim(client, db, "lakeside-foods", attempt="att_race", held=20, returned=60))
+        results.append(claim(client, db, "lakeside-foods", attempt="att_race", held=20, returned=60, **HELD))
 
     threads = [threading.Thread(target=deliver) for _ in range(2)]
     for t in threads:
@@ -152,20 +155,20 @@ def test_a_delivery_racing_itself_posts_once(client, db, recall, assert_balance)
 
 def test_over_count_is_refused_by_atlas_with_both_numbers(client, db, recall, assert_balance):
     before = party(db, "harbour-market")
-    res = claim(client, db, "harbour-market", held=60)
+    res = claim(client, db, "harbour-market", on_shelf=60)
     assert not res["accepted"] and res["code"] == "over_count"
     assert (res["reported_total"], res["shipped_in"]) == (60, 40)
     assert res["atlas_error"]["code"] == 121 and res["atlas_error"]["errInfo"]
     assert "60 tins" in res["message"] and "40 tins" in res["message"]
     after = party(db, "harbour-market")
-    assert {k: after[k] for k in ("held", "unresolved")} == {k: before[k] for k in ("held", "unresolved")}
+    assert {k: after[k] for k in ("on_shelf", "unresolved")} == {k: before[k] for k in ("on_shelf", "unresolved")}
     assert after["state"] == "reached"
     row = db.claims.find_one({"_id": res["claim_id"]})
     assert row["status"] == "rejected" and row["atlas_error"]["code"] == 121
     assert challenges_used(db, "att_c1") == 1
     assert_balance(RID)
-    fixed = claim(client, db, "harbour-market", held=35, returned=5)
-    assert fixed["accepted"] and fixed["open_units"] == 200
+    corrected = claim(client, db, "harbour-market", sold=10, held=30, **TILL, **HELD)
+    assert corrected["accepted"] and corrected["open_units"] == 200
     assert_balance(RID)
 
 
@@ -174,7 +177,8 @@ def test_over_count_is_refused_by_atlas_with_both_numbers(client, db, recall, as
     ({"held": 10.5}, "not_integer"),
     ({"held": "batches"}, "bad_number"),
     ({"held": True}, "bad_number"),
-    ({"sold_source": "two point four"}, "bad_answer"),
+    ({"sold_source": "read it somewhere"}, "bad_answer"),
+    ({"batch_seen": "four four seven one"}, "bad_answer"),
     ({"block_test": "maybe"}, "bad_answer"),
 ])
 def test_bad_numbers_are_refused_with_a_code(client, db, recall, assert_balance, raw, code):
@@ -193,7 +197,7 @@ def test_claims_on_a_closed_unknown_or_missing_party_are_refused(client, db, rec
     assert res["code"] == "unknown_recall"
     # Closed by hand (try_close would recompute 240 open tins and refuse).
     db.recalls.update_one({"_id": RID}, {"$set": {"open_units": 0, "status": "closed"}})
-    res = claim(client, db, "lakeside-foods", attempt="att_late", held=20, returned=60)
+    res = claim(client, db, "lakeside-foods", attempt="att_late", held=20, returned=60, **HELD)
     assert res["code"] == "recall_closed" and res["message"].startswith("This recall is already closed")
     assert party(db, "lakeside-foods")["unresolved"] == 80
 
@@ -201,7 +205,7 @@ def test_claims_on_a_closed_unknown_or_missing_party_are_refused(client, db, rec
 def test_delivery_note_is_checked_in_the_transaction(client, db, recall, assert_balance):
     def note(n, attempt):
         return submit_claim(client, db, recall_id=RID, party_id="harbour-market", attempt_id=attempt, source="sim",
-                            raw={"held": 40, **({"delivery_note": n} if n else {})}, require_delivery_note=True)
+                            raw={"returned": 40, **({"delivery_note": n} if n else {})}, require_delivery_note=True)
     assert note(None, "att_n1")["code"] == "delivery_note_required"
     assert note("DN-99999", "att_n2")["code"] == "delivery_note_mismatch"
     ok = note("dn 48213", "att_n3")
@@ -211,14 +215,14 @@ def test_delivery_note_is_checked_in_the_transaction(client, db, recall, assert_
 
 def test_unknown_source_is_a_programming_error(client, db, recall):
     with pytest.raises(ValueError, match="unknown claim source"):
-        claim(client, db, "lakeside-foods", source="email", held=80)
+        claim(client, db, "lakeside-foods", source="email", returned=80)
 
 
 # ---- evidence (invariant 3) ----------------------------------------------------------
 
 def test_form_order_system_and_rep_claims_log_their_own_evidence_once(client, db, recall, assert_balance):
     for i, source in enumerate(("form", "order_system", "rep")):
-        raw = {"held": 80 - i}
+        raw = {"returned": 80 - i}
         first = claim(client, db, "lakeside-foods", attempt=f"att_{source}", source=source, **raw)
         again = claim(client, db, "lakeside-foods", attempt=f"att_{source}", source=source, **raw)
         assert first["accepted"] and again["duplicate"]
@@ -226,7 +230,7 @@ def test_form_order_system_and_rep_claims_log_their_own_evidence_once(client, db
         assert [(e["kind"], e["source"], e["payload"]) for e in events] == [(source, source, raw)]
         assert_balance(RID)
     # Calls are logged by POST /tools/submit_count before it books, not here.
-    claim(client, db, "harbour-market", attempt="att_voice", source="voice", held=40)
+    claim(client, db, "harbour-market", attempt="att_voice", source="voice", returned=40)
     assert db.tool_events.count_documents({"attempt_id": "att_voice"}) == 0
     assert set(SOURCES) == {"voice", "sim", "form", "order_system", "rep"}
 
@@ -235,7 +239,7 @@ def test_form_order_system_and_rep_claims_log_their_own_evidence_once(client, db
 
 def test_counts_sum_every_forward():
     assert counts({"held": "5", "forwards": [{"to_name": "A", "qty": 3}, {"to_party_id": "b", "qty": "4"}]}) == {
-        "held": 5, "on_shelf": 0, "held": 0, "returned": 0, "forwarded_qty": 7, "received_qty": None}
+        "sold": 0, "on_shelf": 0, "held": 5, "returned": 0, "forwarded_qty": 7, "received_qty": None}
     assert counts({"forwarded_qty": 40, "forwarded_to_name": "Corner Mart"})["forwarded_qty"] == 40
     assert counts({"received_qty": 0})["received_qty"] == 0
 
@@ -262,12 +266,12 @@ def test_unreadable_forwards_are_bad_numbers(raw, match):
 
 
 def test_dedupe_key_ignores_the_order_of_destinations():
-    a = {"held": 1, "forwards": [{"to_name": "Corner Mart", "qty": 5}, {"to_party_id": "bloor-alarm", "qty": 7}]}
-    b = {"held": "1", "forwards": [{"to_party_id": "bloor-alarm", "qty": "7"},
-                                        {"to_name": "corner  properties", "qty": 5}]}
+    a = {"held": 1, "forwards": [{"to_name": "Corner Mart", "qty": 5}, {"to_party_id": "bloor-foods", "qty": 7}]}
+    b = {"held": "1", "forwards": [{"to_party_id": "bloor-foods", "qty": "7"},
+                                   {"to_name": "corner  mart", "qty": 5}]}
     assert dedupe_key("att", a) == dedupe_key("att", b)
     assert dedupe_key("att", a) != dedupe_key("att2", a)
-    changed = {**a, "forwards": [{"to_name": "Corner Mart", "qty": 6}, {"to_party_id": "bloor-alarm", "qty": 7}]}
+    changed = {**a, "forwards": [{"to_name": "Corner Mart", "qty": 6}, {"to_party_id": "bloor-foods", "qty": 7}]}
     assert dedupe_key("att", a) != dedupe_key("att", changed)
 
 
@@ -287,7 +291,12 @@ def test_dedupe_key_includes_the_delivery_note_and_survives_bad_numbers():
 def test_speakable_covers_the_codes_the_agent_must_act_on():
     assert "delivery note" in speakable({"accepted": False, "code": "delivery_note_required"})
     assert "end the call" in speakable({"accepted": False, "code": "no_inbound_edge"})
-    assert "store or store" in speakable({"accepted": False, "code": "forward_missing_name"})
+    assert "name of the store" in speakable({"accepted": False, "code": "forward_missing_name"})
+    assert "till" in speakable({"accepted": False, "code": "sold_needs_till", "reason": "sold 10, sold_by_till 0"})
+    assert "stock record" in speakable({"accepted": False, "code": "stock_record_on_shelf", "reason": "x"})
+    for code in ("held_needs_evidence", "batch_mismatch", "block_not_confirmed"):
+        said = speakable({"accepted": False, "code": code, "reason": "held 25, block_test no"})
+        assert "held 25, block_test no" in said and "batch code" in said, code
     # Stop codes (api/tools.py): asking again on this call cannot settle them.
     for code in ("forward_changed", "forward_restate", "receipt_sender_ambiguous"):
         said = speakable({"accepted": False, "code": code, "reason": "Corner Mart is missing"})
@@ -297,95 +306,109 @@ def test_speakable_covers_the_codes_the_agent_must_act_on():
 def test_dedupe_key_tells_receipts_from_different_senders_apart():
     base = {"received_qty": 10, "held": 10}
     assert dedupe_key("att", {**base, "received_from": "Harbour Market"}) == dedupe_key(
-        "att", {**base, "received_from": "harbour  fire"})
+        "att", {**base, "received_from": "harbour  market"})
     assert dedupe_key("att", {**base, "received_from": "Harbour Market"}) != dedupe_key(
         "att", {**base, "received_from": "Queen St Grocer"})
     assert dedupe_key("att", base) == dedupe_key("att", {**base, "received_from": " "})
 
 
-# ---- the three checks and "fixed needs evidence" ------------------------------------------
+
+
+# ---- the three checks and "removal needs evidence" ----------------------------------------
 
 def _corner(client, db, **raw):
-    """Queen St Grocer installs 40 at Corner Mart; Corner Mart answers."""
-    assert claim(client, db, "queen-st-grocer", attempt="att_q", held=50, returned=30, forwarded_qty=40,
-                 forwarded_to_name="Corner Mart")["accepted"]
+    """Queen St Grocer passes 40 to Corner Mart; Corner Mart answers."""
+    assert claim(client, db, "queen-st-grocer", attempt="att_q", sold=50, held=30, forwarded_qty=40,
+                 forwarded_to_name="Corner Mart", **TILL, **HELD)["accepted"]
     return claim(client, db, "corner-mart", attempt="att_cp", received_qty=25, **raw)
 
 
 def test_checks_parse_the_closed_answers():
-    assert checks({"batch_seen": " demo-7 ", "sold_source": "v2.4", "block_test": "Yes"}) == {
-        "batch_seen": "B-4471", "sold_source": "2.4", "block_test": True}
-    assert checks({"sold_source": 2.5, "block_test": False}) == {"sold_source": "2.5", "block_test": False}
-    assert checks({"sold_source": "version 2 . 5", "block_test": "no"}) == {"sold_source": "2.5",
-                                                                                "block_test": False}
+    assert checks({"batch_seen": " b 4471 ", "sold_source": "till report", "block_test": "Yes"}) == {
+        "batch_seen": "B-4471", "sold_source": "till_report", "block_test": True}
+    assert checks({"batch_seen": "B4480", "sold_source": "estimate", "block_test": False}) == {
+        "batch_seen": "B-4480", "sold_source": "estimate", "block_test": False}
+    assert checks({"sold_source": "TILL_REPORT", "block_test": "no"}) == {"sold_source": "till_report",
+                                                                         "block_test": False}
     assert checks({"held": 3}) == {}
 
 
-def test_an_owner_books_installed_with_its_checks_and_a_fix_check(client, db, recall, assert_balance):
-    res = _corner(client, db, on_shelf=25, batch_seen="demo 7", sold_source="2.4", block_test=False)
-    assert res["accepted"] and res["open_units"] == 160          # 120 not called yet + 15 disputed + 25 on_shelf
+def test_a_store_with_tins_on_the_shelf_books_its_checks_and_a_removal_check(client, db, recall, assert_balance):
+    res = _corner(client, db, on_shelf=25, batch_seen="b-4471", block_test=False)
+    assert res["accepted"] and res["open_units"] == 160          # 120 not called yet + 15 disputed + 25 on the shelf
     cp = party(db, "corner-mart")
-    assert (cp["on_shelf"], cp["batch_seen"], cp["sold_source"], cp["block_test"]) == (25, "B-4471", "2.4", False)
-    assert cp["state"] == "claimed"                              # on_shelf and not fixed: not reconciled
+    assert (cp["on_shelf"], cp["batch_seen"], cp["block_test"]) == (25, "B-4471", False)
+    assert cp["state"] == "claimed"                              # tins on the shelf: not reconciled
     sim = get_clock(db, RID).sim_now(server_now(client))
+    assert REMOVAL_CHECK_H == 4.0
     assert sim + REMOVAL_CHECK_H - 1 < cp["removal_check_at"] <= sim + REMOVAL_CHECK_H + 1
     assert_balance(RID)
 
 
-def test_2_a_claim_of_fixed_on_an_affected_version_is_refused_with_the_two_values(client, db, recall, assert_balance):
-    res = _corner(client, db, held=25, batch_seen="B-4471", sold_source="2.4", block_test=True)
-    assert not res["accepted"] and res["code"] == "version_affected"
-    assert res["reason"] == "fixed 25, sold_source 2.4 is affected"
-    assert res["values"] == {"held": 25, "sold_source": "2.4"}
+def test_2_a_claim_of_held_with_the_wrong_batch_is_refused_with_the_two_values(client, db, recall, assert_balance):
+    res = _corner(client, db, held=25, batch_seen="B-4480", block_test=True)
+    assert not res["accepted"] and res["code"] == "batch_mismatch"
+    assert res["reason"] == "batch_seen B-4480, recalled batch B-4471"
+    assert res["values"] == {"batch_seen": "B-4480", "batch_code": "B-4471"}
     assert res["atlas_error"]["code"] == 121 and res["code"] in CHALLENGE_CODES
-    assert "2.3" not in res["message"]                         # the agent never hears the affected list
     assert party(db, "corner-mart")["held"] == 0
     assert_balance(RID)
 
 
 @pytest.mark.parametrize("raw, code, reason", [
-    ({"held": 25}, "fixed_needs_evidence", "fixed 25, sold_source missing"),
-    ({"held": 25, "sold_source": "2.5"}, "sounder_not_confirmed", "fixed 25, block_test missing"),
-    ({"held": 25, "sold_source": "2.5", "block_test": "no"}, "sounder_not_confirmed", "fixed 25, block_test no"),
-    ({"on_shelf": 25, "batch_seen": "DEMO-9"}, "model_mismatch", "batch_seen DEMO-9, recalled model B-4471"),
+    ({"held": 25}, "held_needs_evidence", "held 25, batch_seen missing"),
+    ({"held": 25, "batch_seen": "B-4471"}, "block_not_confirmed", "held 25, block_test missing"),
+    ({"held": 25, "batch_seen": "B-4471", "block_test": "no"}, "block_not_confirmed", "held 25, block_test no"),
+    ({"sold": 25}, "sold_needs_till", "sold 25, sold_by_till 0"),
+    ({"sold": 25, "sold_source": "estimate"}, "sold_needs_till", "sold 25, sold_by_till 0"),
 ])
 def test_every_missing_piece_of_evidence_is_named(client, db, recall, assert_balance, raw, code, reason):
     res = _corner(client, db, **raw)
     assert (res["accepted"], res["code"], res["reason"]) == (False, code, reason)
-    assert res["atlas_error"]["code"] == 121
+    assert res["atlas_error"]["code"] == 121 and code in CHALLENGE_CODES
     assert_balance(RID)
 
 
-def test_fixed_with_the_fixed_version_and_a_sounder_that_rang_settles_the_party(client, db, recall, assert_balance):
-    assert _corner(client, db, on_shelf=25, sold_source="2.4", block_test=False)["accepted"]
-    fixed = claim(client, db, "corner-mart", attempt="att_cp2", received_qty=25, held=25,
-                  sold_source="2.5", block_test=True)
-    assert fixed["accepted"] and fixed["open_units"] == 135       # 120 not called yet + the dispute
+def test_held_with_the_batch_and_a_refused_sale_settles_the_party(client, db, recall, assert_balance):
+    assert _corner(client, db, on_shelf=25, batch_seen="B-4471", block_test=False)["accepted"]
+    pulled = claim(client, db, "corner-mart", attempt="att_cp2", received_qty=25, held=25, batch_seen="B-4471",
+                   block_test=True)
+    assert pulled["accepted"] and pulled["open_units"] == 135     # 120 not called yet + the dispute
     cp = party(db, "corner-mart")
     assert (cp["on_shelf"], cp["held"], cp["removal_check_at"]) == (0, 25, None)
     assert_balance(RID)
 
 
 def test_a_check_the_claim_leaves_out_keeps_its_earlier_answer(client, db, recall, assert_balance):
-    assert _corner(client, db, on_shelf=25, batch_seen="B-4471", sold_source="2.5", block_test=True)["accepted"]
-    # A later count without the checks still rests on them: fixed is allowed.
+    assert _corner(client, db, on_shelf=25, **HELD)["accepted"]
+    # A later count without the checks still rests on them: held is allowed.
     res = claim(client, db, "corner-mart", attempt="att_cp3", received_qty=25, held=25)
     assert res["accepted"]
-    assert (party(db, "corner-mart")["sold_source"], party(db, "corner-mart")["held"]) == ("2.5", 25)
+    assert (party(db, "corner-mart")["batch_seen"], party(db, "corner-mart")["held"]) == ("B-4471", 25)
     assert_balance(RID)
 
 
-def test_a_connected_panel_without_a_pass_keeps_its_panel_installed(client, db, recall, assert_balance):
-    assert _corner(client, db, on_shelf=25, sold_source="2.4", block_test=False)["accepted"]
+def test_37_the_stock_record_outranks_a_phone_claim_of_all_pulled(client, db, recall, assert_balance):
+    """Spec test 37 at the claim path: while the linked store's stock record
+    shows a tin on the shelf, "all pulled" is refused by Atlas with the two
+    values; once the record shows it moved, the same claim is accepted."""
+    assert _corner(client, db, on_shelf=25, batch_seen="B-4471", block_test=False)["accepted"]
     db.parties.update_one({"recall_id": RID, "party_id": "corner-mart"}, {"$set": {"system_on_shelf": 1}})
-    res = claim(client, db, "corner-mart", attempt="att_cp4", received_qty=25, held=25, sold_source="2.5",
-                block_test=True)
-    assert (res["accepted"], res["code"]) == (False, "panel_not_fixed")
+    res = claim(client, db, "corner-mart", attempt="att_cp4", received_qty=25, held=25, **HELD)
+    assert (res["accepted"], res["code"]) == (False, "stock_record_on_shelf")
     assert res["values"] == {"on_shelf": 0, "system_on_shelf": 1}
-    # The earlier accepted answers (2.4, no sound) cannot carry a fixed tin either.
-    assert claim(client, db, "corner-mart", attempt="att_cp4", received_qty=25, on_shelf=1,
-                 held=24)["code"] == "version_affected"
-    ok = claim(client, db, "corner-mart", attempt="att_cp4", received_qty=25, on_shelf=1, held=24,
-               sold_source="2.5", block_test=True)
+    assert res["reason"] == "on_shelf 0, system_on_shelf 1"
+    db.parties.update_one({"recall_id": RID, "party_id": "corner-mart"},
+                          {"$set": {"system_on_shelf": 0, "held_by_system": 1}})
+    ok = claim(client, db, "corner-mart", attempt="att_cp5", received_qty=25, held=25, **HELD)
     assert ok["accepted"]
+    assert_balance(RID)
+
+
+def test_sold_up_to_the_till_needs_no_report(client, db, recall, assert_balance):
+    db.parties.update_one({"recall_id": RID, "party_id": "lakeside-foods"}, {"$set": {"sold_by_till": 20}})
+    assert claim(client, db, "lakeside-foods", sold=20, held=60, **HELD)["accepted"]
+    res = claim(client, db, "lakeside-foods", attempt="att_more", sold=21, held=59, **HELD)
+    assert (res["code"], res["values"]) == ("sold_needs_till", {"sold": 21, "sold_by_till": 20})
+    assert claim(client, db, "lakeside-foods", attempt="att_more", sold=21, held=59, **TILL, **HELD)["accepted"]
     assert_balance(RID)

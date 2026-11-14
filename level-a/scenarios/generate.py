@@ -2,32 +2,37 @@
 
     python scenarios/generate.py --seed 20261114 [--out PATH]
 
-Batch B-4471 of Maple Farm milk powder 800 g, 2,400 tins. Five parties
-are on the shipment records: the three stores of the live slice (Harbour
-Fire 40, Queen St Grocer 120, Lakeside Foods 80, with their recall_1
-scripts) and two distributors (North 1,300, East 860) that sold everything
-to 21 stores listed in their order systems. Six forwarders (stores
-that on_shelf tins at buildings, or passed them to another store) name
-14 parties on no list: Corner Mart from the slice, 12 more building
-owners and one further store. One chain runs three hops below the
-shipment records (Distributor North -> Birchmount Fire Protection -> Juniper
-Lane Alarm -> Willow Creek Towers). The 36 simulated parties each have a
-behaviour profile, a ground truth that conserves, and the profile's
-parameters (levela/providers/profiles.py plays them). Every store
-follows a fix script: its tins are on_shelf on software 2.3 or 2.4 at
-first, and the store updates them to 2.5 two to four simulated days into
-the run. The 24 connected tins sit at stores' sites; three of them
-fail their monthly test on day 0 (the signal), and Corner Mart' one is
-the simulated tin page.
+Batch B-4471 of Maple Farm milk powder 800 g, 2,400 tins (spec "Scenario at
+scale"). Five parties are on the shipment records: the three stores of the
+live slice (Harbour Market 40, Queen St Grocer 120, Lakeside Foods 80, with
+their recall_1 scripts) and two distributors (North 1,300, East 860) that sold
+everything to 21 accounts listed in their order systems: 20 stores and
+Summit Foods, a six-store chain that answers through its own copy of the
+agent (120 tins from East). Six forwarders (stores that passed part of their
+stock to other stores) name 14 stores on no list: Corner Mart from the slice
+and 13 more. One chain runs three hops below the shipment records
+(Distributor North -> Birchmount Fresh Market -> Juniper Lane Variety ->
+Willow Creek Convenience). The 36 simulated parties each have a behaviour
+profile, a ground truth that conserves, and the profile's parameters
+(levela/providers/profiles.py plays them). Every store follows a removal
+script: its tins are on the shelf when it first hears of the recall, and
+held four to twelve simulated hours later, after staff pull them.
+
+The scenario also carries the store records that start the recall and prove
+removals (spec "Store records"): the three complaints of simulated day 0,
+about tins bought at three stores of the run, and the 14 connected stores
+(Corner Mart, whose till and stock record are the simulated store page, and
+13 more), each with its connector's store label and its baseline.
 
 Names and the shape of the graph are written out below; the seed only picks
-the numbers (quantities, hours, versions) and the fictional phone numbers.
-The generator uses its own small PRNG (splitmix64) rather than `random`, so
-every Python version writes the same file. check() refuses to write a
-scenario that breaks any invariant the run depends on: conservation for every
-party and for the whole batch, the profile counts, the order system totals,
-the one three-hop chain, short receivers downstream of a forwarder that
-corrects itself on follow-up, the connected tins, fictional phones only.
+the numbers (quantities, hours) and the fictional phone numbers. The
+generator uses its own small PRNG (splitmix64) rather than `random`, so every
+Python version writes the same file. check() refuses to write a scenario that
+breaks any invariant the run depends on: conservation for every party and for
+the whole batch, the profile counts, the order system totals, the one
+three-hop chain, short receivers downstream of a forwarder that corrects
+itself on follow-up, the removal scripts, the store records, fictional phones
+only.
 """
 from __future__ import annotations
 
@@ -64,150 +69,164 @@ ORDER_SYSTEM_VENDOR = "Kestrel OrderDesk"
 OTHER_BATCH = "B-4480"            # the batch the demo's question asks about
 AREA_CODES = ("416", "647", "437", "905", "289", "365")
 FICTIONAL_PHONE = r"^\+1(416|647|437|905|289|365)55501\d\d$"
-SERIAL_PREFIX = "D7-4471-"
-CORNER_PANEL = {"serial": "D7-4471-0193", "site_label": "Corner Mart, Tower 2"}
-# The three connected tins that fail their monthly test on day 0, one per site.
-SIGNAL_SITES = ("Maple Court", "Bayview Annex", "Spadina Works")
-CONNECTED_PANELS = 24
-# A store's store updates its tins this many simulated days into the run.
-FIX_DAYS = (2.0, 4.0)
+# A store's staff pull its tins this many simulated hours after it hears of the recall.
+REMOVAL_HOURS = (4.0, 12.0)
 
-PROFILE_COUNTS = {"straight": 14, "no_answer": 5, "callback": 3, "over_reporter": 3, "reviser": 2,
-                  "forwarder": 6, "short_receiver": 2, "unreachable": 1}
+PROFILE_COUNTS = {"straight": 13, "no_answer": 5, "callback": 3, "over_reporter": 3, "reviser": 2,
+                  "forwarder": 6, "short_receiver": 2, "unreachable": 1, "own_copy": 1}
 SLICE_PROFILES = {"queen-st-grocer": "forwarder", "lakeside-foods": "straight"}
 DISPUTED_SLICE_UNITS = 15       # Queen St says 40 went to Corner Mart, Corner Mart says 25
-SLICE_AWAITING_FIX = 25         # Corner Mart: all 25 on_shelf, the display shows 2.4
+SLICE_ON_SHELF = 25             # Corner Mart: all 25 still on the shelf
+
+# Summit Foods, the chain that runs its own copy of the agent (spec "Sub-recall,
+# agent to agent"): one of East's accounts, 120 tins. Its truth is the spec's
+# report at the end of the run: 31 sold, 22 returned, the rest pulled.
+OWN_COPY = {"name": "Summit Foods", "received": 120, "sold": 31, "returned": 22}
 
 DISTRIBUTORS = [
     {"party_id": "dist-north", "name": "Distributor North", "order_system": "north", "prefix": "N",
      "shipped_in": 1300, "delivery_note": "DN-48216",
-     "profile": "Regional fire and security distributor serving stores north and west of the city. Ships "
-                "tins by the pallet every week. Holds and account lists go through its Kestrel OrderDesk account."},
+     "profile": "Regional grocery distributor serving stores north and west of the city. Ships milk powder by "
+                "the pallet every week. Holds and account lists go through its Kestrel OrderDesk account."},
     {"party_id": "dist-east", "name": "Distributor East", "order_system": "east", "prefix": "E",
      "shipped_in": 860, "delivery_note": "DN-48217",
-     "profile": "Regional fire and security distributor serving stores east of the city, out to Durham. "
-                "Ships tins by the pallet twice a month. Holds and account lists go through its Kestrel "
-                "OrderDesk account."},
+     "profile": "Regional grocery distributor serving stores east of the city, out to Durham. Ships milk powder "
+                "by the pallet twice a month. Holds and account lists go through its Kestrel OrderDesk account."},
 ]
 
-# Distributor accounts, all stores (tier 2): (order system, name, profile, variant, where).
+# Distributor accounts (tier 2): (order system, name, profile, variant, where).
 ACCOUNTS = [
-    ("north", "Birchmount Fire Protection", "forwarder", None,
-     "Fire alarm contractor on Birchmount Rd in Scarborough with a warehouse and two install crews"),
-    ("north", "Pinecrest Alarm Services", "forwarder", None,
-     "Alarm store on Pinecrest Ave in North York that works for property managers"),
-    ("north", "Tallpine Fire & Safety", "unreachable", None,
-     "One-van fire safety contractor on a rural route north of the city"),
-    ("north", "Morrow Avenue Alarms", "no_answer", "hours",
-     "Small alarm store on Morrow Ave in the Junction Triangle"),
-    ("north", "Elmvale Fire Systems", "no_answer", "attempt",
-     "Fire systems contractor on Elmvale Rd in East York"),
-    ("north", "Cedarbrae Life Safety", "callback", None,
-     "Life safety contractor in the Cedarbrae business park in Scarborough"),
-    ("north", "Ridgeway Alarm Co", "over_reporter", None,
-     "Alarm and intercom store on Ridgeway Dr in Etobicoke"),
-    ("north", "Glenholme Fire Services", "reviser", None,
-     "Family-run fire services firm on Glenholme Ave in Oakwood Village"),
-    ("north", "Lambton Mills Alarm", "straight", None,
-     "Alarm store on Old Dundas St by the Humber River"),
-    ("north", "Bloor Alarm", "straight", None,
-     "Fire alarm contractor on Bloor St West with a busy service desk"),
-    ("north", "Humber Bay Fire", "straight", None,
-     "Fire alarm store working the condo towers of Humber Bay"),
-    ("north", "Silverthorn Protection", "straight", None,
-     "Fire protection contractor on Silverthorn Ave near Eglinton Ave West"),
-    ("east", "Fernbrook Fire Supply", "forwarder", None,
-     "Fire alarm contractor in an industrial unit in Pickering that installs for housing providers"),
-    ("east", "Annex Fire", "forwarder", None,
-     "Fire alarm store in the Annex that services lofts and offices downtown"),
-    ("east", "Brookbanks Alarm", "no_answer", "hours",
-     "Small alarm store on Brookbanks Dr in Don Mills"),
-    ("east", "Thistledown Fire", "callback", None,
-     "Fire alarm contractor in a strip plaza in Thistletown, Etobicoke"),
-    ("east", "Cliffcrest Alarm Systems", "over_reporter", None,
-     "Alarm systems store on Kingston Rd in Cliffcrest"),
-    ("east", "Wexford Fire & Security", "straight", None,
-     "Fire and security contractor on Lawrence Ave East in Wexford"),
-    ("east", "Guildwood Alarm", "straight", None,
-     "Owner-run alarm store in Guildwood Village"),
-    ("east", "Orchard Park Fire", "straight", None,
-     "Fire alarm contractor on Orchard Park Blvd in Ajax"),
-    ("east", "Highland Creek Protection", "straight", None,
-     "Fire protection contractor on Old Kingston Rd in Highland Creek"),
+    ("north", "Birchmount Fresh Market", "forwarder", None,
+     "Grocer on Birchmount Rd in Scarborough with a warehouse that supplies small stores nearby"),
+    ("north", "Pinecrest Grocers", "forwarder", None,
+     "Family grocer on Pinecrest Ave in North York that sells stock on to corner stores"),
+    ("north", "Tallpine General Store", "unreachable", None,
+     "General store on a rural route north of the city"),
+    ("north", "Morrow Avenue Market", "no_answer", "hours",
+     "Small market on Morrow Ave in the Junction Triangle"),
+    ("north", "Elmvale Foods", "no_answer", "attempt",
+     "Neighbourhood food store on Elmvale Rd in East York"),
+    ("north", "Cedarbrae Supermarket", "callback", None,
+     "Supermarket in the Cedarbrae plaza in Scarborough"),
+    ("north", "Ridgeway Food Co", "over_reporter", None,
+     "Food store on Ridgeway Dr in Etobicoke"),
+    ("north", "Glenholme Grocery", "reviser", None,
+     "Family-run grocery on Glenholme Ave in Oakwood Village"),
+    ("north", "Lambton Mills Market", "straight", None,
+     "Market on Old Dundas St by the Humber River"),
+    ("north", "Bloor Foods", "straight", None,
+     "Grocer on Bloor St West with a busy front end"),
+    ("north", "Humber Bay Grocer", "straight", None,
+     "Grocer serving the condo towers of Humber Bay"),
+    ("north", "Silverthorn Market", "straight", None,
+     "Market on Silverthorn Ave near Eglinton Ave West"),
+    ("east", "Fernbrook Food Town", "forwarder", None,
+     "Grocer in Pickering that sells stock on to small stores in the village"),
+    ("east", "Annex Grocer", "forwarder", None,
+     "Grocer in the Annex that supplies corner stores downtown"),
+    ("east", "Brookbanks Market", "no_answer", "hours",
+     "Small market on Brookbanks Dr in Don Mills"),
+    ("east", "Thistletown Foods", "callback", None,
+     "Food store in a strip plaza in Thistletown, Etobicoke"),
+    ("east", "Cliffcrest Grocery", "over_reporter", None,
+     "Grocery on Kingston Rd in Cliffcrest"),
+    ("east", OWN_COPY["name"], "own_copy", None,
+     "Six-store grocery chain in Durham Region with its own depot, which runs its own copy of the agent"),
+    ("east", "Guildwood Market", "straight", None,
+     "Owner-run market in Guildwood Village"),
+    ("east", "Orchard Park Foods", "straight", None,
+     "Food store on Orchard Park Blvd in Ajax"),
+    ("east", "Highland Creek Grocer", "straight", None,
+     "Grocer on Old Kingston Rd in Highland Creek"),
 ]
 
-# Parties on no list (tier 3): (name, type, profile, variant, sender name, where, aliases).
+# Stores on no list (tier 3): (name, profile, variant, sender name, where, aliases).
 PARTIES = [
-    ("Juniper Lane Alarm", "store", "forwarder", None, "Birchmount Fire Protection",
-     "Small alarm store on Juniper Lane in Scarborough that subcontracts for larger firms",
-     ["juniper lane alarm", "the juniper lane alarm", "juniper lane", "juniper alarm"]),
-    ("Willow Creek Towers", "owner", "straight", None, "Juniper Lane Alarm",
-     "Two residential towers by Willow Creek park in Scarborough",
-     ["willow creek towers", "the willow creek towers", "willow creek", "willow creek tower"]),
-    ("Bayview Annex", "owner", "no_answer", "hours", "Birchmount Fire Protection",
-     "Office and retail annex at the top of Bayview Ave",
-     ["bayview annex", "the bayview annex", "bayview", "bay view annex"]),
-    ("Larkspur Residences", "owner", "short_receiver", None, "Birchmount Fire Protection",
-     "Seniors' residence on Larkspur Ave with three wings",
-     ["larkspur residences", "the larkspur residences", "larkspur", "larkspur residence"]),
-    ("Kingsway Apartments", "owner", "callback", None, "Pinecrest Alarm Services",
-     "Apartment buildings on Bloor St West in the Kingsway",
-     ["kingsway apartments", "the kingsway apartments", "kingsway", "kingsway apts"]),
-    ("Old Mill Condominiums", "owner", "short_receiver", None, "Pinecrest Alarm Services",
-     "Condominium buildings near the Old Mill bridge",
-     ["old mill condominiums", "the old mill condominiums", "old mill condos", "oldmill condominiums"]),
-    ("Rosehill Court", "owner", "over_reporter", None, "Pinecrest Alarm Services",
-     "Housing co-operative on Rosehill Ave by the reservoir park",
-     ["rosehill court", "the rosehill court", "rosehill", "rose hill court"]),
-    ("Harrow Street Lofts", "owner", "reviser", None, "Fernbrook Fire Supply",
-     "Converted warehouse lofts on Harrow St in Pickering village",
-     ["harrow street lofts", "the harrow street lofts", "harrow st lofts", "harrow lofts"]),
-    ("Clover Hill Plaza", "owner", "no_answer", "attempt", "Fernbrook Fire Supply",
-     "Shopping plaza and offices at the Clover Hill crossroads",
-     ["clover hill plaza", "the clover hill plaza", "clover hill", "cloverhill plaza"]),
-    ("Maple Court", "owner", "straight", None, "Fernbrook Fire Supply",
-     "Mid-rise residential court on Maple Ave in Pickering",
-     ["maple court", "the maple court", "maple court apartments", "maple ct"]),
-    ("Dundas Lofts", "owner", "straight", None, "Annex Fire",
-     "Loft building on Dundas St West downtown",
-     ["dundas lofts", "the dundas lofts", "dundas loft", "dundas st lofts"]),
-    ("Spadina Works", "owner", "straight", None, "Annex Fire",
-     "Office building in a converted factory on Spadina Ave",
-     ["spadina works", "the spadina works", "spadina", "spadina work"]),
-    ("Gable Street Housing Co-op", "owner", "straight", None, "Annex Fire",
-     "Housing co-operative of four low-rise buildings on Gable St in Ajax",
-     ["gable street housing co-op", "the gable street housing co-op", "gable street co-op",
-      "gable st housing co-op"]),
+    ("Juniper Lane Variety", "forwarder", None, "Birchmount Fresh Market",
+     "Variety store on Juniper Lane in Scarborough that sells stock on to a neighbour",
+     ["juniper lane variety", "the juniper lane variety", "juniper lane", "juniper variety"]),
+    ("Willow Creek Convenience", "straight", None, "Juniper Lane Variety",
+     "Convenience store by Willow Creek park in Scarborough",
+     ["willow creek convenience", "the willow creek convenience", "willow creek", "willow creek store"]),
+    ("Bayview Grocer", "no_answer", "hours", "Birchmount Fresh Market",
+     "Grocer at the top of Bayview Ave",
+     ["bayview grocer", "the bayview grocer", "bayview", "bay view grocer"]),
+    ("Larkspur Corner Store", "short_receiver", None, "Birchmount Fresh Market",
+     "Corner store on Larkspur Ave that checks every delivery note",
+     ["larkspur corner store", "the larkspur corner store", "larkspur", "larkspur store"]),
+    ("Kingsway Mini Mart", "callback", None, "Pinecrest Grocers",
+     "Mini mart on Bloor St West in the Kingsway",
+     ["kingsway mini mart", "the kingsway mini mart", "kingsway", "kingsway mart"]),
+    ("Old Mill Market", "short_receiver", None, "Pinecrest Grocers",
+     "Small market near the Old Mill bridge",
+     ["old mill market", "the old mill market", "old mill", "oldmill market"]),
+    ("Rosehill Foods", "over_reporter", None, "Pinecrest Grocers",
+     "Food store on Rosehill Ave by the reservoir park",
+     ["rosehill foods", "the rosehill foods", "rosehill", "rose hill foods"]),
+    ("Harrow Street Grocer", "reviser", None, "Fernbrook Food Town",
+     "Grocer on Harrow St in Pickering village",
+     ["harrow street grocer", "the harrow street grocer", "harrow st grocer", "harrow grocer"]),
+    ("Clover Hill Variety", "no_answer", "attempt", "Fernbrook Food Town",
+     "Variety store at the Clover Hill crossroads",
+     ["clover hill variety", "the clover hill variety", "clover hill", "cloverhill variety"]),
+    ("Maple Court Market", "straight", None, "Fernbrook Food Town",
+     "Market on Maple Ave in Pickering",
+     ["maple court market", "the maple court market", "maple court mkt", "maple ct market"]),
+    ("Dundas Mini Mart", "straight", None, "Annex Grocer",
+     "Mini mart on Dundas St West downtown",
+     ["dundas mini mart", "the dundas mini mart", "dundas mart", "dundas st mini mart"]),
+    ("Spadina Foods", "straight", None, "Annex Grocer",
+     "Food store on Spadina Ave",
+     ["spadina foods", "the spadina foods", "spadina", "spadina food"]),
+    ("Gable Street Co-op Grocery", "straight", None, "Annex Grocer",
+     "Co-operative grocery on Gable St in Ajax",
+     ["gable street co-op grocery", "the gable street co-op grocery", "gable street co-op",
+      "gable st co-op grocery"]),
 ]
 
-# What a forwarder calls a party when it is not the party's own name.
-SAID_AS = {"Gable Street Housing Co-op": "Gable Street Co-op", "Maple Court": "Maple Court Apartments"}
+# What a forwarder calls a store when it is not the store's own name.
+SAID_AS = {"Gable Street Co-op Grocery": "Gable Street Co-op", "Maple Court Market": "Maple Court Mkt"}
 # The forwarder that passes its tins on gets the biggest share of its sender's forwards.
 ONWARD_WEIGHT = 1.6
-# Building names for a store's connected tins (its site labels).
-BUILDINGS = ("Tower 1", "Tower 2", "North Wing", "South Wing", "Block A", "Block B")
+
+# Spec "In the run", simulated day 0: three complaints about tins bought at
+# three stores, each a seal fault on batch B-4471 (the signal). The stores
+# are parties of the run; the shopper's words name them.
+COMPLAINTS = [
+    {"_id": "c-0007", "bought_at": "Maple Court Market", "reason_code": "SEAL_BROKEN", "at": 1.5,
+     "text": "the foil under the lid was torn when I opened it"},
+    {"_id": "c-0011", "bought_at": "Bayview Grocer", "reason_code": None, "at": 4.0,
+     "text": "lid did not seal, the powder was hard and lumpy inside"},
+    {"_id": "c-0012", "bought_at": "Spadina Foods", "reason_code": None, "at": 7.5,
+     "text": "lid was lifted, powder clumped and smelled sour"},
+]
+DEFECT = "seal_fault"
+# Stores whose till and stock record report to the recall (spec screen: "Stores connected 14").
+CONNECTED_STORES = 14
+CORNER_LABEL = "Corner Mart"
 
 HABITS = {
-    ("straight", None): "The office answers the phone during working hours and keeps tin counts in its job "
-                        "system.",
-    ("no_answer", "hours"): "The technicians are out on site in the morning; the office phone is only answered "
-                            "between {start}:00 and {end}:00.",
-    ("no_answer", "attempt"): "One person runs the office alone; the phone often rings out or is engaged and is "
+    ("straight", None): "The front-end manager answers the phone during opening hours and reads counts off the "
+                        "till.",
+    ("no_answer", "hours"): "Staff are on the floor in the morning; the phone is only answered between {start}:00 "
+                            "and {end}:00.",
+    ("no_answer", "attempt"): "One person runs the store alone; the phone often rings out or is engaged and is "
                               "usually picked up only after a couple of tries.",
-    ("callback", None): "The manager keeps the job sheets in the site office and asks to be called back the next "
+    ("callback", None): "The manager keeps the delivery notes in the office and asks to be called back the next "
                         "morning at {hour}:00.",
     ("over_reporter", None): "Counts are read off a shared stock sheet, and the first figure given is often from "
                              "the wrong line.",
-    ("reviser", None): "Keeps careful paperwork and sends a correction when tins are returned after a call.",
-    ("forwarder", None): "Installs tins at buildings for property managers, and passes spare tins to smaller "
-                         "stores, none of them on a distributor's list.",
-    ("short_receiver", None): "Has its tins on_shelf by a local contractor and checks every invoice against the "
-                              "tins on site.",
+    ("reviser", None): "Keeps careful paperwork and sends a correction when tins go back after a call.",
+    ("forwarder", None): "Passes spare tins to smaller stores, none of them on a distributor's list.",
+    ("short_receiver", None): "Buys from a local grocer and checks every delivery note against the tins that "
+                              "arrived.",
     ("unreachable", None): "The line is unreliable and messages go unanswered; the distributor's sales rep visits "
                            "weekly and knows the stock.",
+    ("own_copy", None): "Runs its own copy of the recall agent on its own records; its buyer list never leaves "
+                        "the chain.",
 }
 
-BUCKETS = ("held", "on_shelf", "held", "returned")
+BUCKETS = ("sold", "on_shelf", "held", "returned")
 
 
 class ScenarioInvalid(ValueError):
@@ -253,15 +272,12 @@ def split(total: int, weights: list[float]) -> list[int]:
     return out
 
 
-def bucket_split(rng: Rng, kept: int, party_type: str) -> dict:
-    """What a party did with the tins it kept. An store holds them in
-    stock or has sent them back; a store has them on_shelf, with a
-    few spares in stock and sometimes a few returned."""
-    if party_type == "store":
-        weights = [rng.uniform(0.04, 0.12), rng.uniform(0.8, 0.95), 0.0,
-                   rng.uniform(0.03, 0.08) if rng.random() < 0.3 else 0.0]
-    else:
-        weights = [rng.uniform(0.4, 0.8), 0.0, 0.0, rng.uniform(0.2, 0.6)]
+def bucket_split(rng: Rng, kept: int) -> dict:
+    """What a store did with the tins it kept, when it first hears of the
+    recall: some sold to shoppers, most still on the shelf, and sometimes a
+    few already sent back. None are held yet: that is the removal script."""
+    weights = [rng.uniform(0.2, 0.45), rng.uniform(0.45, 0.75), 0.0,
+               rng.uniform(0.03, 0.08) if rng.random() < 0.3 else 0.0]
     return dict(zip(BUCKETS, split(kept, weights)))
 
 
@@ -301,8 +317,8 @@ def last_claim(replies: list) -> dict:
 
 def slice_truths(sim: dict) -> dict:
     """The slice parties' truths at the end of the long run, read from their
-    recall_1 scripts (the last answer each party gives; Corner Mart is
-    never updated in the long run)."""
+    recall_1 scripts (the last answer each party gives; Corner Mart's tins
+    stay on the shelf in the long run)."""
     return {"harbour-market": last_claim(sim["harbour-market"]["initial"]),
             "queen-st-grocer": last_claim(sim["queen-st-grocer"]["dispute_followup"]),
             "lakeside-foods": last_claim(sim["lakeside-foods"]["initial"]),
@@ -310,9 +326,9 @@ def slice_truths(sim: dict) -> dict:
 
 
 def long_run_sim(base: dict) -> dict:
-    """recall_1's scripts without Corner Mart' removal check: in the long
-    run its tins stay on_shelf on 2.4, so a removal check replays its first
-    answer and the slice ends with 25 tins awaiting a fix."""
+    """recall_1's scripts without Corner Mart's removal check: in the long run
+    its tins stay on the shelf, so a removal check replays its first answer
+    and the slice ends with 25 tins still on the shelf."""
     sim = json.loads(json.dumps(base["sim"]))
     sim["corner-mart"].pop("removal_check", None)
     return sim
@@ -331,7 +347,7 @@ def build(seed: int = SEED) -> dict:
     accounts = _accounts_shipped(rng)
     parties = _flows(rng, accounts)
     nodes = {**accounts, **parties}
-    _fix_scripts(rng, nodes, recall)
+    _removal_scripts(rng, nodes, recall)
     params = _params(rng, nodes)
     for node, phone in zip(nodes.values(), phone_book(rng, len(nodes))):
         node["phone"] = phone
@@ -346,10 +362,10 @@ def build(seed: int = SEED) -> dict:
         order_systems[node["order_system"]]["accounts"].append({
             "account": f"{dist['prefix']}-{counters[node['order_system']]:03d}", "name": node["name"],
             "phone": node["phone"], "qty_shipped": node["truth"]["received"],
-            "qty_in_stock": node["truth"]["held"]})
+            "qty_in_stock": node["truth"]["on_shelf"]})
 
     directory = [corner] + [{
-        "party_id": sid, "name": node["name"], "aliases": node["aliases"], "type": node["type"], "tier": 3,
+        "party_id": sid, "name": node["name"], "aliases": node["aliases"], "type": "store", "tier": 3,
         "channel": "sim", "phone": node["phone"], "profile": _profile_text(node, params[sid]),
     } for sid, node in parties.items()]
 
@@ -361,10 +377,12 @@ def build(seed: int = SEED) -> dict:
                           "truth": {**_truth_from_claim(truths[sid], base), "other_batches": batches[sid]},
                           "params": {}}
     for sid, node in nodes.items():
-        sim_truth[sid] = {"name": node["name"], "type": node["type"], "tier": node["tier"],
+        sim_truth[sid] = {"name": node["name"], "type": "store", "tier": node["tier"],
                           "upstream": node["upstream"], "profile": node["profile"],
                           "description": _profile_text(node, params[sid]),
                           "truth": {**node["truth"], "other_batches": batches[sid]}, "params": params[sid]}
+        if node["profile"] == "own_copy":
+            sim_truth[sid]["channel"] = "agent"
 
     shipment_parties = slice_parties + [{
         "party_id": d["party_id"], "name": d["name"], "type": "distributor", "tier": 1, "channel": "order_system",
@@ -376,29 +394,30 @@ def build(seed: int = SEED) -> dict:
     return {
         "scenario_id": "recall_long",
         "synthetic": True,
-        "about": "The long run. Batch B-4471 of B-4471 fire alarm tins, 2,400 tins, 40 parties over 10 "
-                 "simulated days: 5 on the shipment records, 21 stores found in the distributors' order "
-                 "systems, 14 named by forwarders (12 stores, one more store and Corner "
-                 "Properties). 36 are simulated parties with behaviour profiles; Harbour Market and Corner "
-                 "Properties answer real phones in the demo. Every store's tins are on_shelf at "
-                 "first and fixed two to four simulated days in. Ends with only the slice's tins open (15 "
-                 "disputed, 25 on_shelf and not fixed at Corner Mart), so the recall cannot close.",
+        "about": "The long run. Batch B-4471 of Maple Farm milk powder 800 g, 2,400 tins, 40 parties over 10 "
+                 "simulated days: 5 on the shipment records, 21 accounts found in the distributors' order systems "
+                 "(20 stores and Summit Foods, which runs its own copy of the agent), and 14 stores named by "
+                 "forwarders, Corner Mart among them. 36 are simulated parties with behaviour profiles; Harbour "
+                 "Market and Corner Mart answer real phones in the demo. Every store's tins are on the shelf when "
+                 "it hears of the recall and held four to twelve simulated hours later. Ends with only the slice's "
+                 "tins open (15 disputed, 25 still on the shelf at Corner Mart), so the recall cannot close.",
         "seed": seed,
         "recall": recall,
         "parties": shipment_parties,
         "directory": directory,
         "order_systems": order_systems,
-        "connected_panels": _connected_panels(rng, nodes, recall),
+        "complaints": _complaints(recall),
+        "store_systems": _store_systems(rng, nodes),
         "sim": sim,
         "sim_truth": sim_truth,
         "schedule": json.loads(json.dumps(SCHEDULE)),
         "expected": {
             "note": "Every simulated party's truth conserves and the batch adds up to units_total (checked by "
                     "generate.py before writing). final: what the run ends with when the slice's follow-ups are "
-                    "manual (demo): the Queen St Grocer -> Corner Mart dispute stays open and Corner "
-                    "Properties' 25 tins stay on_shelf on 2.4.",
-            "final": {"open_units": DISPUTED_SLICE_UNITS + SLICE_AWAITING_FIX, "disputed_units": DISPUTED_SLICE_UNITS,
-                      "on_shelf": SLICE_AWAITING_FIX, "parties": total, "at_start": len(shipment_parties)},
+                    "manual (demo): the Queen St Grocer -> Corner Mart dispute stays open and Corner Mart's 25 "
+                    "tins stay on the shelf.",
+            "final": {"open_units": DISPUTED_SLICE_UNITS + SLICE_ON_SHELF, "disputed_units": DISPUTED_SLICE_UNITS,
+                      "on_shelf": SLICE_ON_SHELF, "parties": total, "at_start": len(shipment_parties)},
             "parties_by_tier": {"1": len(shipment_parties), "2": len(accounts), "3": len(parties) + 1},
             "profiles": dict(PROFILE_COUNTS),
         },
@@ -421,28 +440,39 @@ def _truth_from_claim(claim: dict, base: dict) -> dict:
 
 
 def _accounts_shipped(rng: Rng) -> dict:
-    """Each distributor's tins over its accounts; forwarders get the big shares."""
+    """Each distributor's tins over its accounts; forwarders get the big
+    shares and Summit Foods its fixed 120."""
     out = {}
     for dist in DISTRIBUTORS:
         rows = [a for a in ACCOUNTS if a[0] == dist["order_system"]]
-        weights = [1.8 if a[2] == "forwarder" else rng.uniform(0.7, 1.3) for a in rows]
-        for (order_system, name, profile, variant, where), qty in zip(rows, split(dist["shipped_in"], weights)):
-            out[slugify(name)] = {"name": name, "type": "store", "order_system": order_system,
-                                  "profile": profile, "variant": variant, "where": where, "tier": 2,
-                                  "upstream": dist["party_id"], "truth": {"received": qty}}
+        fixed = sum(OWN_COPY["received"] for a in rows if a[2] == "own_copy")
+        shared = [a for a in rows if a[2] != "own_copy"]
+        weights = [1.8 if a[2] == "forwarder" else rng.uniform(0.7, 1.3) for a in shared]
+        qty = dict(zip((a[1] for a in shared), split(dist["shipped_in"] - fixed, weights)))
+        for order_system, name, profile, variant, where in rows:
+            received = OWN_COPY["received"] if profile == "own_copy" else qty[name]
+            out[slugify(name)] = {"name": name, "order_system": order_system, "profile": profile,
+                                  "variant": variant, "where": where, "tier": 2, "upstream": dist["party_id"],
+                                  "truth": {"received": received}}
     return out
 
 
 def _flows(rng: Rng, accounts: dict) -> dict:
-    """Every account's and party's forwards and buckets, in table order (a party
-    that forwards appears before the party it supplies). Returns the parties."""
-    parties = {slugify(s[0]): {"name": s[0], "type": s[1], "profile": s[2], "variant": s[3], "sender": s[4],
-                               "where": s[5], "aliases": s[6], "tier": 3, "upstream": slugify(s[4]), "truth": {}}
+    """Every account's and store's forwards and buckets, in table order (a
+    store that forwards appears before the store it supplies). Returns the
+    tier 3 stores."""
+    parties = {slugify(s[0]): {"name": s[0], "profile": s[1], "variant": s[2], "sender": s[3], "where": s[4],
+                               "aliases": s[5], "tier": 3, "upstream": slugify(s[3]), "truth": {}}
                for s in PARTIES}
     nodes = {**accounts, **parties}
     for sid, node in nodes.items():
         if "received" not in node["truth"]:
             node["truth"]["received"] = _received(nodes, sid)
+        if node["profile"] == "own_copy":
+            sold, returned = OWN_COPY["sold"], OWN_COPY["returned"]
+            node["truth"].update(sold=sold, on_shelf=node["truth"]["received"] - sold - returned, held=0,
+                                 returned=returned, forwards=[])
+            continue
         dests = [d for d, party in parties.items() if party["upstream"] == sid]
         forwards = []
         if dests:
@@ -453,7 +483,7 @@ def _flows(rng: Rng, accounts: dict) -> dict:
             forwards = [{"to_party_id": d, "to_name": SAID_AS.get(parties[d]["name"], parties[d]["name"]), "qty": q}
                         for d, q in zip(dests, split(total, weights))]
         kept = node["truth"]["received"] - sum(f["qty"] for f in forwards)
-        node["truth"].update(bucket_split(rng, kept, node["type"]))
+        node["truth"].update(bucket_split(rng, kept))
         node["truth"]["forwards"] = forwards
     return parties
 
@@ -463,22 +493,17 @@ def _received(nodes: dict, sid: str) -> int:
     return next(f["qty"] for f in sender["truth"]["forwards"] if f["to_party_id"] == sid)
 
 
-def _fix_scripts(rng: Rng, nodes: dict, recall: dict) -> None:
-    """Every store's fix script: on_shelf on an affected version at
-    first, updated to the fixed version FIX_DAYS into the run."""
-    start = SCHEDULE["sim_start"]
-    versions = recall["affected_batches"]
+def _removal_scripts(rng: Rng, nodes: dict, recall: dict) -> None:
+    """Every store's removal script: its tins are on the shelf when it hears
+    of the recall, and held REMOVAL_HOURS later, after staff pull them."""
     for node in nodes.values():
-        if node["type"] != "store":
-            continue
-        node["truth"]["fix"] = {
-            "at": round(start + 24.0 * rng.uniform(*FIX_DAYS), 1), "model": recall["model"],
-            "version_before": versions[rng.randint(0, len(versions) - 1)], "version_after": recall["action"]}
+        node["truth"]["removal"] = {"after_hours": round(rng.uniform(*REMOVAL_HOURS), 1),
+                                    "batch": recall["batch_code"]}
 
 
 def _params(rng: Rng, nodes: dict) -> dict:
     """Each profile's parameters. A short receiver's sender over-reports that
-    one forward on its first call (taking the tins from `held`) and
+    one forward on its first call (taking the tins from the shelf) and
     corrects it on the dispute follow-up."""
     params = {}
     for sid, node in nodes.items():
@@ -494,7 +519,7 @@ def _params(rng: Rng, nodes: dict) -> dict:
         elif profile == "over_reporter":
             p = {"over_report_by": 8 + rng.randint(0, 12)}
         elif profile == "reviser":
-            p = {"revise": {"after_hours": 48.0, "delta": max(1, min(10, truth["held"] // 2))}}
+            p = {"revise": {"after_hours": 48.0, "delta": max(1, min(10, truth["on_shelf"] // 2))}}
         elif profile == "unreachable":
             p = {"rep_reports_at": SCHEDULE["rep_report_at"], "form_after_hours": None}
         params[sid] = p
@@ -502,7 +527,7 @@ def _params(rng: Rng, nodes: dict) -> dict:
         if node["profile"] != "short_receiver":
             continue
         sender_id = node["upstream"]
-        extra = min(4 + rng.randint(0, 4), nodes[sender_id]["truth"]["held"])
+        extra = min(4 + rng.randint(0, 4), nodes[sender_id]["truth"]["on_shelf"])
         params[sid] = {"short_by": extra, "sender": sender_id}
         params[sender_id].setdefault("misreport", []).append({"to_party_id": sid, "extra": extra})
     return params
@@ -522,44 +547,34 @@ def _profile_text(node: dict, params: dict) -> str:
     return f"{node['where']}. " + habit.format(start=hours[0], end=hours[1], hour=params.get("callback_hour", 9))
 
 
-def _connected_panels(rng: Rng, nodes: dict, recall: dict) -> list[dict]:
-    """The 24 connected tins: Corner Mart' one (the simulated tin
-    page), one at each signal site, and the rest spread over the other
-    stores' sites, never more than an owner has on_shelf. Each
-    tin reports on its owner's version until the owner's fix, when it is
-    updated (`fixed_at`); the signal sites' tins fail on day 0."""
-    owners = {sid: n for sid, n in nodes.items() if n["type"] == "store"}
-    by_name = {n["name"]: sid for sid, n in owners.items()}
-    count = Counter({by_name[name]: 1 for name in SIGNAL_SITES})
-    others = sorted(set(owners) - set(count))
-    while sum(count.values()) < CONNECTED_PANELS - 1:
+def _complaints(recall: dict) -> list[dict]:
+    """The day-0 complaints, as the company's complaint form posts them."""
+    return [{**c, "batch_code": recall["batch_code"], "defect": DEFECT} for c in COMPLAINTS]
+
+
+def _store_systems(rng: Rng, nodes: dict) -> list[dict]:
+    """The connected stores: Corner Mart (the simulated store page), the three
+    stores the complaints name, and the rest drawn from the other stores.
+    Summit Foods is left out (its records answer through its own agent), and
+    so is the unreachable store. Each connector posts a baseline when it is
+    linked: tins received, sold so far and on the shelf, per the store's own
+    records (the truth when it first hears of the recall)."""
+    by_name = {n["name"]: sid for sid, n in nodes.items()}
+    chosen = [by_name[c["bought_at"]] for c in COMPLAINTS]
+    others = sorted(sid for sid, n in nodes.items()
+                    if sid not in chosen and n["profile"] not in ("own_copy", "unreachable"))
+    while len(chosen) < CONNECTED_STORES - 1:
         sid = others[rng.randint(0, len(others) - 1)]
-        if count[sid] < min(3, owners[sid]["truth"]["on_shelf"]):
-            count[sid] += 1
-    tins = [{"serial": CORNER_PANEL["serial"], "site_label": CORNER_PANEL["site_label"],
-               "party_id": "corner-mart", "model": recall["model"], "sw_version": "2.4", "fault": True,
-               "signal": False, "fixed_at": None}]
-    numbers = iter(sorted(rng.randint(1, 2399) for _ in range(CONNECTED_PANELS * 2)))
-    used = {CORNER_PANEL["serial"]}
-    for sid in sorted(count):
-        node = owners[sid]
-        for i in range(count[sid]):
-            serial = _serial(numbers, used)
-            signal = node["name"] in SIGNAL_SITES and i == 0
-            site = node["name"] if signal else f"{node['name']}, {BUILDINGS[i % len(BUILDINGS)]}"
-            tins.append({"serial": serial, "site_label": site, "party_id": sid, "model": recall["model"],
-                           "sw_version": node["truth"]["fix"]["version_before"], "fault": signal, "signal": signal,
-                           "fixed_at": node["truth"]["fix"]["at"]})
-    return sorted(tins, key=lambda p: p["serial"])
-
-
-def _serial(numbers, used: set) -> str:
-    for n in numbers:
-        serial = f"{SERIAL_PREFIX}{n:04d}"
-        if serial not in used:
-            used.add(serial)
-            return serial
-    raise ScenarioInvalid("ran out of serial numbers")
+        if sid not in chosen:
+            chosen.append(sid)
+    rows = [{"store_label": CORNER_LABEL, "party_id": "corner-mart", "connects": ["till", "stock"],
+             "simulated_page": True}]
+    for sid in sorted(chosen):
+        t = nodes[sid]["truth"]
+        rows.append({"store_label": nodes[sid]["name"], "party_id": sid, "connects": ["till", "stock"],
+                     "simulated_page": False,
+                     "baseline": {"received": t["received"], "sold": t["sold"], "on_shelf": t["on_shelf"]}})
+    return rows
 
 
 # ------------------------------------------------------------------ checks
@@ -568,7 +583,7 @@ def check(scn: dict) -> None:
     """Raise ScenarioInvalid listing every broken invariant."""
     errors: list[str] = []
     for rule in (_check_profiles, _check_order_systems, _check_conservation, _check_graph, _check_params,
-                 _check_fix_scripts, _check_panels, _check_contacts, _check_slice, _check_expected):
+                 _check_removal_scripts, _check_store_records, _check_contacts, _check_slice, _check_expected):
         try:
             errors.extend(rule(scn))
         except (KeyError, TypeError, ValueError, StopIteration, RecursionError) as exc:
@@ -621,7 +636,7 @@ def _check_order_systems(scn: dict) -> list[str]:
             if entry.get("upstream") != dists[order_system]["party_id"]:
                 errors.append(f"{a['name']} is not supplied by {dists[order_system]['party_id']}")
             if entry.get("type") != "store":
-                errors.append(f"{a['name']} must be an store")
+                errors.append(f"{a['name']} must be a store")
     if len({a["account"] for a in accounts}) != len(accounts):
         errors.append("order system account ids repeat")
     return errors
@@ -647,10 +662,11 @@ def _check_conservation(scn: dict) -> list[str]:
         if _inflow(scn, sid, entry) != _outflow(t):
             errors.append(f"{sid} does not conserve: in {_inflow(scn, sid, entry)}, out {_outflow(t)}")
     truths = slice_truths(scn["sim"])
-    held = sum(sum(int(e["truth"].get(b, 0)) for b in BUCKETS) for e in scn["sim_truth"].values())
-    held += sum(int(truths[s].get(b, 0)) for s in ("harbour-market", "corner-mart") for b in BUCKETS)
-    if held != scn["recall"]["units_total"]:
-        errors.append(f"the batch does not add up: {held} tins held, {scn['recall']['units_total']} shipped")
+    kept = sum(sum(int(e["truth"].get(b, 0)) for b in BUCKETS) for e in scn["sim_truth"].values())
+    kept += sum(int(truths[s].get(b, 0)) for s in ("harbour-market", "corner-mart") for b in BUCKETS)
+    if kept != scn["recall"]["units_total"]:
+        errors.append(f"the batch does not add up: {kept} tins accounted for, {scn['recall']['units_total']} "
+                      "shipped")
     shipped = sum(s["shipped_in"] for s in scn["parties"])
     if shipped != scn["recall"]["units_total"]:
         errors.append(f"shipment records total {shipped}, units_total {scn['recall']['units_total']}")
@@ -708,14 +724,19 @@ def _check_params(scn: dict) -> list[str]:
                 errors.append(f"{sid} must sit downstream of its simulated forwarder")
             elif len(lies) != 1 or lies[0]["extra"] != p.get("short_by") or not p.get("short_by"):
                 errors.append(f"{sid}'s short_by must match its sender's first-call over-report")
-            elif sender["truth"]["held"] < p["short_by"]:
-                errors.append(f"{p['sender']} holds too few in stock to over-report {p['short_by']} on the "
+            elif sender["truth"]["on_shelf"] < p["short_by"]:
+                errors.append(f"{p['sender']} has too few on the shelf to over-report {p['short_by']} on the "
                               "first call")
         if profile == "unreachable" and (entry["tier"] != 2 or
                                          p.get("rep_reports_at") != scn["schedule"]["rep_report_at"]):
             errors.append(f"{sid}: the unreachable party must be a distributor account reported for on day 8")
-        if profile == "reviser" and not (1 <= (p.get("revise") or {}).get("delta", 0) <= t["held"]):
-            errors.append(f"{sid}: a revision cannot move more than the tins in stock")
+        if profile == "own_copy" and (entry["tier"] != 2 or entry.get("channel") != "agent" or
+                                      entry["upstream"] != "dist-east" or
+                                      t["received"] != OWN_COPY["received"]):
+            errors.append(f"{sid}: the own-copy party must be East's account with {OWN_COPY['received']} tins, "
+                          "channel agent")
+        if profile == "reviser" and not (1 <= (p.get("revise") or {}).get("delta", 0) <= t["on_shelf"]):
+            errors.append(f"{sid}: a revision cannot move more than the tins on the shelf")
         if profile == "over_reporter" and p.get("over_report_by", 0) <= 0:
             errors.append(f"{sid}: over_report_by must be positive")
         if profile == "callback" and not 7 <= p.get("callback_hour", -1) <= 18:
@@ -727,51 +748,63 @@ def _check_params(scn: dict) -> list[str]:
     return errors
 
 
-def _check_fix_scripts(scn: dict) -> list[str]:
-    """Stores install and are fixed later; stores install nothing of their own."""
+def _check_removal_scripts(scn: dict) -> list[str]:
+    """Every simulated store below the shipment records starts with tins on
+    the shelf and none held, and pulls them REMOVAL_HOURS after it hears of
+    the recall."""
     errors = []
-    recall, start = scn["recall"], scn["schedule"]["sim_start"]
+    batch = scn["recall"]["batch_code"]
     for sid, entry in scn["sim_truth"].items():
-        t, fix = entry["truth"], entry["truth"].get("fix")
-        if entry["type"] == "store":
-            if not fix or t.get("on_shelf", 0) <= 0 or t.get("held", 0):
-                errors.append(f"{sid}: a store starts with tins on_shelf and none fixed, and a fix script")
-                continue
-            lo, hi = (start + 24.0 * d for d in FIX_DAYS)
-            if not lo <= fix["at"] <= hi:
-                errors.append(f"{sid}: its fix lands at {fix['at']}, outside days {FIX_DAYS}")
-            if fix["version_before"] not in recall["affected_batches"] or fix["version_after"] != recall["action"]:
-                errors.append(f"{sid}: the fix must go from an affected version to the fixed version")
-            if fix["model"] != recall["model"]:
-                errors.append(f"{sid}: its tins must be the recalled model")
-        elif fix or t.get("on_shelf", 0) or t.get("held", 0):
-            errors.append(f"{sid}: an store installs at a store's site (a forward), never its own")
+        if entry["tier"] == 1:
+            continue
+        t, removal = entry["truth"], entry["truth"].get("removal")
+        if not removal or t.get("on_shelf", 0) <= 0 or t.get("held", 0):
+            errors.append(f"{sid}: a store starts with tins on the shelf and none held, and a removal script")
+            continue
+        lo, hi = REMOVAL_HOURS
+        if not lo <= removal["after_hours"] <= hi:
+            errors.append(f"{sid}: its tins are pulled {removal['after_hours']} h after the notice, outside "
+                          f"{REMOVAL_HOURS}")
+        if removal["batch"] != batch:
+            errors.append(f"{sid}: its tins must be of the recalled batch {batch}")
     return errors
 
 
-def _check_panels(scn: dict) -> list[str]:
+def _check_store_records(scn: dict) -> list[str]:
     errors = []
-    tins, truth = scn["connected_panels"], scn["sim_truth"]
-    if len(tins) != CONNECTED_PANELS:
-        errors.append(f"{len(tins)} connected tins, expected {CONNECTED_PANELS}")
-    if len({p["serial"] for p in tins}) != len(tins):
-        errors.append("connected tin serials repeat")
-    per_owner = Counter(p["party_id"] for p in tins)
-    for sid, n in per_owner.items():
-        if sid == "corner-mart":
+    truth, batch = scn["sim_truth"], scn["recall"]["batch_code"]
+    names = {e["name"]: sid for sid, e in truth.items()}
+    complaints = scn["complaints"]
+    stores = {c["bought_at"] for c in complaints}
+    if len(complaints) != 3 or len(stores) != 3:
+        errors.append("the signal needs three complaints from three stores")
+    for c in complaints:
+        if c["bought_at"] not in names:
+            errors.append(f"complaint {c['_id']} names {c['bought_at']!r}, which is not a store of the run")
+        if c["batch_code"] != batch or c["defect"] != DEFECT:
+            errors.append(f"complaint {c['_id']} must be a {DEFECT} on batch {batch}")
+        if not 0 <= c["at"] < scn["schedule"]["sim_start"]:
+            errors.append(f"complaint {c['_id']} must arrive on day 0, before the run starts")
+    systems = scn["store_systems"]
+    if len(systems) != CONNECTED_STORES:
+        errors.append(f"{len(systems)} connected stores, expected {CONNECTED_STORES}")
+    if len({s["store_label"] for s in systems}) != len(systems):
+        errors.append("store labels repeat")
+    if not any(s["party_id"] == "corner-mart" and s["simulated_page"] for s in systems):
+        errors.append("Corner Mart's connector (the simulated store page) is missing")
+    connected = {s["party_id"] for s in systems}
+    if not {names.get(c["bought_at"]) for c in complaints} <= connected:
+        errors.append("every store a complaint names must be connected")
+    for s in systems:
+        if s["party_id"] == "corner-mart":
             continue
-        if truth.get(sid, {}).get("type") != "store" or n > truth[sid]["truth"]["on_shelf"]:
-            errors.append(f"{sid} has {n} connected tins, more than a store's on_shelf tins")
-    signal = sorted(p["site_label"] for p in tins if p["signal"])
-    if signal != sorted(SIGNAL_SITES):
-        errors.append(f"the day-0 signal needs one failing tin at each of {SIGNAL_SITES}, got {signal}")
-    if not any(p["serial"] == CORNER_PANEL["serial"] and p["party_id"] == "corner-mart" for p in tins):
-        errors.append("Corner Mart' connected tin (the tin page) is missing")
-    for p in tins:
-        if not p["serial"].startswith(SERIAL_PREFIX) or p["model"] != scn["recall"]["model"]:
-            errors.append(f"{p['serial']}: not a {scn['recall']['model']} tin of batch {scn['recall']['batch_code']}")
-        if p["sw_version"] not in scn["recall"]["affected_batches"]:
-            errors.append(f"{p['serial']} must start on an affected version")
+        entry = truth.get(s["party_id"])
+        if entry is None or entry["type"] != "store" or entry["profile"] in ("own_copy", "unreachable"):
+            errors.append(f"{s['store_label']}: a connector belongs to a simulated store that answers for itself")
+            continue
+        t = entry["truth"]
+        if s.get("baseline") != {"received": t["received"], "sold": t["sold"], "on_shelf": t["on_shelf"]}:
+            errors.append(f"{s['store_label']}: its baseline must be the store's own records")
     return errors
 
 
@@ -807,7 +840,7 @@ def _check_slice(scn: dict) -> list[str]:
     base = _load(SLICE_SCENARIO)
     errors = []
     if scn["sim"] != long_run_sim(base):
-        errors.append("the slice scripts must be recall_1's (without Corner Mart' removal check)")
+        errors.append("the slice scripts must be recall_1's (without Corner Mart's removal check)")
     for s in base["parties"]:
         copied = next((x for x in scn["parties"] if x["party_id"] == s["party_id"]), None)
         if copied != s or not copied.get("slice"):
@@ -817,7 +850,7 @@ def _check_slice(scn: dict) -> list[str]:
         errors.append("Corner Mart must be recall_1's directory entry")
     if {k: v for k, v in scn["recall"].items() if k not in ("_id", "units_total")} != \
             {k: v for k, v in base["recall"].items() if k not in ("_id", "units_total")}:
-        errors.append("the recall must be recall_1's batch, model and checks")
+        errors.append("the recall must be recall_1's batch, product and checks")
     return errors
 
 
@@ -832,10 +865,10 @@ def _check_expected(scn: dict) -> list[str]:
         errors.append(f"expected.final parties {final['parties']}/{final['at_start']}, counted "
                       f"{parties}/{len(scn['parties'])}")
     if (final["disputed_units"], final["on_shelf"]) != (dispute, corner["on_shelf"]):
-        errors.append(f"expected.final {final['disputed_units']} disputed / {final['on_shelf']} still on a shelf, "
+        errors.append(f"expected.final {final['disputed_units']} disputed / {final['on_shelf']} on the shelf, "
                       f"the slice leaves {dispute} / {corner['on_shelf']}")
     if final["open_units"] != final["disputed_units"] + final["on_shelf"]:
-        errors.append("expected.final.open_units must be the disputed plus the still on a shelf")
+        errors.append("expected.final.open_units must be the disputed plus the tins still on the shelf")
     return errors
 
 

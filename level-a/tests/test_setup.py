@@ -166,8 +166,8 @@ def test_start_recall_long_in_demo_mode_holds_the_slice(client, db):
         assert (s["found_via"], s["next_action_at"], s["ladder_step"], s["lease_epoch"]) == ("shipment", 9.0, 1, 0)
     directory = {e["party_id"]: e for e in db.recalls.find_one({"_id": LONG_RID})["directory"]}
     assert (directory["corner-mart"]["hold_for_demo"], directory["corner-mart"]["tier"]) == (True, 3)
-    assert (directory["corner-mart"]["type"], directory["annex-fire"]["tier"]) == ("owner", 2)
-    assert (directory["bloor-alarm"]["account"], directory["bloor-alarm"]["hold_for_demo"]) == ("N-014", False)
+    assert (directory["corner-mart"]["type"], directory["annex-grocer"]["tier"]) == ("owner", 2)
+    assert (directory["bloor-foods"]["account"], directory["bloor-foods"]["hold_for_demo"]) == ("N-014", False)
     assert "phone_env" not in directory["corner-mart"]
 
     run = get_run(db, LONG_RID)

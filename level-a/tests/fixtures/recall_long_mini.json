@@ -6,12 +6,43 @@
     "_id": "RCL-LONG-MINI",
     "batch_code": "B-4471",
     "batch_spoken": "B, four four seven one",
-    "model": "B-4471",
     "product": "Maple Farm milk powder 800 g",
-    "supplier": "Maple Farm Foods",
-    "hazard": "The sounder circuit may fail to activate in an alarm",
-    "affected_batches": ["2.3", "2.4"],
-    "action": "2.5",
+    "barcode": "0 62345 18803 5",
+    "company": "Maple Farm Foods",
+    "plant": "Maple Farm plant, Guelph",
+    "defect": "seal_fault",
+    "hazard": "The lid seal may be faulty, so the powder can spoil. Do not use it; bring it back for a refund.",
+    "affected_batches": [
+      "B-4471"
+    ],
+    "action": "return",
+    "barcode_verified": false,
+    "checks": [
+      {
+        "id": "batch",
+        "field": "batch_seen",
+        "label": "Affected unit",
+        "question": "Read me the batch code printed under one tin.",
+        "answer": "batch code",
+        "rule": "Must be the recalled batch"
+      },
+      {
+        "id": "sold",
+        "field": "sold_source",
+        "label": "Sales are counted",
+        "question": "Open the item sales report on the till. How many have sold since the delivery?",
+        "answer": "a number read from the till",
+        "rule": "sold needs a count read from the till"
+      },
+      {
+        "id": "block",
+        "field": "block_test",
+        "label": "Removal took effect",
+        "question": "Scan one tin at the till. Did the till refuse the sale?",
+        "answer": "yes or no",
+        "rule": "held needs yes"
+      }
+    ],
     "unit": "tin",
     "units_total": 400
   },
@@ -35,7 +66,7 @@
       "sim_phone": "+14165550141",
       "shipped_in": 40,
       "delivery_note": "DN-48213",
-      "profile": "Fire alarm contractor on Queens Quay. The office manager answers the phone.",
+      "profile": "Independent grocer on Queens Quay. The front-end manager answers the phone.",
       "slice": true
     },
     {
@@ -47,7 +78,7 @@
       "phone": "+14165550142",
       "shipped_in": 60,
       "delivery_note": "DN-48214",
-      "profile": "Fire alarm store on Queen St W with a large stock room.",
+      "profile": "Grocer on Queen St W with a large back room.",
       "slice": true
     },
     {
@@ -73,39 +104,39 @@
       "channel": "voice",
       "phone_env": "PHONE_CORNER",
       "sim_phone": "+14165550144",
-      "profile": "Property manager of mid-rise buildings in Parkdale.",
+      "profile": "Small corner store in Parkdale that buys from a local grocer.",
       "slice": true
     },
     {
-      "party_id": "bloor-alarm",
-      "name": "Bloor Alarm",
+      "party_id": "bloor-foods",
+      "name": "Bloor Foods",
       "type": "store",
       "tier": 2,
       "channel": "sim",
       "phone": "+14165550127",
       "account": "N-014",
       "distributor": "dist-north",
-      "profile": "Fire alarm contractor on Bloor St W, an account of Distributor North."
+      "profile": "Grocer on Bloor St W, an account of Distributor North."
     },
     {
-      "party_id": "annex-fire",
-      "name": "Annex Fire",
+      "party_id": "annex-grocer",
+      "name": "Annex Grocer",
       "type": "store",
       "tier": 2,
       "channel": "sim",
       "phone": "+14165550128",
       "account": "N-009",
       "distributor": "dist-north",
-      "profile": "Fire alarm store in the Annex, an account of Distributor North."
+      "profile": "Grocer in the Annex, an account of Distributor North."
     },
     {
-      "party_id": "dundas-lofts",
-      "name": "Dundas Lofts",
+      "party_id": "dundas-mini-mart",
+      "name": "Dundas Mini Mart",
       "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+14165550129",
-      "profile": "Loft building whose tins the Annex Fire on_shelf."
+      "profile": "Mini mart on Dundas St W that buys from the Annex Grocer."
     }
   ]
 }

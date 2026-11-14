@@ -35,9 +35,13 @@ the write, so every challenge on the call originates in the database.
 The worker sends all of these, always as strings, on every call (DESIGN.md §5,
 plus the question variables of the long run, spec "Questions as data"):
 
-`attempt_id party_id party_name batch_code batch_spoken brand product hazard unit tier
-purpose company sender_name told_qty ask_delivery_note followup_note
-ask_counts questions question_ids`
+`attempt_id party_id party_name party_type batch_code batch_spoken product action hazard
+unit receipt ask_checks purpose company sender_name told_qty ask_delivery_note
+followup_note ask_counts questions question_ids`
+
+`action` is the recall's instruction to stores (`return` or `destroy`; empty
+until a person confirms the plant's answer). The agent reads it out and never
+answers a health question.
 
 The tools also bind `system__conversation_id` and `system__call_sid`, which
 ElevenLabs provides on Twilio calls. `sender_name`, `told_qty` and
@@ -46,7 +50,7 @@ ElevenLabs provides on Twilio calls. `sender_name`, `told_qty` and
 - `ask_counts` is `"no"` when the party's counts are already on the books: the
   call is a question-only call, and the prompt then never asks for counts.
 - `questions` lists the party's open questions, each starting with its id, for
-  example `q-07: Did you also receive batch ZX-5521? (answer: yes or no, and how
+  example `q-07: Did you also receive batch B-4480? (answer: yes or no, and how
   many tins).` It is empty when there are none. The agent asks each one, reads
   the answer back and records it with `submit_answer`; the API removes the id
   from the party's `open_questions`.
@@ -134,9 +138,9 @@ Each item has a check. Run the checks tonight.
   you see.
 - **`system__call_sid` in tool calls**: documented for Twilio calls only. Check
   that `tool_events.call_sid` is filled after a real call.
-- **`eleven_flash_v2_5` for an English agent**: if agent creation rejects the TTS
-  model for English, switch `tts.model_id` to `eleven_flash_v2` and run the
-  script again.
+- **TTS model for an English agent**: ElevenLabs requires `eleven_flash_v2` or
+  `eleven_turbo_v2` for English-only agents, so `tts.model_id` is
+  `eleven_flash_v2`.
 - **List endpoints the script relies on for idempotency**: `GET
   /v1/convai/secrets` (`{secrets:[{secret_id,name}]}`), `GET
   /v1/workspace/webhooks` (`{webhooks:[{webhook_id,webhook_url}]}`; a 404 is

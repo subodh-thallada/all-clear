@@ -10,12 +10,19 @@ from __future__ import annotations
 from levela.ledger.transfers import ledger_fields
 
 # The recalled product of the demo scenarios (scenarios/recall_1.json).
-PRODUCT = {"model": "B-4471", "affected_batches": ["2.3", "2.4"], "action": "2.5"}
+PRODUCT = {"batch_code": "B-4471", "product": "Maple Farm milk powder 800 g", "barcode": "0 62345 18803 5",
+           "affected_batches": ["B-4471"], "action": "return", "barcode_verified": False, "defect": "seal_fault",
+           "checks": []}
+# The three checks of a store that has pulled its tins: the batch code read
+# under a tin and a till that refused the sale (what `held` needs), and a sold
+# count read off the till (what `sold` needs).
+HELD_CHECKS = {"batch_seen": "B-4471", "block_test": True}
+TILL = {"sold_source": "till_report"}
 
 
 def recall_doc(recall_id: str = "R", *, units_total: int = 240, **over) -> dict:
     """A recall the close-gate validator accepts."""
-    return {"_id": recall_id, "batch_code": "B-4471", **PRODUCT, "source": "manual", "source_signal": None,
+    return {"_id": recall_id, **PRODUCT, "source": "manual", "source_signal": None,
             "units_total": units_total, "open_units": units_total, "status": "open", **over}
 
 

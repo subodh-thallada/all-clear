@@ -8,7 +8,7 @@ Each party's books follow its own claim and the gap lives on the edge:
   corroborated_qty     = min(sender_qty, recipient_qty)
   disputed_qty         = |sender_qty - recipient_qty|
 
-shipment_qty is the recipient's own delivery on the supplier's shipment
+shipment_qty is the recipient's own delivery on the company's shipment
 records: 0 for a party reached only through transfers, the shipment record
 for a tier 1 party that also received tins from another party.
 

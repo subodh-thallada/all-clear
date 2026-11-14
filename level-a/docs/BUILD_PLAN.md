@@ -83,3 +83,16 @@ change: every fire-alarm word, bucket and field below goes to the food version.
   against `LEVELA_TEST_URI` (local replica set `mongodb://127.0.0.1:27027/?replicaSet=rs0`).
 - Never print or copy secrets from `level-a/.env`. Never place a real phone call. Never run git.
 - Keep the spec's test numbers in test names/docstrings (tests 1–49).
+
+## The screen now in `web/` (merged from the team, Nov 14)
+
+`web/` was replaced by the team's workflow screen (plain React + Vite, `npm run build` → `web/dist`,
+served by the API at `GET /wall`). It reads `GET /wall/state` once a second through
+`web/src/data/live.js` (`normalizeParty`, `createLive`) and posts the operator buttons to
+`/admin/release`, `/admin/failpoint`, `/admin/order-system`, `/admin/saboteur`, `/admin/close`,
+`/admin/clock` with the admin key. **Do not edit `web/`.** The backend must make `/wall/state`
+and those admin endpoints satisfy that reader: read `live.js` and make the JSON it expects
+(parties with food buckets, lease, live attempt, workers, systems incl. stores, feed, run,
+refusals, recall). Verify by building `web/` (`npm install` once, `npm run build`), serving it
+from the API and loading `/wall?source=live` in headless Edge (playwright-core) with zero page
+errors and the real numbers on screen.

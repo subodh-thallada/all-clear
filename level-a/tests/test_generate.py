@@ -157,12 +157,12 @@ def test_the_graph_one_three_hop_chain_and_short_receivers(scn):
     def hops(sid):
         return 0 if upstream.get(sid) is None else 1 + hops(upstream[sid])
     depth = {sid: hops(sid) for sid in upstream}
-    assert [sid for sid, n in depth.items() if n == 3] == ["willow-creek-towers"]
+    assert [sid for sid, n in depth.items() if n == 3] == ["willow-creek-convenience"]
     assert max(depth.values()) == 3
-    chain = ["willow-creek-towers"]
+    chain = ["willow-creek-convenience"]
     while upstream.get(chain[-1]):
         chain.append(upstream[chain[-1]])
-    assert chain[::-1] == ["dist-north", "birchmount-fire-protection", "juniper-lane-alarm", "willow-creek-towers"]
+    assert chain[::-1] == ["dist-north", "birchmount-fresh-market", "juniper-lane-variety", "willow-creek-convenience"]
 
     singles = [e for e in truth.values() if len(e["truth"]["forwards"]) == 1]
     several = [e for e in truth.values() if len(e["truth"]["forwards"]) > 1]
@@ -237,19 +237,19 @@ def broken(scn, change):
 
 def test_check_refuses_a_scenario_that_breaks_an_invariant(scn):
     gen.check(scn)
-    assert "does not conserve" in broken(scn, lambda s: s["sim_truth"]["guildwood-alarm"]["truth"].update(
-        held=s["sim_truth"]["guildwood-alarm"]["truth"]["held"] + 1))
-    assert "profile counts" in broken(scn, lambda s: s["sim_truth"]["guildwood-alarm"].update(profile="callback"))
+    assert "does not conserve" in broken(scn, lambda s: s["sim_truth"]["guildwood-market"]["truth"].update(
+        held=s["sim_truth"]["guildwood-market"]["truth"]["held"] + 1))
+    assert "profile counts" in broken(scn, lambda s: s["sim_truth"]["guildwood-market"].update(profile="callback"))
     assert "fictional" in broken(scn, lambda s: s["order_systems"]["east"]["accounts"][0].update(phone="+14165551234"))
-    assert "short_by" in broken(scn, lambda s: s["sim_truth"]["larkspur-residences"]["params"].update(short_by=1))
+    assert "short_by" in broken(scn, lambda s: s["sim_truth"]["larkspur-corner-store"]["params"].update(short_by=1))
     assert "order system north" in broken(scn, lambda s: s["order_systems"]["north"]["accounts"][0].update(
         qty_shipped=1))
-    assert "three hops" in broken(scn, lambda s: s["sim_truth"]["willow-creek-towers"].update(
-        upstream="birchmount-fire-protection"))
+    assert "three hops" in broken(scn, lambda s: s["sim_truth"]["willow-creek-convenience"].update(
+        upstream="birchmount-fresh-market"))
     assert "recall_1's" in broken(scn, lambda s: s["sim"]["lakeside-foods"]["initial"][0].update(say="hi"))
-    assert "fix script" in broken(scn, lambda s: s["sim_truth"]["maple-court"]["truth"].pop("fix"))
+    assert "fix script" in broken(scn, lambda s: s["sim_truth"]["maple-court-market"]["truth"].pop("fix"))
     assert "installs at a store's site" in broken(
-        scn, lambda s: s["sim_truth"]["bloor-alarm"]["truth"].update(on_shelf=1, held=76))
+        scn, lambda s: s["sim_truth"]["bloor-foods"]["truth"].update(on_shelf=1, held=76))
     assert "connected tins" in broken(scn, lambda s: s["connected_panels"].pop())
     assert "signal" in broken(scn, lambda s: next(p for p in s["connected_panels"] if not p["signal"]).update(
         signal=True))
@@ -308,7 +308,7 @@ def test_the_24_connected_panels(scn):
     assert (corner["serial"], corner["site_label"], corner["sw_version"], corner["fixed_at"]) == (
         "D7-4471-0193", "Corner Mart, Tower 2", "2.4", None)
     signal = sorted(p["site_label"] for p in tins if p["signal"])
-    assert signal == ["Bayview Annex", "Maple Court", "Spadina Works"]
+    assert signal == ["Bayview Grocer", "Maple Court Market", "Spadina Foods"]
     truth = scn["sim_truth"]
     per_owner = Counter(p["party_id"] for p in tins if p["party_id"] != "corner-mart")
     for sid, n in per_owner.items():

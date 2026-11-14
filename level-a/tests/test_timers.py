@@ -26,7 +26,7 @@ from levela.providers import FakeVoice
 
 RID = "RCL-2026-017"
 PENDING = ["harbour-market", "lakeside-foods", "queen-st-grocer", "party-a", "party-b"]
-HISTORY = ["Bloor Alarm", "Annex Fire", "Danforth Market", "Leslieville Pantry"]
+HISTORY = ["Bloor Foods", "Annex Grocer", "Danforth Market", "Leslieville Pantry"]
 LEDGER = ("parties", "attempts", "operations", "claims", "edges", "tool_events", "task_runs", "traces", "episodes")
 
 

@@ -106,7 +106,7 @@ def run1(client, db, assert_balance):
 
 # ------------------------------------------------------------- summarize
 
-def test_summarize_harbour_fire_over_reported_then_corrected(db, run1):
+def test_summarize_harbour_market_over_reported_then_corrected(db, run1):
     att = run1.attempts[("harbour-market", "initial")]
     claims, party, edges, directory, names = _inputs(db, att)
     summary, tags, entities = summarize(att, claims, party, edges, directory=directory, party_names=names)
@@ -117,7 +117,7 @@ def test_summarize_harbour_fire_over_reported_then_corrected(db, run1):
     assert entities == {}
 
 
-def test_summarize_queen_st_forwards_to_corner_properties(db, run1):
+def test_summarize_queen_st_forwards_to_corner_mart(db, run1):
     att = run1.attempts[("queen-st-grocer", "initial")]
     ep = db.episodes.find_one({"_id": episode_id(att["_id"])})
     # Written when the call ended, before Corner Mart answered: no dispute yet.
@@ -142,7 +142,7 @@ def test_summarize_canonicalises_the_spoken_party_name():
     assert summarize(attempt, [claim], party, [])[2] == {"forwards_to": "bobs deli"}
 
 
-def test_summarize_corner_properties_received_and_disputed(db, run1):
+def test_summarize_corner_mart_received_and_disputed(db, run1):
     att = run1.attempts[("corner-mart", "initial")]
     claims, party, edges, directory, names = _inputs(db, att)
     summary, tags, entities = summarize(att, claims, party, edges, directory=directory, party_names=names)
@@ -208,7 +208,7 @@ def test_summarize_refuses_a_live_attempt():
 
 def test_summarize_keeps_the_hour_an_answered_call_was_placed_at():
     """The entity behind ladder step 2's "hour retrieved from memory"."""
-    party = {"party_id": "morrow-avenue-alarms", "name": "Morrow Avenue Alarms"}
+    party = {"party_id": "morrow-avenue-market", "name": "Morrow Avenue Market"}
     answered = {"_id": "att_a", "state": "completed", "channel": "sim", "intent_sim": 38.25}     # d1 14:15
     summary, tags, entities = summarize(answered, [], party, [])
     assert (summary, tags, entities) == ("Answered, but no counts were given.", ["answered"], {"answered_hour": 14})
@@ -594,7 +594,7 @@ def _checked(db, recall_id: str) -> bool:
     return metrics(db, recall_id)["checks_completed"] == [4, 4]
 
 
-def _corner_properties_vs_queen_st(db, recall_id: str):
+def _corner_mart_vs_queen_st(db, recall_id: str):
     """(Corner Mart' first attempt opened, Queen St Grocer's accepted claim booked)."""
     first = db.attempts.find_one({"recall_id": recall_id, "party_id": "corner-mart"}, sort=[("intent_at", 1)])
     claim = db.claims.find_one({"recall_id": recall_id, "party_id": "queen-st-grocer", "status": "accepted"},
@@ -605,7 +605,7 @@ def _corner_properties_vs_queen_st(db, recall_id: str):
 
 @pytest.mark.slow
 @pytest.mark.timeout(600)
-def test_11_memory_reaches_corner_properties_before_queen_st_alarm_answers(client, db, settings, assert_balance):
+def test_11_memory_reaches_corner_mart_before_queen_st_grocer_answers(client, db, settings, assert_balance):
     """Spec test 11: run recall 1, then recall 2; repeat recall 2 with memory
     disabled. With memory, Corner Mart' attempt starts before Queen St
     Grocer's claim; without it, after. Every party is simulated and every
@@ -636,10 +636,10 @@ def test_11_memory_reaches_corner_properties_before_queen_st_alarm_answers(clien
         assert_balance(rid)
     corner = db.parties.find_one({"recall_id": with_memory, "party_id": "corner-mart"})
     assert (corner["found_via"], corner["memory_source"]["episode_id"]) == ("memory", queen_ep["_id"])
-    attempt_at, claim_at = _corner_properties_vs_queen_st(db, with_memory)
+    attempt_at, claim_at = _corner_mart_vs_queen_st(db, with_memory)
     assert attempt_at < claim_at, "with memory, Corner Mart is called before Queen St Grocer's claim"
     assert db.parties.find_one({"recall_id": without, "party_id": "corner-mart"})["found_via"] == "claim"
-    attempt_at, claim_at = _corner_properties_vs_queen_st(db, without)
+    attempt_at, claim_at = _corner_mart_vs_queen_st(db, without)
     assert attempt_at > claim_at, "without memory, Corner Mart is found only by Queen St Grocer's claim"
     assert mem.contacts_to_full_discovery(db, with_memory) < mem.contacts_to_full_discovery(db, without)
 

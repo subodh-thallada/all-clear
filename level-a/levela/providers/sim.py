@@ -301,7 +301,9 @@ class SimNetwork:
                     "note": "no behaviour profile: a person answers this party's link"}
         self.start()
         now = _sim_now(self.db, recall_id)
-        plan = profiles.form_plan(entry["profile"], entry["truth"], entry.get("params"), now)
+        told_at = _told_at(self.db.sim_calls.find({"recall_id": recall_id, "party_id": party_id},
+                                                  {"reply_kind": 1, "sim_at": 1}))
+        plan = profiles.form_plan(entry["profile"], entry["truth"], entry.get("params"), now, told_at)
         event, created = self.events.schedule(
             recall_id, party_id, "form", plan.submit_at if plan else None, plan.fields if plan else None,
             token=token, state=PENDING if plan else IGNORED)
@@ -445,7 +447,7 @@ class SimNetwork:
         (this call included), whether it picked up before, and the questions
         open on it."""
         rows = list(self.db.sim_calls.find({"recall_id": call.recall_id, "party_id": call.party_id},
-                                           {"reply_kind": 1}))
+                                           {"reply_kind": 1, "sim_at": 1}))
         earlier = [r.get("reply_kind") for r in rows if r["_id"] != call.sid]
         party = self.db.parties.find_one({"recall_id": call.recall_id, "party_id": call.party_id},
                                         {"ladder_step": 1}) or {}
@@ -456,7 +458,8 @@ class SimNetwork:
             open_questions=tuple(self._questions(call)),
             sender_name=call.variables.get("sender_name") or "",
             reached_before=any(k in (profiles.ANSWER, profiles.CALLBACK) for k in earlier),
-            callbacks_before=sum(k == profiles.CALLBACK for k in earlier))
+            callbacks_before=sum(k == profiles.CALLBACK for k in earlier),
+            told_at=_told_at([r for r in rows if r["_id"] != call.sid]))
 
     def _questions(self, call: _Call) -> list[dict]:
         """The questions the agent asks on this call ({id, text, answer_type}).
@@ -668,6 +671,15 @@ def _script_key(purpose: str, scripts: dict) -> str:
     if purpose in ("dispute_followup", "ask_question") or purpose in scripts:
         return purpose
     return "initial"
+
+
+def _told_at(rows) -> float | None:
+    """The simulated hour a party first heard of the recall: its earliest
+    picked-up call among `rows` (sim_calls with reply_kind and sim_at), or
+    None when no call has reached it."""
+    heard = [float(r["sim_at"]) for r in rows
+             if r.get("reply_kind") in (profiles.ANSWER, profiles.CALLBACK) and r.get("sim_at") is not None]
+    return min(heard) if heard else None
 
 
 def _count(value) -> int | None:

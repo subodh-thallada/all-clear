@@ -1,8 +1,9 @@
 """Spec test 5 (close gate), the three metrics and the headline.
 
-try_close with a dispute open is refused by Atlas, again with tins
-on_shelf and not fixed, and after both are settled (the corrected claim,
-then the removal check) it closes; the three metrics equal the hand-computed
+try_close with a dispute open is refused by Atlas, again with tins still on
+a shelf, and after both are settled (the corrected claim, then the removal
+check that finds the tins held) it closes; the three metrics (checks
+completed, tins located, held or returned) equal the hand-computed
 values in scenarios/recall_1.json (`expected.steps`) after every step, and
 the mass balance holds after every write.
 """
@@ -13,6 +14,7 @@ import pytest
 from levela.db.seed import load_scenario, start_recall
 from levela.ledger.claims import submit_claim
 from levela.ledger.reconciler import close_line, headline, mass_balance, metrics, open_units, try_close
+from support import HELD_CHECKS, TILL
 
 RID = "RCL-2026-017"
 
@@ -28,7 +30,7 @@ def _parse(step: str) -> tuple[str, str, int]:
     return party_id, phase, int(n.lstrip("#")) - 1
 
 
-def test_5_recall_1_closes_only_when_every_panel_is_found_and_fixed(client, db, scenario, assert_balance):
+def test_5_recall_1_closes_only_when_every_tin_is_found_and_off_the_shelf(client, db, scenario, assert_balance):
     start_recall(client, db, scenario, all_sim=True, emit=False)
     refusals = []
     for i, step in enumerate(scenario["expected"]["steps"]):
@@ -60,16 +62,16 @@ def test_5_recall_1_closes_only_when_every_panel_is_found_and_fixed(client, db, 
         assert got == want, name
         assert m["mass_balance"] == m["units_total"] == 240
         assert m["tins_located"][1] == m["held_or_returned"][1] == 240
-    # Refused with a transfer open, with a dispute and tins on_shelf, with on_shelf tins alone.
+    # Refused with a transfer open, with a dispute and tins on a shelf, with tins on a shelf alone.
     assert refusals == ["NOT ALL CLEAR: 40 tins open (40 not located)",
-                        "NOT ALL CLEAR: 40 tins open (15 disputed, 25 still on a shelf)",
+                        "NOT ALL CLEAR: 40 tins open (25 still on a shelf, 15 disputed)",
                         "NOT ALL CLEAR: 25 tins open (25 still on a shelf)"]
     recall = db.recalls.find_one({"_id": RID})
     assert recall["status"] == "closed" and recall["open_units"] == 0 and recall["closed_at"]
     assert recall.get("last_close_refused_at")
     assert try_close(db, RID) == {"closed": True, "open_units": 0, "already": True, "headline": "ALL CLEAR"}
     late = submit_claim(client, db, recall_id=RID, party_id="harbour-market", attempt_id="att_late", source="sim",
-                        raw={"held": 40})
+                        raw={"returned": 40})
     assert late["code"] == "recall_closed"
 
 
@@ -88,14 +90,16 @@ def test_metrics_from_rows_match_metrics_from_the_database(client, db, scenario,
     assert m["open_units"] == open_units(db, RID) == 160
     assert (m["tins_located"], m["held_or_returned"]) == ([105, 240], [30, 240])
     assert m["checks_completed"] == [2, 4] and m["status"] == "open"
-    assert headline(m) == "NOT ALL CLEAR: 160 tins open (15 disputed, 25 still on a shelf, 120 not located)"
+    assert headline(m) == "NOT ALL CLEAR: 160 tins open (120 not located, 25 still on a shelf, 15 disputed)"
 
 
 def test_the_headline_names_only_the_parts_that_are_open():
     base = {"status": "open", "disputed_units": 0, "on_shelf": 0, "not_located": 0}
     assert headline({**base, "open_units": 1, "on_shelf": 1}) == "NOT ALL CLEAR: 1 tin open (1 still on a shelf)"
-    assert headline({**base, "open_units": 39, "disputed_units": 15, "on_shelf": 24}) == \
-        "NOT ALL CLEAR: 39 tins open (15 disputed, 24 still on a shelf)"
+    assert headline({**base, "open_units": 40, "disputed_units": 15, "on_shelf": 25}) == \
+        "NOT ALL CLEAR: 40 tins open (25 still on a shelf, 15 disputed)"
+    assert headline({**base, "open_units": 640, "not_located": 285, "on_shelf": 355}) == \
+        "NOT ALL CLEAR: 640 tins open (285 not located, 355 still on a shelf)"
     assert headline({**base, "open_units": 0}) == "NOT ALL CLEAR: 0 tins open"
     assert headline({**base, "status": "closed", "open_units": 0}) == "ALL CLEAR"
 
@@ -105,8 +109,9 @@ def test_the_close_gate_refuses_a_ledger_whose_mass_balance_is_off(client, db, s
     receipt that dropped another sender's corroborated tins did exactly
     that), so a balance short of units_total refuses the close too."""
     start_recall(client, db, scenario, all_sim=True, emit=False)
-    for party_id, raw in (("harbour-market", {"held": 35, "returned": 5}),
-                          ("queen-st-grocer", {"held": 120}), ("lakeside-foods", {"held": 20, "returned": 60})):
+    for party_id, raw in (("harbour-market", {"sold": 35, "returned": 5, **TILL}),
+                          ("queen-st-grocer", {"held": 120, **HELD_CHECKS}),
+                          ("lakeside-foods", {"held": 20, "returned": 60, **HELD_CHECKS})):
         assert submit_claim(client, db, recall_id=RID, party_id=party_id, attempt_id=f"att_{party_id}",
                             source="sim", raw=raw)["accepted"]
     assert_balance(RID)

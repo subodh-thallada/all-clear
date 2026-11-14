@@ -1,42 +1,47 @@
 {
   "scenario_id": "recall_long",
   "synthetic": true,
-  "about": "The long run. Batch B-4471 of B-4471 fire alarm tins, 2,400 tins, 40 parties over 10 simulated days: 5 on the shipment records, 21 stores found in the distributors' order systems, 14 named by forwarders (12 stores, one more store and Corner Mart). 36 are simulated parties with behaviour profiles; Harbour Market and Corner Mart answer real phones in the demo. Every store's tins are on_shelf at first and fixed two to four simulated days in. Ends with only the slice's tins open (15 disputed, 25 on_shelf and not fixed at Corner Mart), so the recall cannot close.",
+  "about": "The long run. Batch B-4471 of Maple Farm milk powder 800 g, 2,400 tins, 40 parties over 10 simulated days: 5 on the shipment records, 21 accounts found in the distributors' order systems (20 stores and Summit Foods, which runs its own copy of the agent), and 14 stores named by forwarders, Corner Mart among them. 36 are simulated parties with behaviour profiles; Harbour Market and Corner Mart answer real phones in the demo. Every store's tins are on the shelf when it hears of the recall and held four to twelve simulated hours later. Ends with only the slice's tins open (15 disputed, 25 still on the shelf at Corner Mart), so the recall cannot close.",
   "seed": 20261114,
   "recall": {
     "_id": "RCL-2026-020",
     "batch_code": "B-4471",
     "batch_spoken": "B, four four seven one",
-    "model": "B-4471",
     "product": "Maple Farm milk powder 800 g",
-    "supplier": "Maple Farm Foods",
-    "hazard": "The sounder circuit may fail to activate in an alarm",
+    "barcode": "0 62345 18803 5",
+    "company": "Maple Farm Foods",
+    "plant": "Maple Farm plant, Guelph",
+    "defect": "seal_fault",
+    "hazard": "The lid seal may be faulty, so the powder can spoil. Do not use it; bring it back for a refund.",
     "affected_batches": [
-      "2.3",
-      "2.4"
+      "B-4471"
     ],
-    "action": "2.5",
+    "action": "return",
+    "barcode_verified": false,
     "checks": [
       {
-        "id": "model",
+        "id": "batch",
+        "field": "batch_seen",
         "label": "Affected unit",
-        "question": "What model is printed on the front of the tin?",
-        "answer": "model",
-        "rule": "Must be the recalled model"
+        "question": "Read me the batch code printed under one tin.",
+        "answer": "batch code",
+        "rule": "Must be the recalled batch"
       },
       {
-        "id": "version",
-        "label": "Still at risk",
-        "question": "What software version does the display show?",
-        "answer": "version digits",
-        "rule": "A version in the affected list means not fixed"
+        "id": "sold",
+        "field": "sold_source",
+        "label": "Sales are counted",
+        "question": "Open the item sales report on the till. How many have sold since the delivery?",
+        "answer": "a number read from the till",
+        "rule": "sold needs a count read from the till"
       },
       {
-        "id": "sounder",
-        "label": "Fix took effect",
-        "question": "Press the test button. Did the sounder ring?",
+        "id": "block",
+        "field": "block_test",
+        "label": "Removal took effect",
+        "question": "Scan one tin at the till. Did the till refuse the sale?",
         "answer": "yes or no",
-        "rule": "fixed needs yes"
+        "rule": "held needs yes"
       }
     ],
     "unit": "tin",
@@ -53,7 +58,7 @@
       "sim_phone": "+14165550141",
       "shipped_in": 40,
       "delivery_note": "DN-48213",
-      "profile": "Fire alarm contractor on Queens Quay by the Toronto waterfront. A crew of four technicians installs and services tins in mid-rise residential buildings. Buys tins from the supplier by the case. The office manager answers the phone during working hours.",
+      "profile": "Independent grocer on Queens Quay by the Toronto waterfront, open seven days. Buys milk powder from the company by the case. The front-end manager answers the phone during opening hours.",
       "slice": true
     },
     {
@@ -65,7 +70,7 @@
       "phone": "+14165550142",
       "shipped_in": 120,
       "delivery_note": "DN-48214",
-      "profile": "Fire alarm store on Queen St W in Parkdale, Toronto. A busy contractor with a stock room larger than its jobs need. Installs tins for property managers across the west end and keeps its job sheets on paper.",
+      "profile": "Busy grocer on Queen St W in Parkdale, Toronto, with a back room larger than its shelves need. Passes spare stock to small corner stores nearby and keeps its delivery notes on paper.",
       "slice": true
     },
     {
@@ -77,7 +82,7 @@
       "phone": "+14165550143",
       "shipped_in": 80,
       "delivery_note": "DN-48215",
-      "profile": "Fire alarm and sprinkler contractor on Lake Shore Blvd W in Mimico, Etobicoke. Pulls recalled stock the same day and ships it back to the supplier with return slips.",
+      "profile": "Supermarket on Lake Shore Blvd W in Mimico, Etobicoke. Pulls recalled stock the same day and ships it back to the company with return slips.",
       "slice": true
     },
     {
@@ -89,7 +94,7 @@
       "order_system": "north",
       "shipped_in": 1300,
       "delivery_note": "DN-48216",
-      "profile": "Regional fire and security distributor serving stores north and west of the city. Ships tins by the pallet every week. Holds and account lists go through its Kestrel OrderDesk account."
+      "profile": "Regional grocery distributor serving stores north and west of the city. Ships milk powder by the pallet every week. Holds and account lists go through its Kestrel OrderDesk account."
     },
     {
       "party_id": "dist-east",
@@ -100,7 +105,7 @@
       "order_system": "east",
       "shipped_in": 860,
       "delivery_note": "DN-48217",
-      "profile": "Regional fire and security distributor serving stores east of the city, out to Durham. Ships tins by the pallet twice a month. Holds and account lists go through its Kestrel OrderDesk account."
+      "profile": "Regional grocery distributor serving stores east of the city, out to Durham. Ships milk powder by the pallet twice a month. Holds and account lists go through its Kestrel OrderDesk account."
     }
   ],
   "directory": [
@@ -110,8 +115,8 @@
       "aliases": [
         "corner mart",
         "the corner mart",
-        "corner mart",
         "korner mart",
+        "corner market",
         "corner mart ltd"
       ],
       "type": "store",
@@ -119,203 +124,203 @@
       "channel": "voice",
       "phone_env": "PHONE_CORNER",
       "sim_phone": "+14165550144",
-      "profile": "Property manager in Parkdale, Toronto, running several mid-rise residential buildings. Buys its fire alarm tins through a local store, not from a distributor. The building manager answers a mobile phone.",
+      "profile": "Small corner store in Parkdale, Toronto. Buys its milk powder from a local grocer, not from a distributor. Its till and stock record are connected. The owner answers a mobile phone.",
       "slice": true
     },
     {
-      "party_id": "juniper-lane-alarm",
-      "name": "Juniper Lane Alarm",
+      "party_id": "juniper-lane-variety",
+      "name": "Juniper Lane Variety",
       "aliases": [
-        "juniper lane alarm",
-        "the juniper lane alarm",
+        "juniper lane variety",
+        "the juniper lane variety",
         "juniper lane",
-        "juniper alarm"
+        "juniper variety"
       ],
       "type": "store",
       "tier": 3,
       "channel": "sim",
-      "phone": "+19055550186",
-      "profile": "Small alarm store on Juniper Lane in Scarborough that subcontracts for larger firms. Installs tins at buildings for property managers, and passes spare tins to smaller stores, none of them on a distributor's list."
+      "phone": "+19055550143",
+      "profile": "Variety store on Juniper Lane in Scarborough that sells stock on to a neighbour. Passes spare tins to smaller stores, none of them on a distributor's list."
     },
     {
-      "party_id": "willow-creek-towers",
-      "name": "Willow Creek Towers",
+      "party_id": "willow-creek-convenience",
+      "name": "Willow Creek Convenience",
       "aliases": [
-        "willow creek towers",
-        "the willow creek towers",
+        "willow creek convenience",
+        "the willow creek convenience",
         "willow creek",
-        "willow creek tower"
+        "willow creek store"
       ],
       "type": "store",
       "tier": 3,
       "channel": "sim",
-      "phone": "+12895550161",
-      "profile": "Two residential towers by Willow Creek park in Scarborough. The office answers the phone during working hours and keeps tin counts in its job system."
+      "phone": "+12895550191",
+      "profile": "Convenience store by Willow Creek park in Scarborough. The front-end manager answers the phone during opening hours and reads counts off the till."
     },
     {
-      "party_id": "bayview-annex",
-      "name": "Bayview Annex",
+      "party_id": "bayview-grocer",
+      "name": "Bayview Grocer",
       "aliases": [
-        "bayview annex",
-        "the bayview annex",
+        "bayview grocer",
+        "the bayview grocer",
         "bayview",
-        "bay view annex"
+        "bay view grocer"
       ],
       "type": "store",
       "tier": 3,
       "channel": "sim",
-      "phone": "+13655550109",
-      "profile": "Office and retail annex at the top of Bayview Ave. The technicians are out on site in the morning; the office phone is only answered between 15:00 and 19:00."
+      "phone": "+13655550138",
+      "profile": "Grocer at the top of Bayview Ave. Staff are on the floor in the morning; the phone is only answered between 15:00 and 19:00."
     },
     {
-      "party_id": "larkspur-residences",
-      "name": "Larkspur Residences",
+      "party_id": "larkspur-corner-store",
+      "name": "Larkspur Corner Store",
       "aliases": [
-        "larkspur residences",
-        "the larkspur residences",
+        "larkspur corner store",
+        "the larkspur corner store",
         "larkspur",
-        "larkspur residence"
+        "larkspur store"
       ],
       "type": "store",
       "tier": 3,
       "channel": "sim",
-      "phone": "+14165550169",
-      "profile": "Seniors' residence on Larkspur Ave with three wings. Has its tins on_shelf by a local contractor and checks every invoice against the tins on site."
+      "phone": "+14165550111",
+      "profile": "Corner store on Larkspur Ave that checks every delivery note. Buys from a local grocer and checks every delivery note against the tins that arrived."
     },
     {
-      "party_id": "kingsway-apartments",
-      "name": "Kingsway Apartments",
+      "party_id": "kingsway-mini-mart",
+      "name": "Kingsway Mini Mart",
       "aliases": [
-        "kingsway apartments",
-        "the kingsway apartments",
+        "kingsway mini mart",
+        "the kingsway mini mart",
         "kingsway",
-        "kingsway apts"
+        "kingsway mart"
       ],
       "type": "store",
       "tier": 3,
       "channel": "sim",
-      "phone": "+16475550169",
-      "profile": "Apartment buildings on Bloor St West in the Kingsway. The manager keeps the job sheets in the site office and asks to be called back the next morning at 10:00."
+      "phone": "+16475550120",
+      "profile": "Mini mart on Bloor St West in the Kingsway. The manager keeps the delivery notes in the office and asks to be called back the next morning at 11:00."
     },
     {
-      "party_id": "old-mill-condominiums",
-      "name": "Old Mill Condominiums",
+      "party_id": "old-mill-market",
+      "name": "Old Mill Market",
       "aliases": [
-        "old mill condominiums",
-        "the old mill condominiums",
-        "old mill condos",
-        "oldmill condominiums"
+        "old mill market",
+        "the old mill market",
+        "old mill",
+        "oldmill market"
       ],
       "type": "store",
       "tier": 3,
       "channel": "sim",
-      "phone": "+14375550190",
-      "profile": "Condominium buildings near the Old Mill bridge. Has its tins on_shelf by a local contractor and checks every invoice against the tins on site."
+      "phone": "+14375550136",
+      "profile": "Small market near the Old Mill bridge. Buys from a local grocer and checks every delivery note against the tins that arrived."
     },
     {
-      "party_id": "rosehill-court",
-      "name": "Rosehill Court",
+      "party_id": "rosehill-foods",
+      "name": "Rosehill Foods",
       "aliases": [
-        "rosehill court",
-        "the rosehill court",
+        "rosehill foods",
+        "the rosehill foods",
         "rosehill",
-        "rose hill court"
+        "rose hill foods"
       ],
       "type": "store",
       "tier": 3,
       "channel": "sim",
-      "phone": "+19055550147",
-      "profile": "Housing co-operative on Rosehill Ave by the reservoir park. Counts are read off a shared stock sheet, and the first figure given is often from the wrong line."
+      "phone": "+19055550138",
+      "profile": "Food store on Rosehill Ave by the reservoir park. Counts are read off a shared stock sheet, and the first figure given is often from the wrong line."
     },
     {
-      "party_id": "harrow-street-lofts",
-      "name": "Harrow Street Lofts",
+      "party_id": "harrow-street-grocer",
+      "name": "Harrow Street Grocer",
       "aliases": [
-        "harrow street lofts",
-        "the harrow street lofts",
-        "harrow st lofts",
-        "harrow lofts"
+        "harrow street grocer",
+        "the harrow street grocer",
+        "harrow st grocer",
+        "harrow grocer"
       ],
       "type": "store",
       "tier": 3,
       "channel": "sim",
-      "phone": "+12895550172",
-      "profile": "Converted warehouse lofts on Harrow St in Pickering village. Keeps careful paperwork and sends a correction when tins are returned after a call."
+      "phone": "+12895550101",
+      "profile": "Grocer on Harrow St in Pickering village. Keeps careful paperwork and sends a correction when tins go back after a call."
     },
     {
-      "party_id": "clover-hill-plaza",
-      "name": "Clover Hill Plaza",
+      "party_id": "clover-hill-variety",
+      "name": "Clover Hill Variety",
       "aliases": [
-        "clover hill plaza",
-        "the clover hill plaza",
+        "clover hill variety",
+        "the clover hill variety",
         "clover hill",
-        "cloverhill plaza"
+        "cloverhill variety"
       ],
       "type": "store",
       "tier": 3,
       "channel": "sim",
-      "phone": "+13655550119",
-      "profile": "Shopping plaza and offices at the Clover Hill crossroads. One person runs the office alone; the phone often rings out or is engaged and is usually picked up only after a couple of tries."
+      "phone": "+13655550198",
+      "profile": "Variety store at the Clover Hill crossroads. One person runs the store alone; the phone often rings out or is engaged and is usually picked up only after a couple of tries."
     },
     {
-      "party_id": "maple-court",
-      "name": "Maple Court",
+      "party_id": "maple-court-market",
+      "name": "Maple Court Market",
       "aliases": [
-        "maple court",
-        "the maple court",
-        "maple court apartments",
-        "maple ct"
+        "maple court market",
+        "the maple court market",
+        "maple court mkt",
+        "maple ct market"
       ],
       "type": "store",
       "tier": 3,
       "channel": "sim",
-      "phone": "+14165550171",
-      "profile": "Mid-rise residential court on Maple Ave in Pickering. The office answers the phone during working hours and keeps tin counts in its job system."
+      "phone": "+14165550136",
+      "profile": "Market on Maple Ave in Pickering. The front-end manager answers the phone during opening hours and reads counts off the till."
     },
     {
-      "party_id": "dundas-lofts",
-      "name": "Dundas Lofts",
+      "party_id": "dundas-mini-mart",
+      "name": "Dundas Mini Mart",
       "aliases": [
-        "dundas lofts",
-        "the dundas lofts",
-        "dundas loft",
-        "dundas st lofts"
+        "dundas mini mart",
+        "the dundas mini mart",
+        "dundas mart",
+        "dundas st mini mart"
       ],
       "type": "store",
       "tier": 3,
       "channel": "sim",
-      "phone": "+16475550112",
-      "profile": "Loft building on Dundas St West downtown. The office answers the phone during working hours and keeps tin counts in its job system."
+      "phone": "+16475550151",
+      "profile": "Mini mart on Dundas St West downtown. The front-end manager answers the phone during opening hours and reads counts off the till."
     },
     {
-      "party_id": "spadina-works",
-      "name": "Spadina Works",
+      "party_id": "spadina-foods",
+      "name": "Spadina Foods",
       "aliases": [
-        "spadina works",
-        "the spadina works",
+        "spadina foods",
+        "the spadina foods",
         "spadina",
-        "spadina work"
+        "spadina food"
       ],
       "type": "store",
       "tier": 3,
       "channel": "sim",
-      "phone": "+14375550101",
-      "profile": "Office building in a converted factory on Spadina Ave. The office answers the phone during working hours and keeps tin counts in its job system."
+      "phone": "+14375550173",
+      "profile": "Food store on Spadina Ave. The front-end manager answers the phone during opening hours and reads counts off the till."
     },
     {
-      "party_id": "gable-street-housing-co-op",
-      "name": "Gable Street Housing Co-op",
+      "party_id": "gable-street-co-op-grocery",
+      "name": "Gable Street Co-op Grocery",
       "aliases": [
-        "gable street housing co-op",
-        "the gable street housing co-op",
+        "gable street co-op grocery",
+        "the gable street co-op grocery",
         "gable street co-op",
-        "gable st housing co-op"
+        "gable st co-op grocery"
       ],
       "type": "store",
       "tier": 3,
       "channel": "sim",
-      "phone": "+19055550117",
-      "profile": "Housing co-operative of four low-rise buildings on Gable St in Ajax. The office answers the phone during working hours and keeps tin counts in its job system."
+      "phone": "+19055550132",
+      "profile": "Co-operative grocery on Gable St in Ajax. The front-end manager answers the phone during opening hours and reads counts off the till."
     }
   ],
   "order_systems": {
@@ -325,87 +330,87 @@
       "accounts": [
         {
           "account": "N-001",
-          "name": "Birchmount Fire Protection",
-          "phone": "+14165550101",
+          "name": "Birchmount Fresh Market",
+          "phone": "+14165550171",
           "qty_shipped": 177,
-          "qty_in_stock": 28
+          "qty_in_stock": 40
         },
         {
           "account": "N-002",
-          "name": "Pinecrest Alarm Services",
-          "phone": "+16475550128",
+          "name": "Pinecrest Grocers",
+          "phone": "+16475550112",
           "qty_shipped": 177,
-          "qty_in_stock": 57
+          "qty_in_stock": 54
         },
         {
           "account": "N-003",
-          "name": "Tallpine Fire & Safety",
-          "phone": "+14375550185",
+          "name": "Tallpine General Store",
+          "phone": "+14375550101",
           "qty_shipped": 97,
-          "qty_in_stock": 55
+          "qty_in_stock": 61
         },
         {
           "account": "N-004",
-          "name": "Morrow Avenue Alarms",
-          "phone": "+19055550124",
+          "name": "Morrow Avenue Market",
+          "phone": "+19055550117",
           "qty_shipped": 119,
-          "qty_in_stock": 73
+          "qty_in_stock": 65
         },
         {
           "account": "N-005",
-          "name": "Elmvale Fire Systems",
-          "phone": "+12895550150",
+          "name": "Elmvale Foods",
+          "phone": "+12895550196",
           "qty_shipped": 85,
-          "qty_in_stock": 62
+          "qty_in_stock": 61
         },
         {
           "account": "N-006",
-          "name": "Cedarbrae Life Safety",
-          "phone": "+13655550181",
+          "name": "Cedarbrae Supermarket",
+          "phone": "+13655550135",
           "qty_shipped": 99,
-          "qty_in_stock": 67
+          "qty_in_stock": 74
         },
         {
           "account": "N-007",
-          "name": "Ridgeway Alarm Co",
-          "phone": "+14165550180",
+          "name": "Ridgeway Food Co",
+          "phone": "+14165550194",
           "qty_shipped": 89,
-          "qty_in_stock": 53
+          "qty_in_stock": 60
         },
         {
           "account": "N-008",
-          "name": "Glenholme Fire Services",
-          "phone": "+16475550133",
+          "name": "Glenholme Grocery",
+          "phone": "+16475550167",
           "qty_shipped": 104,
-          "qty_in_stock": 52
+          "qty_in_stock": 69
         },
         {
           "account": "N-009",
-          "name": "Lambton Mills Alarm",
-          "phone": "+14375550165",
+          "name": "Lambton Mills Market",
+          "phone": "+14375550113",
           "qty_shipped": 102,
-          "qty_in_stock": 71
+          "qty_in_stock": 51
         },
         {
           "account": "N-010",
-          "name": "Bloor Alarm",
-          "phone": "+19055550126",
+          "name": "Bloor Foods",
+          "phone": "+19055550140",
           "qty_shipped": 102,
-          "qty_in_stock": 77
+          "qty_in_stock": 57
         },
         {
           "account": "N-011",
-          "name": "Humber Bay Fire",
-          "phone": "+12895550142",
+          "name": "Humber Bay Grocer",
+          "phone": "+12895550182",
           "qty_shipped": 70,
-          "qty_in_stock": 48
+          "qty_in_stock": 44
         },
         {
           "account": "N-012",
-          "name": "Silverthorn Protection",
-          "phone": "+13655550137",
+          "name": "Silverthorn Market",
+          "phone": "+13655550143",
           "qty_shipped": 79,
-          "qty_in_stock": 43
+          "qty_in_stock": 51
         }
       ]
     },
@@ -415,310 +420,290 @@
       "accounts": [
         {
           "account": "E-001",
-          "name": "Fernbrook Fire Supply",
-          "phone": "+14165550148",
-          "qty_shipped": 147,
-          "qty_in_stock": 23
+          "name": "Fernbrook Food Town",
+          "phone": "+14165550103",
+          "qty_shipped": 143,
+          "qty_in_stock": 35
         },
         {
           "account": "E-002",
-          "name": "Annex Fire",
-          "phone": "+16475550119",
-          "qty_shipped": 147,
-          "qty_in_stock": 43
+          "name": "Annex Grocer",
+          "phone": "+16475550190",
+          "qty_shipped": 143,
+          "qty_in_stock": 34
         },
         {
           "account": "E-003",
-          "name": "Brookbanks Alarm",
-          "phone": "+14375550173",
-          "qty_shipped": 62,
-          "qty_in_stock": 38
+          "name": "Brookbanks Market",
+          "phone": "+14375550169",
+          "qty_shipped": 60,
+          "qty_in_stock": 40
         },
         {
           "account": "E-004",
-          "name": "Thistledown Fire",
-          "phone": "+19055550123",
-          "qty_shipped": 97,
-          "qty_in_stock": 47
+          "name": "Thistletown Foods",
+          "phone": "+19055550134",
+          "qty_shipped": 94,
+          "qty_in_stock": 63
         },
         {
           "account": "E-005",
-          "name": "Cliffcrest Alarm Systems",
-          "phone": "+12895550146",
-          "qty_shipped": 62,
-          "qty_in_stock": 28
+          "name": "Cliffcrest Grocery",
+          "phone": "+12895550154",
+          "qty_shipped": 60,
+          "qty_in_stock": 37
         },
         {
           "account": "E-006",
-          "name": "Wexford Fire & Security",
-          "phone": "+13655550186",
-          "qty_shipped": 65,
-          "qty_in_stock": 36
+          "name": "Summit Foods",
+          "phone": "+13655550159",
+          "qty_shipped": 120,
+          "qty_in_stock": 67
         },
         {
           "account": "E-007",
-          "name": "Guildwood Alarm",
-          "phone": "+14165550160",
-          "qty_shipped": 96,
-          "qty_in_stock": 62
+          "name": "Guildwood Market",
+          "phone": "+14165550192",
+          "qty_shipped": 63,
+          "qty_in_stock": 48
         },
         {
           "account": "E-008",
-          "name": "Orchard Park Fire",
-          "phone": "+16475550143",
-          "qty_shipped": 85,
+          "name": "Orchard Park Foods",
+          "phone": "+16475550108",
+          "qty_shipped": 94,
           "qty_in_stock": 53
         },
         {
           "account": "E-009",
-          "name": "Highland Creek Protection",
-          "phone": "+14375550156",
-          "qty_shipped": 99,
-          "qty_in_stock": 59
+          "name": "Highland Creek Grocer",
+          "phone": "+14375550157",
+          "qty_shipped": 83,
+          "qty_in_stock": 56
         }
       ]
     }
   },
-  "connected_panels": [
+  "complaints": [
     {
-      "serial": "D7-4471-0070",
-      "site_label": "Bayview Annex",
-      "party_id": "bayview-annex",
-      "model": "B-4471",
-      "sw_version": "2.4",
-      "fault": true,
-      "signal": true,
-      "fixed_at": 103.8
+      "_id": "c-0007",
+      "bought_at": "Maple Court Market",
+      "reason_code": "SEAL_BROKEN",
+      "at": 1.5,
+      "text": "the foil under the lid was torn when I opened it",
+      "batch_code": "B-4471",
+      "defect": "seal_fault"
     },
     {
-      "serial": "D7-4471-0093",
-      "site_label": "Clover Hill Plaza, Tower 1",
-      "party_id": "clover-hill-plaza",
-      "model": "B-4471",
-      "sw_version": "2.3",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 103.2
+      "_id": "c-0011",
+      "bought_at": "Bayview Grocer",
+      "reason_code": null,
+      "at": 4.0,
+      "text": "lid did not seal, the powder was hard and lumpy inside",
+      "batch_code": "B-4471",
+      "defect": "seal_fault"
     },
     {
-      "serial": "D7-4471-0119",
-      "site_label": "Clover Hill Plaza, Tower 2",
-      "party_id": "clover-hill-plaza",
-      "model": "B-4471",
-      "sw_version": "2.3",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 103.2
-    },
+      "_id": "c-0012",
+      "bought_at": "Spadina Foods",
+      "reason_code": null,
+      "at": 7.5,
+      "text": "lid was lifted, powder clumped and smelled sour",
+      "batch_code": "B-4471",
+      "defect": "seal_fault"
+    }
+  ],
+  "store_systems": [
     {
-      "serial": "D7-4471-0182",
-      "site_label": "Clover Hill Plaza, North Wing",
-      "party_id": "clover-hill-plaza",
-      "model": "B-4471",
-      "sw_version": "2.3",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 103.2
-    },
-    {
-      "serial": "D7-4471-0193",
-      "site_label": "Corner Mart, Tower 2",
+      "store_label": "Corner Mart",
       "party_id": "corner-mart",
-      "model": "B-4471",
-      "sw_version": "2.4",
-      "fault": true,
-      "signal": false,
-      "fixed_at": null
+      "connects": [
+        "till",
+        "stock"
+      ],
+      "simulated_page": true
     },
     {
-      "serial": "D7-4471-0209",
-      "site_label": "Dundas Lofts, Tower 1",
-      "party_id": "dundas-lofts",
-      "model": "B-4471",
-      "sw_version": "2.3",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 64.0
+      "store_label": "Bayview Grocer",
+      "party_id": "bayview-grocer",
+      "connects": [
+        "till",
+        "stock"
+      ],
+      "simulated_page": false,
+      "baseline": {
+        "received": 34,
+        "sold": 16,
+        "on_shelf": 18
+      }
     },
     {
-      "serial": "D7-4471-0224",
-      "site_label": "Dundas Lofts, Tower 2",
-      "party_id": "dundas-lofts",
-      "model": "B-4471",
-      "sw_version": "2.3",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 64.0
+      "store_label": "Brookbanks Market",
+      "party_id": "brookbanks-market",
+      "connects": [
+        "till",
+        "stock"
+      ],
+      "simulated_page": false,
+      "baseline": {
+        "received": 60,
+        "sold": 20,
+        "on_shelf": 40
+      }
     },
     {
-      "serial": "D7-4471-0283",
-      "site_label": "Dundas Lofts, North Wing",
-      "party_id": "dundas-lofts",
-      "model": "B-4471",
-      "sw_version": "2.3",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 64.0
+      "store_label": "Cedarbrae Supermarket",
+      "party_id": "cedarbrae-supermarket",
+      "connects": [
+        "till",
+        "stock"
+      ],
+      "simulated_page": false,
+      "baseline": {
+        "received": 99,
+        "sold": 25,
+        "on_shelf": 74
+      }
     },
     {
-      "serial": "D7-4471-0323",
-      "site_label": "Gable Street Housing Co-op, Tower 1",
-      "party_id": "gable-street-housing-co-op",
-      "model": "B-4471",
-      "sw_version": "2.3",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 94.7
+      "store_label": "Cliffcrest Grocery",
+      "party_id": "cliffcrest-grocery",
+      "connects": [
+        "till",
+        "stock"
+      ],
+      "simulated_page": false,
+      "baseline": {
+        "received": 60,
+        "sold": 23,
+        "on_shelf": 37
+      }
     },
     {
-      "serial": "D7-4471-0333",
-      "site_label": "Gable Street Housing Co-op, Tower 2",
-      "party_id": "gable-street-housing-co-op",
-      "model": "B-4471",
-      "sw_version": "2.3",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 94.7
+      "store_label": "Fernbrook Food Town",
+      "party_id": "fernbrook-food-town",
+      "connects": [
+        "till",
+        "stock"
+      ],
+      "simulated_page": false,
+      "baseline": {
+        "received": 143,
+        "sold": 28,
+        "on_shelf": 35
+      }
     },
     {
-      "serial": "D7-4471-0442",
-      "site_label": "Gable Street Housing Co-op, North Wing",
-      "party_id": "gable-street-housing-co-op",
-      "model": "B-4471",
-      "sw_version": "2.3",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 94.7
+      "store_label": "Kingsway Mini Mart",
+      "party_id": "kingsway-mini-mart",
+      "connects": [
+        "till",
+        "stock"
+      ],
+      "simulated_page": false,
+      "baseline": {
+        "received": 27,
+        "sold": 12,
+        "on_shelf": 15
+      }
     },
     {
-      "serial": "D7-4471-0600",
-      "site_label": "Harrow Street Lofts, Tower 1",
-      "party_id": "harrow-street-lofts",
-      "model": "B-4471",
-      "sw_version": "2.4",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 66.6
+      "store_label": "Lambton Mills Market",
+      "party_id": "lambton-mills-market",
+      "connects": [
+        "till",
+        "stock"
+      ],
+      "simulated_page": false,
+      "baseline": {
+        "received": 102,
+        "sold": 51,
+        "on_shelf": 51
+      }
     },
     {
-      "serial": "D7-4471-0677",
-      "site_label": "Kingsway Apartments, Tower 1",
-      "party_id": "kingsway-apartments",
-      "model": "B-4471",
-      "sw_version": "2.4",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 101.5
+      "store_label": "Maple Court Market",
+      "party_id": "maple-court-market",
+      "connects": [
+        "till",
+        "stock"
+      ],
+      "simulated_page": false,
+      "baseline": {
+        "received": 23,
+        "sold": 6,
+        "on_shelf": 17
+      }
     },
     {
-      "serial": "D7-4471-0771",
-      "site_label": "Kingsway Apartments, Tower 2",
-      "party_id": "kingsway-apartments",
-      "model": "B-4471",
-      "sw_version": "2.4",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 101.5
+      "store_label": "Morrow Avenue Market",
+      "party_id": "morrow-avenue-market",
+      "connects": [
+        "till",
+        "stock"
+      ],
+      "simulated_page": false,
+      "baseline": {
+        "received": 119,
+        "sold": 54,
+        "on_shelf": 65
+      }
     },
     {
-      "serial": "D7-4471-0822",
-      "site_label": "Kingsway Apartments, North Wing",
-      "party_id": "kingsway-apartments",
-      "model": "B-4471",
-      "sw_version": "2.4",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 101.5
+      "store_label": "Old Mill Market",
+      "party_id": "old-mill-market",
+      "connects": [
+        "till",
+        "stock"
+      ],
+      "simulated_page": false,
+      "baseline": {
+        "received": 31,
+        "sold": 8,
+        "on_shelf": 23
+      }
     },
     {
-      "serial": "D7-4471-0868",
-      "site_label": "Larkspur Residences, Tower 1",
-      "party_id": "larkspur-residences",
-      "model": "B-4471",
-      "sw_version": "2.4",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 103.6
+      "store_label": "Rosehill Foods",
+      "party_id": "rosehill-foods",
+      "connects": [
+        "till",
+        "stock"
+      ],
+      "simulated_page": false,
+      "baseline": {
+        "received": 31,
+        "sold": 10,
+        "on_shelf": 21
+      }
     },
     {
-      "serial": "D7-4471-0978",
-      "site_label": "Larkspur Residences, Tower 2",
-      "party_id": "larkspur-residences",
-      "model": "B-4471",
-      "sw_version": "2.4",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 103.6
+      "store_label": "Spadina Foods",
+      "party_id": "spadina-foods",
+      "connects": [
+        "till",
+        "stock"
+      ],
+      "simulated_page": false,
+      "baseline": {
+        "received": 30,
+        "sold": 10,
+        "on_shelf": 19
+      }
     },
     {
-      "serial": "D7-4471-0998",
-      "site_label": "Larkspur Residences, North Wing",
-      "party_id": "larkspur-residences",
-      "model": "B-4471",
-      "sw_version": "2.4",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 103.6
-    },
-    {
-      "serial": "D7-4471-1025",
-      "site_label": "Maple Court",
-      "party_id": "maple-court",
-      "model": "B-4471",
-      "sw_version": "2.3",
-      "fault": true,
-      "signal": true,
-      "fixed_at": 96.4
-    },
-    {
-      "serial": "D7-4471-1056",
-      "site_label": "Old Mill Condominiums, Tower 1",
-      "party_id": "old-mill-condominiums",
-      "model": "B-4471",
-      "sw_version": "2.3",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 89.8
-    },
-    {
-      "serial": "D7-4471-1068",
-      "site_label": "Old Mill Condominiums, Tower 2",
-      "party_id": "old-mill-condominiums",
-      "model": "B-4471",
-      "sw_version": "2.3",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 89.8
-    },
-    {
-      "serial": "D7-4471-1077",
-      "site_label": "Rosehill Court, Tower 1",
-      "party_id": "rosehill-court",
-      "model": "B-4471",
-      "sw_version": "2.3",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 99.0
-    },
-    {
-      "serial": "D7-4471-1278",
-      "site_label": "Spadina Works",
-      "party_id": "spadina-works",
-      "model": "B-4471",
-      "sw_version": "2.4",
-      "fault": true,
-      "signal": true,
-      "fixed_at": 94.4
-    },
-    {
-      "serial": "D7-4471-1290",
-      "site_label": "Willow Creek Towers, Tower 1",
-      "party_id": "willow-creek-towers",
-      "model": "B-4471",
-      "sw_version": "2.4",
-      "fault": false,
-      "signal": false,
-      "fixed_at": 79.4
+      "store_label": "Willow Creek Convenience",
+      "party_id": "willow-creek-convenience",
+      "connects": [
+        "till",
+        "stock"
+      ],
+      "simulated_page": false,
+      "baseline": {
+        "received": 17,
+        "sold": 7,
+        "on_shelf": 10
+      }
     }
   ],
   "sim": {
@@ -729,9 +714,9 @@
           "answers": {
             "delivery_note": "DN-48213"
           },
-          "say": "We've got sixty in stock.",
+          "say": "We've got sixty on the shelf.",
           "claim": {
-            "held": 60
+            "on_shelf": 60
           },
           "expect": {
             "accepted": false,
@@ -744,10 +729,13 @@
           "answers": {
             "delivery_note": "DN-48213"
           },
-          "say": "Sorry, I was reading the wrong job. Thirty in stock, ten already sent back to the supplier.",
+          "say": "Sorry, I was reading the wrong line. The till says ten sold, and we pulled the other thirty into the back room. The batch code reads B-4471, and the till refused the sale.",
           "claim": {
+            "sold": 10,
+            "sold_source": "till_report",
             "held": 30,
-            "returned": 10
+            "batch_seen": "B-4471",
+            "block_test": true
           },
           "expect": {
             "accepted": true
@@ -763,12 +751,15 @@
           "answers": {
             "delivery_note": "DN-48214"
           },
-          "say": "Fifty in stock, thirty returned, and forty on_shelf at Corner Mart' buildings.",
+          "say": "The till says fifty sold. Thirty are pulled and held in the back, and forty went to Corner Mart. The batch code reads B-4471, and the till refused the sale.",
           "claim": {
-            "held": 50,
-            "returned": 30,
+            "sold": 50,
+            "sold_source": "till_report",
+            "held": 30,
             "forwarded_qty": 40,
-            "forwarded_to_name": "Corner Mart"
+            "forwarded_to_name": "Corner Mart",
+            "batch_seen": "B-4471",
+            "block_test": true
           },
           "expect": {
             "accepted": true
@@ -784,12 +775,15 @@
           "answers": {
             "delivery_note": "DN-48214"
           },
-          "say": "Checked the job sheets. Twenty-five went into Corner Mart. The other fifteen are still in our stock room.",
+          "say": "Checked the delivery notes. Twenty-five went to Corner Mart. The other fifteen are still in our back room, held.",
           "claim": {
-            "held": 65,
-            "returned": 30,
+            "sold": 50,
+            "sold_source": "till_report",
+            "held": 45,
             "forwarded_qty": 25,
-            "forwarded_to_name": "Corner Mart"
+            "forwarded_to_name": "Corner Mart",
+            "batch_seen": "B-4471",
+            "block_test": true
           },
           "expect": {
             "accepted": true
@@ -804,10 +798,13 @@
           "answers": {
             "delivery_note": "DN-48215"
           },
-          "say": "Twenty in stock. Sixty already shipped back to the supplier.",
+          "say": "Twenty sold, per the till's sales report. The other sixty are pulled and held for return. The batch code reads B-4471, and the till refused the sale.",
           "claim": {
-            "held": 20,
-            "returned": 60
+            "sold": 20,
+            "sold_source": "till_report",
+            "held": 60,
+            "batch_seen": "B-4471",
+            "block_test": true
           },
           "expect": {
             "accepted": true
@@ -819,12 +816,11 @@
       "initial": [
         {
           "delay_s": 3.0,
-          "say": "We received twenty-five, all on_shelf. The front says B-4471, the display says 2.4, and the sounder did not ring.",
+          "say": "We received twenty-five, all still on the shelf. The batch code reads B-4471, and the till still sells it.",
           "claim": {
             "received_qty": 25,
             "on_shelf": 25,
             "batch_seen": "B-4471",
-            "sold_source": "2.4",
             "block_test": false
           },
           "expect": {
@@ -838,12 +834,11 @@
           "told": {
             "other_side_qty": 40
           },
-          "say": "No, twenty-five. I have the store's invoice.",
+          "say": "No, twenty-five. I have the delivery note.",
           "claim": {
             "received_qty": 25,
             "on_shelf": 25,
             "batch_seen": "B-4471",
-            "sold_source": "2.4",
             "block_test": false
           },
           "expect": {
@@ -860,12 +855,12 @@
       "tier": 1,
       "upstream": null,
       "profile": "forwarder",
-      "description": "Fire alarm store on Queen St W in Parkdale, Toronto. A busy contractor with a stock room larger than its jobs need. Installs tins for property managers across the west end and keeps its job sheets on paper.",
+      "description": "Busy grocer on Queen St W in Parkdale, Toronto, with a back room larger than its shelves need. Passes spare stock to small corner stores nearby and keeps its delivery notes on paper.",
       "truth": {
-        "held": 65,
+        "sold": 50,
         "on_shelf": 0,
-        "held": 0,
-        "returned": 30,
+        "held": 45,
+        "returned": 0,
         "forwards": [
           {
             "to_party_id": "corner-mart",
@@ -883,115 +878,127 @@
       "tier": 1,
       "upstream": null,
       "profile": "straight",
-      "description": "Fire alarm and sprinkler contractor on Lake Shore Blvd W in Mimico, Etobicoke. Pulls recalled stock the same day and ships it back to the supplier with return slips.",
+      "description": "Supermarket on Lake Shore Blvd W in Mimico, Etobicoke. Pulls recalled stock the same day and ships it back to the company with return slips.",
       "truth": {
-        "held": 20,
+        "sold": 20,
         "on_shelf": 0,
-        "held": 0,
-        "returned": 60,
+        "held": 60,
+        "returned": 0,
         "forwards": [],
         "other_batches": {}
       },
       "params": {}
     },
-    "birchmount-fire-protection": {
-      "name": "Birchmount Fire Protection",
+    "birchmount-fresh-market": {
+      "name": "Birchmount Fresh Market",
       "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "forwarder",
-      "description": "Fire alarm contractor on Birchmount Rd in Scarborough with a warehouse and two install crews. Installs tins at buildings for property managers, and passes spare tins to smaller stores, none of them on a distributor's list.",
+      "description": "Grocer on Birchmount Rd in Scarborough with a warehouse that supplies small stores nearby. Passes spare tins to smaller stores, none of them on a distributor's list.",
       "truth": {
         "received": 177,
-        "held": 28,
-        "on_shelf": 0,
+        "sold": 26,
+        "on_shelf": 40,
         "held": 0,
-        "returned": 36,
+        "returned": 0,
         "forwards": [
           {
-            "to_party_id": "juniper-lane-alarm",
-            "to_name": "Juniper Lane Alarm",
-            "qty": 49
+            "to_party_id": "juniper-lane-variety",
+            "to_name": "Juniper Lane Variety",
+            "qty": 46
           },
           {
-            "to_party_id": "bayview-annex",
-            "to_name": "Bayview Annex",
-            "qty": 33
+            "to_party_id": "bayview-grocer",
+            "to_name": "Bayview Grocer",
+            "qty": 34
           },
           {
-            "to_party_id": "larkspur-residences",
-            "to_name": "Larkspur Residences",
+            "to_party_id": "larkspur-corner-store",
+            "to_name": "Larkspur Corner Store",
             "qty": 31
           }
         ],
+        "removal": {
+          "after_hours": 10.3,
+          "batch": "B-4471"
+        },
         "other_batches": {}
       },
       "params": {
         "misreport": [
           {
-            "to_party_id": "larkspur-residences",
+            "to_party_id": "larkspur-corner-store",
             "extra": 6
           }
         ]
       }
     },
-    "pinecrest-alarm-services": {
-      "name": "Pinecrest Alarm Services",
+    "pinecrest-grocers": {
+      "name": "Pinecrest Grocers",
       "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "forwarder",
-      "description": "Alarm store on Pinecrest Ave in North York that works for property managers. Installs tins at buildings for property managers, and passes spare tins to smaller stores, none of them on a distributor's list.",
+      "description": "Family grocer on Pinecrest Ave in North York that sells stock on to corner stores. Passes spare tins to smaller stores, none of them on a distributor's list.",
       "truth": {
         "received": 177,
-        "held": 57,
-        "on_shelf": 0,
+        "sold": 34,
+        "on_shelf": 54,
         "held": 0,
-        "returned": 31,
+        "returned": 0,
         "forwards": [
           {
-            "to_party_id": "kingsway-apartments",
-            "to_name": "Kingsway Apartments",
+            "to_party_id": "kingsway-mini-mart",
+            "to_name": "Kingsway Mini Mart",
             "qty": 27
           },
           {
-            "to_party_id": "old-mill-condominiums",
-            "to_name": "Old Mill Condominiums",
+            "to_party_id": "old-mill-market",
+            "to_name": "Old Mill Market",
             "qty": 31
           },
           {
-            "to_party_id": "rosehill-court",
-            "to_name": "Rosehill Court",
+            "to_party_id": "rosehill-foods",
+            "to_name": "Rosehill Foods",
             "qty": 31
           }
         ],
+        "removal": {
+          "after_hours": 6.9,
+          "batch": "B-4471"
+        },
         "other_batches": {}
       },
       "params": {
         "misreport": [
           {
-            "to_party_id": "old-mill-condominiums",
-            "extra": 4
+            "to_party_id": "old-mill-market",
+            "extra": 8
           }
         ]
       }
     },
-    "tallpine-fire-safety": {
-      "name": "Tallpine Fire & Safety",
+    "tallpine-general-store": {
+      "name": "Tallpine General Store",
       "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "unreachable",
-      "description": "One-van fire safety contractor on a rural route north of the city. The line is unreliable and messages go unanswered; the distributor's sales rep visits weekly and knows the stock.",
+      "description": "General store on a rural route north of the city. The line is unreliable and messages go unanswered; the distributor's sales rep visits weekly and knows the stock.",
       "truth": {
         "received": 97,
-        "held": 55,
-        "on_shelf": 0,
+        "sold": 36,
+        "on_shelf": 61,
         "held": 0,
-        "returned": 42,
+        "returned": 0,
         "forwards": [],
+        "removal": {
+          "after_hours": 9.2,
+          "batch": "B-4471"
+        },
         "other_batches": {
-          "B-4480": 23
+          "B-4480": 11
         }
       },
       "params": {
@@ -999,471 +1006,27 @@
         "form_after_hours": null
       }
     },
-    "morrow-avenue-alarms": {
-      "name": "Morrow Avenue Alarms",
+    "morrow-avenue-market": {
+      "name": "Morrow Avenue Market",
       "type": "store",
       "tier": 2,
       "upstream": "dist-north",
       "profile": "no_answer",
-      "description": "Small alarm store on Morrow Ave in the Junction Triangle. The technicians are out on site in the morning; the office phone is only answered between 13:00 and 17:00.",
+      "description": "Small market on Morrow Ave in the Junction Triangle. Staff are on the floor in the morning; the phone is only answered between 15:00 and 19:00.",
       "truth": {
         "received": 119,
-        "held": 73,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 46,
-        "forwards": [],
-        "other_batches": {}
-      },
-      "params": {
-        "answer_hours": [
-          13,
-          17
-        ],
-        "form_after_hours": 3.0
-      }
-    },
-    "elmvale-fire-systems": {
-      "name": "Elmvale Fire Systems",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-north",
-      "profile": "no_answer",
-      "description": "Fire systems contractor on Elmvale Rd in East York. One person runs the office alone; the phone often rings out or is engaged and is usually picked up only after a couple of tries.",
-      "truth": {
-        "received": 85,
-        "held": 62,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 23,
-        "forwards": [],
-        "other_batches": {
-          "B-4480": 10
-        }
-      },
-      "params": {
-        "answer_on_attempt": 3,
-        "form_after_hours": null
-      }
-    },
-    "cedarbrae-life-safety": {
-      "name": "Cedarbrae Life Safety",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-north",
-      "profile": "callback",
-      "description": "Life safety contractor in the Cedarbrae business park in Scarborough. The manager keeps the job sheets in the site office and asks to be called back the next morning at 11:00.",
-      "truth": {
-        "received": 99,
-        "held": 67,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 32,
-        "forwards": [],
-        "other_batches": {
-          "B-4480": 7
-        }
-      },
-      "params": {
-        "callback_hour": 11
-      }
-    },
-    "ridgeway-alarm-co": {
-      "name": "Ridgeway Alarm Co",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-north",
-      "profile": "over_reporter",
-      "description": "Alarm and intercom store on Ridgeway Dr in Etobicoke. Counts are read off a shared stock sheet, and the first figure given is often from the wrong line.",
-      "truth": {
-        "received": 89,
-        "held": 53,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 36,
-        "forwards": [],
-        "other_batches": {}
-      },
-      "params": {
-        "over_report_by": 19
-      }
-    },
-    "glenholme-fire-services": {
-      "name": "Glenholme Fire Services",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-north",
-      "profile": "reviser",
-      "description": "Family-run fire services firm on Glenholme Ave in Oakwood Village. Keeps careful paperwork and sends a correction when tins are returned after a call.",
-      "truth": {
-        "received": 104,
-        "held": 52,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 52,
-        "forwards": [],
-        "other_batches": {
-          "B-4480": 22
-        }
-      },
-      "params": {
-        "revise": {
-          "after_hours": 48.0,
-          "delta": 10
-        }
-      }
-    },
-    "lambton-mills-alarm": {
-      "name": "Lambton Mills Alarm",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-north",
-      "profile": "straight",
-      "description": "Alarm store on Old Dundas St by the Humber River. The office answers the phone during working hours and keeps tin counts in its job system.",
-      "truth": {
-        "received": 102,
-        "held": 71,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 31,
-        "forwards": [],
-        "other_batches": {}
-      },
-      "params": {}
-    },
-    "bloor-alarm": {
-      "name": "Bloor Alarm",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-north",
-      "profile": "straight",
-      "description": "Fire alarm contractor on Bloor St West with a busy service desk. The office answers the phone during working hours and keeps tin counts in its job system.",
-      "truth": {
-        "received": 102,
-        "held": 77,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 25,
-        "forwards": [],
-        "other_batches": {
-          "B-4480": 8
-        }
-      },
-      "params": {}
-    },
-    "humber-bay-fire": {
-      "name": "Humber Bay Fire",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-north",
-      "profile": "straight",
-      "description": "Fire alarm store working the condo towers of Humber Bay. The office answers the phone during working hours and keeps tin counts in its job system.",
-      "truth": {
-        "received": 70,
-        "held": 48,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 22,
-        "forwards": [],
-        "other_batches": {}
-      },
-      "params": {}
-    },
-    "silverthorn-protection": {
-      "name": "Silverthorn Protection",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-north",
-      "profile": "straight",
-      "description": "Fire protection contractor on Silverthorn Ave near Eglinton Ave West. The office answers the phone during working hours and keeps tin counts in its job system.",
-      "truth": {
-        "received": 79,
-        "held": 43,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 36,
-        "forwards": [],
-        "other_batches": {}
-      },
-      "params": {}
-    },
-    "fernbrook-fire-supply": {
-      "name": "Fernbrook Fire Supply",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-east",
-      "profile": "forwarder",
-      "description": "Fire alarm contractor in an industrial unit in Pickering that installs for housing providers. Installs tins at buildings for property managers, and passes spare tins to smaller stores, none of them on a distributor's list.",
-      "truth": {
-        "received": 147,
-        "held": 23,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 29,
-        "forwards": [
-          {
-            "to_party_id": "harrow-street-lofts",
-            "to_name": "Harrow Street Lofts",
-            "qty": 27
-          },
-          {
-            "to_party_id": "clover-hill-plaza",
-            "to_name": "Clover Hill Plaza",
-            "qty": 33
-          },
-          {
-            "to_party_id": "maple-court",
-            "to_name": "Maple Court Apartments",
-            "qty": 35
-          }
-        ],
-        "other_batches": {}
-      },
-      "params": {}
-    },
-    "annex-fire": {
-      "name": "Annex Fire",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-east",
-      "profile": "forwarder",
-      "description": "Fire alarm store in the Annex that services lofts and offices downtown. Installs tins at buildings for property managers, and passes spare tins to smaller stores, none of them on a distributor's list.",
-      "truth": {
-        "received": 147,
-        "held": 43,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 26,
-        "forwards": [
-          {
-            "to_party_id": "dundas-lofts",
-            "to_name": "Dundas Lofts",
-            "qty": 25
-          },
-          {
-            "to_party_id": "spadina-works",
-            "to_name": "Spadina Works",
-            "qty": 26
-          },
-          {
-            "to_party_id": "gable-street-housing-co-op",
-            "to_name": "Gable Street Co-op",
-            "qty": 27
-          }
-        ],
-        "other_batches": {}
-      },
-      "params": {}
-    },
-    "brookbanks-alarm": {
-      "name": "Brookbanks Alarm",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-east",
-      "profile": "no_answer",
-      "description": "Small alarm store on Brookbanks Dr in Don Mills. The technicians are out on site in the morning; the office phone is only answered between 14:00 and 18:00.",
-      "truth": {
-        "received": 62,
-        "held": 38,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 24,
-        "forwards": [],
-        "other_batches": {}
-      },
-      "params": {
-        "answer_hours": [
-          14,
-          18
-        ],
-        "form_after_hours": 2.0
-      }
-    },
-    "thistledown-fire": {
-      "name": "Thistledown Fire",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-east",
-      "profile": "callback",
-      "description": "Fire alarm contractor in a strip plaza in Thistletown, Etobicoke. The manager keeps the job sheets in the site office and asks to be called back the next morning at 9:00.",
-      "truth": {
-        "received": 97,
-        "held": 47,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 50,
-        "forwards": [],
-        "other_batches": {}
-      },
-      "params": {
-        "callback_hour": 9
-      }
-    },
-    "cliffcrest-alarm-systems": {
-      "name": "Cliffcrest Alarm Systems",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-east",
-      "profile": "over_reporter",
-      "description": "Alarm systems store on Kingston Rd in Cliffcrest. Counts are read off a shared stock sheet, and the first figure given is often from the wrong line.",
-      "truth": {
-        "received": 62,
-        "held": 28,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 34,
-        "forwards": [],
-        "other_batches": {}
-      },
-      "params": {
-        "over_report_by": 10
-      }
-    },
-    "wexford-fire-security": {
-      "name": "Wexford Fire & Security",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-east",
-      "profile": "straight",
-      "description": "Fire and security contractor on Lawrence Ave East in Wexford. The office answers the phone during working hours and keeps tin counts in its job system.",
-      "truth": {
-        "received": 65,
-        "held": 36,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 29,
-        "forwards": [],
-        "other_batches": {}
-      },
-      "params": {}
-    },
-    "guildwood-alarm": {
-      "name": "Guildwood Alarm",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-east",
-      "profile": "straight",
-      "description": "Owner-run alarm store in Guildwood Village. The office answers the phone during working hours and keeps tin counts in its job system.",
-      "truth": {
-        "received": 96,
-        "held": 62,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 34,
-        "forwards": [],
-        "other_batches": {}
-      },
-      "params": {}
-    },
-    "orchard-park-fire": {
-      "name": "Orchard Park Fire",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-east",
-      "profile": "straight",
-      "description": "Fire alarm contractor on Orchard Park Blvd in Ajax. The office answers the phone during working hours and keeps tin counts in its job system.",
-      "truth": {
-        "received": 85,
-        "held": 53,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 32,
-        "forwards": [],
-        "other_batches": {}
-      },
-      "params": {}
-    },
-    "highland-creek-protection": {
-      "name": "Highland Creek Protection",
-      "type": "store",
-      "tier": 2,
-      "upstream": "dist-east",
-      "profile": "straight",
-      "description": "Fire protection contractor on Old Kingston Rd in Highland Creek. The office answers the phone during working hours and keeps tin counts in its job system.",
-      "truth": {
-        "received": 99,
-        "held": 59,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 40,
-        "forwards": [],
-        "other_batches": {
-          "B-4480": 14
-        }
-      },
-      "params": {}
-    },
-    "juniper-lane-alarm": {
-      "name": "Juniper Lane Alarm",
-      "type": "store",
-      "tier": 3,
-      "upstream": "birchmount-fire-protection",
-      "profile": "forwarder",
-      "description": "Small alarm store on Juniper Lane in Scarborough that subcontracts for larger firms. Installs tins at buildings for property managers, and passes spare tins to smaller stores, none of them on a distributor's list.",
-      "truth": {
-        "received": 49,
-        "held": 17,
-        "on_shelf": 0,
-        "held": 0,
-        "returned": 14,
-        "forwards": [
-          {
-            "to_party_id": "willow-creek-towers",
-            "to_name": "Willow Creek Towers",
-            "qty": 18
-          }
-        ],
-        "other_batches": {}
-      },
-      "params": {}
-    },
-    "willow-creek-towers": {
-      "name": "Willow Creek Towers",
-      "type": "store",
-      "tier": 3,
-      "upstream": "juniper-lane-alarm",
-      "profile": "straight",
-      "description": "Two residential towers by Willow Creek park in Scarborough. The office answers the phone during working hours and keeps tin counts in its job system.",
-      "truth": {
-        "received": 18,
-        "held": 2,
-        "on_shelf": 15,
-        "held": 0,
-        "returned": 1,
-        "forwards": [],
-        "fix": {
-          "at": 79.4,
-          "model": "B-4471",
-          "version_before": "2.4",
-          "version_after": "2.5"
-        },
-        "other_batches": {
-          "B-4480": 11
-        }
-      },
-      "params": {}
-    },
-    "bayview-annex": {
-      "name": "Bayview Annex",
-      "type": "store",
-      "tier": 3,
-      "upstream": "birchmount-fire-protection",
-      "profile": "no_answer",
-      "description": "Office and retail annex at the top of Bayview Ave. The technicians are out on site in the morning; the office phone is only answered between 15:00 and 19:00.",
-      "truth": {
-        "received": 33,
-        "held": 3,
-        "on_shelf": 30,
+        "sold": 54,
+        "on_shelf": 65,
         "held": 0,
         "returned": 0,
         "forwards": [],
-        "fix": {
-          "at": 103.8,
-          "model": "B-4471",
-          "version_before": "2.4",
-          "version_after": "2.5"
+        "removal": {
+          "after_hours": 6.5,
+          "batch": "B-4471"
         },
-        "other_batches": {}
+        "other_batches": {
+          "B-4480": 23
+        }
       },
       "params": {
         "answer_hours": [
@@ -1473,164 +1036,23 @@
         "form_after_hours": 4.0
       }
     },
-    "larkspur-residences": {
-      "name": "Larkspur Residences",
+    "elmvale-foods": {
+      "name": "Elmvale Foods",
       "type": "store",
-      "tier": 3,
-      "upstream": "birchmount-fire-protection",
-      "profile": "short_receiver",
-      "description": "Seniors' residence on Larkspur Ave with three wings. Has its tins on_shelf by a local contractor and checks every invoice against the tins on site.",
-      "truth": {
-        "received": 31,
-        "held": 1,
-        "on_shelf": 30,
-        "held": 0,
-        "returned": 0,
-        "forwards": [],
-        "fix": {
-          "at": 103.6,
-          "model": "B-4471",
-          "version_before": "2.4",
-          "version_after": "2.5"
-        },
-        "other_batches": {}
-      },
-      "params": {
-        "short_by": 6,
-        "sender": "birchmount-fire-protection"
-      }
-    },
-    "kingsway-apartments": {
-      "name": "Kingsway Apartments",
-      "type": "store",
-      "tier": 3,
-      "upstream": "pinecrest-alarm-services",
-      "profile": "callback",
-      "description": "Apartment buildings on Bloor St West in the Kingsway. The manager keeps the job sheets in the site office and asks to be called back the next morning at 10:00.",
-      "truth": {
-        "received": 27,
-        "held": 3,
-        "on_shelf": 24,
-        "held": 0,
-        "returned": 0,
-        "forwards": [],
-        "fix": {
-          "at": 101.5,
-          "model": "B-4471",
-          "version_before": "2.4",
-          "version_after": "2.5"
-        },
-        "other_batches": {}
-      },
-      "params": {
-        "callback_hour": 10
-      }
-    },
-    "old-mill-condominiums": {
-      "name": "Old Mill Condominiums",
-      "type": "store",
-      "tier": 3,
-      "upstream": "pinecrest-alarm-services",
-      "profile": "short_receiver",
-      "description": "Condominium buildings near the Old Mill bridge. Has its tins on_shelf by a local contractor and checks every invoice against the tins on site.",
-      "truth": {
-        "received": 31,
-        "held": 2,
-        "on_shelf": 29,
-        "held": 0,
-        "returned": 0,
-        "forwards": [],
-        "fix": {
-          "at": 89.8,
-          "model": "B-4471",
-          "version_before": "2.3",
-          "version_after": "2.5"
-        },
-        "other_batches": {
-          "B-4480": 11
-        }
-      },
-      "params": {
-        "short_by": 4,
-        "sender": "pinecrest-alarm-services"
-      }
-    },
-    "rosehill-court": {
-      "name": "Rosehill Court",
-      "type": "store",
-      "tier": 3,
-      "upstream": "pinecrest-alarm-services",
-      "profile": "over_reporter",
-      "description": "Housing co-operative on Rosehill Ave by the reservoir park. Counts are read off a shared stock sheet, and the first figure given is often from the wrong line.",
-      "truth": {
-        "received": 31,
-        "held": 2,
-        "on_shelf": 29,
-        "held": 0,
-        "returned": 0,
-        "forwards": [],
-        "fix": {
-          "at": 99.0,
-          "model": "B-4471",
-          "version_before": "2.3",
-          "version_after": "2.5"
-        },
-        "other_batches": {
-          "B-4480": 23
-        }
-      },
-      "params": {
-        "over_report_by": 10
-      }
-    },
-    "harrow-street-lofts": {
-      "name": "Harrow Street Lofts",
-      "type": "store",
-      "tier": 3,
-      "upstream": "fernbrook-fire-supply",
-      "profile": "reviser",
-      "description": "Converted warehouse lofts on Harrow St in Pickering village. Keeps careful paperwork and sends a correction when tins are returned after a call.",
-      "truth": {
-        "received": 27,
-        "held": 2,
-        "on_shelf": 25,
-        "held": 0,
-        "returned": 0,
-        "forwards": [],
-        "fix": {
-          "at": 66.6,
-          "model": "B-4471",
-          "version_before": "2.4",
-          "version_after": "2.5"
-        },
-        "other_batches": {}
-      },
-      "params": {
-        "revise": {
-          "after_hours": 48.0,
-          "delta": 1
-        }
-      }
-    },
-    "clover-hill-plaza": {
-      "name": "Clover Hill Plaza",
-      "type": "store",
-      "tier": 3,
-      "upstream": "fernbrook-fire-supply",
+      "tier": 2,
+      "upstream": "dist-north",
       "profile": "no_answer",
-      "description": "Shopping plaza and offices at the Clover Hill crossroads. One person runs the office alone; the phone often rings out or is engaged and is usually picked up only after a couple of tries.",
+      "description": "Neighbourhood food store on Elmvale Rd in East York. One person runs the store alone; the phone often rings out or is engaged and is usually picked up only after a couple of tries.",
       "truth": {
-        "received": 33,
-        "held": 3,
-        "on_shelf": 30,
+        "received": 85,
+        "sold": 24,
+        "on_shelf": 61,
         "held": 0,
         "returned": 0,
         "forwards": [],
-        "fix": {
-          "at": 103.2,
-          "model": "B-4471",
-          "version_before": "2.3",
-          "version_after": "2.5"
+        "removal": {
+          "after_hours": 10.7,
+          "batch": "B-4471"
         },
         "other_batches": {}
       },
@@ -1639,75 +1061,100 @@
         "form_after_hours": null
       }
     },
-    "maple-court": {
-      "name": "Maple Court",
+    "cedarbrae-supermarket": {
+      "name": "Cedarbrae Supermarket",
       "type": "store",
-      "tier": 3,
-      "upstream": "fernbrook-fire-supply",
-      "profile": "straight",
-      "description": "Mid-rise residential court on Maple Ave in Pickering. The office answers the phone during working hours and keeps tin counts in its job system.",
+      "tier": 2,
+      "upstream": "dist-north",
+      "profile": "callback",
+      "description": "Supermarket in the Cedarbrae plaza in Scarborough. The manager keeps the delivery notes in the office and asks to be called back the next morning at 10:00.",
       "truth": {
-        "received": 35,
-        "held": 4,
-        "on_shelf": 31,
+        "received": 99,
+        "sold": 25,
+        "on_shelf": 74,
         "held": 0,
         "returned": 0,
         "forwards": [],
-        "fix": {
-          "at": 96.4,
-          "model": "B-4471",
-          "version_before": "2.3",
-          "version_after": "2.5"
+        "removal": {
+          "after_hours": 4.4,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {
+        "callback_hour": 10
+      }
+    },
+    "ridgeway-food-co": {
+      "name": "Ridgeway Food Co",
+      "type": "store",
+      "tier": 2,
+      "upstream": "dist-north",
+      "profile": "over_reporter",
+      "description": "Food store on Ridgeway Dr in Etobicoke. Counts are read off a shared stock sheet, and the first figure given is often from the wrong line.",
+      "truth": {
+        "received": 89,
+        "sold": 23,
+        "on_shelf": 60,
+        "held": 0,
+        "returned": 6,
+        "forwards": [],
+        "removal": {
+          "after_hours": 6.4,
+          "batch": "B-4471"
         },
         "other_batches": {
           "B-4480": 17
         }
       },
-      "params": {}
+      "params": {
+        "over_report_by": 18
+      }
     },
-    "dundas-lofts": {
-      "name": "Dundas Lofts",
+    "glenholme-grocery": {
+      "name": "Glenholme Grocery",
       "type": "store",
-      "tier": 3,
-      "upstream": "annex-fire",
-      "profile": "straight",
-      "description": "Loft building on Dundas St West downtown. The office answers the phone during working hours and keeps tin counts in its job system.",
+      "tier": 2,
+      "upstream": "dist-north",
+      "profile": "reviser",
+      "description": "Family-run grocery on Glenholme Ave in Oakwood Village. Keeps careful paperwork and sends a correction when tins go back after a call.",
       "truth": {
-        "received": 25,
-        "held": 3,
-        "on_shelf": 22,
+        "received": 104,
+        "sold": 35,
+        "on_shelf": 69,
         "held": 0,
         "returned": 0,
         "forwards": [],
-        "fix": {
-          "at": 64.0,
-          "model": "B-4471",
-          "version_before": "2.3",
-          "version_after": "2.5"
+        "removal": {
+          "after_hours": 5.0,
+          "batch": "B-4471"
         },
         "other_batches": {}
       },
-      "params": {}
+      "params": {
+        "revise": {
+          "after_hours": 48.0,
+          "delta": 10
+        }
+      }
     },
-    "spadina-works": {
-      "name": "Spadina Works",
+    "lambton-mills-market": {
+      "name": "Lambton Mills Market",
       "type": "store",
-      "tier": 3,
-      "upstream": "annex-fire",
+      "tier": 2,
+      "upstream": "dist-north",
       "profile": "straight",
-      "description": "Office building in a converted factory on Spadina Ave. The office answers the phone during working hours and keeps tin counts in its job system.",
+      "description": "Market on Old Dundas St by the Humber River. The front-end manager answers the phone during opening hours and reads counts off the till.",
       "truth": {
-        "received": 26,
-        "held": 3,
-        "on_shelf": 23,
+        "received": 102,
+        "sold": 51,
+        "on_shelf": 51,
         "held": 0,
         "returned": 0,
         "forwards": [],
-        "fix": {
-          "at": 94.4,
-          "model": "B-4471",
-          "version_before": "2.4",
-          "version_after": "2.5"
+        "removal": {
+          "after_hours": 8.9,
+          "batch": "B-4471"
         },
         "other_batches": {
           "B-4480": 13
@@ -1715,29 +1162,646 @@
       },
       "params": {}
     },
-    "gable-street-housing-co-op": {
-      "name": "Gable Street Housing Co-op",
+    "bloor-foods": {
+      "name": "Bloor Foods",
       "type": "store",
-      "tier": 3,
-      "upstream": "annex-fire",
+      "tier": 2,
+      "upstream": "dist-north",
       "profile": "straight",
-      "description": "Housing co-operative of four low-rise buildings on Gable St in Ajax. The office answers the phone during working hours and keeps tin counts in its job system.",
+      "description": "Grocer on Bloor St West with a busy front end. The front-end manager answers the phone during opening hours and reads counts off the till.",
       "truth": {
-        "received": 27,
-        "held": 1,
-        "on_shelf": 26,
+        "received": 102,
+        "sold": 45,
+        "on_shelf": 57,
         "held": 0,
         "returned": 0,
         "forwards": [],
-        "fix": {
-          "at": 94.7,
-          "model": "B-4471",
-          "version_before": "2.3",
-          "version_after": "2.5"
+        "removal": {
+          "after_hours": 10.7,
+          "batch": "B-4471"
         },
         "other_batches": {
           "B-4480": 21
         }
+      },
+      "params": {}
+    },
+    "humber-bay-grocer": {
+      "name": "Humber Bay Grocer",
+      "type": "store",
+      "tier": 2,
+      "upstream": "dist-north",
+      "profile": "straight",
+      "description": "Grocer serving the condo towers of Humber Bay. The front-end manager answers the phone during opening hours and reads counts off the till.",
+      "truth": {
+        "received": 70,
+        "sold": 22,
+        "on_shelf": 44,
+        "held": 0,
+        "returned": 4,
+        "forwards": [],
+        "removal": {
+          "after_hours": 10.2,
+          "batch": "B-4471"
+        },
+        "other_batches": {
+          "B-4480": 18
+        }
+      },
+      "params": {}
+    },
+    "silverthorn-market": {
+      "name": "Silverthorn Market",
+      "type": "store",
+      "tier": 2,
+      "upstream": "dist-north",
+      "profile": "straight",
+      "description": "Market on Silverthorn Ave near Eglinton Ave West. The front-end manager answers the phone during opening hours and reads counts off the till.",
+      "truth": {
+        "received": 79,
+        "sold": 28,
+        "on_shelf": 51,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 11.4,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {}
+    },
+    "fernbrook-food-town": {
+      "name": "Fernbrook Food Town",
+      "type": "store",
+      "tier": 2,
+      "upstream": "dist-east",
+      "profile": "forwarder",
+      "description": "Grocer in Pickering that sells stock on to small stores in the village. Passes spare tins to smaller stores, none of them on a distributor's list.",
+      "truth": {
+        "received": 143,
+        "sold": 28,
+        "on_shelf": 35,
+        "held": 0,
+        "returned": 0,
+        "forwards": [
+          {
+            "to_party_id": "harrow-street-grocer",
+            "to_name": "Harrow Street Grocer",
+            "qty": 25
+          },
+          {
+            "to_party_id": "clover-hill-variety",
+            "to_name": "Clover Hill Variety",
+            "qty": 32
+          },
+          {
+            "to_party_id": "maple-court-market",
+            "to_name": "Maple Court Mkt",
+            "qty": 23
+          }
+        ],
+        "removal": {
+          "after_hours": 8.5,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {}
+    },
+    "annex-grocer": {
+      "name": "Annex Grocer",
+      "type": "store",
+      "tier": 2,
+      "upstream": "dist-east",
+      "profile": "forwarder",
+      "description": "Grocer in the Annex that supplies corner stores downtown. Passes spare tins to smaller stores, none of them on a distributor's list.",
+      "truth": {
+        "received": 143,
+        "sold": 22,
+        "on_shelf": 34,
+        "held": 0,
+        "returned": 2,
+        "forwards": [
+          {
+            "to_party_id": "dundas-mini-mart",
+            "to_name": "Dundas Mini Mart",
+            "qty": 26
+          },
+          {
+            "to_party_id": "spadina-foods",
+            "to_name": "Spadina Foods",
+            "qty": 30
+          },
+          {
+            "to_party_id": "gable-street-co-op-grocery",
+            "to_name": "Gable Street Co-op",
+            "qty": 29
+          }
+        ],
+        "removal": {
+          "after_hours": 5.2,
+          "batch": "B-4471"
+        },
+        "other_batches": {
+          "B-4480": 22
+        }
+      },
+      "params": {}
+    },
+    "brookbanks-market": {
+      "name": "Brookbanks Market",
+      "type": "store",
+      "tier": 2,
+      "upstream": "dist-east",
+      "profile": "no_answer",
+      "description": "Small market on Brookbanks Dr in Don Mills. Staff are on the floor in the morning; the phone is only answered between 13:00 and 17:00.",
+      "truth": {
+        "received": 60,
+        "sold": 20,
+        "on_shelf": 40,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 10.7,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {
+        "answer_hours": [
+          13,
+          17
+        ],
+        "form_after_hours": 4.0
+      }
+    },
+    "thistletown-foods": {
+      "name": "Thistletown Foods",
+      "type": "store",
+      "tier": 2,
+      "upstream": "dist-east",
+      "profile": "callback",
+      "description": "Food store in a strip plaza in Thistletown, Etobicoke. The manager keeps the delivery notes in the office and asks to be called back the next morning at 9:00.",
+      "truth": {
+        "received": 94,
+        "sold": 31,
+        "on_shelf": 63,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 7.7,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {
+        "callback_hour": 9
+      }
+    },
+    "cliffcrest-grocery": {
+      "name": "Cliffcrest Grocery",
+      "type": "store",
+      "tier": 2,
+      "upstream": "dist-east",
+      "profile": "over_reporter",
+      "description": "Grocery on Kingston Rd in Cliffcrest. Counts are read off a shared stock sheet, and the first figure given is often from the wrong line.",
+      "truth": {
+        "received": 60,
+        "sold": 23,
+        "on_shelf": 37,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 9.0,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {
+        "over_report_by": 14
+      }
+    },
+    "summit-foods": {
+      "name": "Summit Foods",
+      "type": "store",
+      "tier": 2,
+      "upstream": "dist-east",
+      "profile": "own_copy",
+      "description": "Six-store grocery chain in Durham Region with its own depot, which runs its own copy of the agent. Runs its own copy of the recall agent on its own records; its buyer list never leaves the chain.",
+      "truth": {
+        "received": 120,
+        "sold": 31,
+        "on_shelf": 67,
+        "held": 0,
+        "returned": 22,
+        "forwards": [],
+        "removal": {
+          "after_hours": 4.3,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {},
+      "channel": "agent"
+    },
+    "guildwood-market": {
+      "name": "Guildwood Market",
+      "type": "store",
+      "tier": 2,
+      "upstream": "dist-east",
+      "profile": "straight",
+      "description": "Owner-run market in Guildwood Village. The front-end manager answers the phone during opening hours and reads counts off the till.",
+      "truth": {
+        "received": 63,
+        "sold": 15,
+        "on_shelf": 48,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 8.1,
+          "batch": "B-4471"
+        },
+        "other_batches": {
+          "B-4480": 21
+        }
+      },
+      "params": {}
+    },
+    "orchard-park-foods": {
+      "name": "Orchard Park Foods",
+      "type": "store",
+      "tier": 2,
+      "upstream": "dist-east",
+      "profile": "straight",
+      "description": "Food store on Orchard Park Blvd in Ajax. The front-end manager answers the phone during opening hours and reads counts off the till.",
+      "truth": {
+        "received": 94,
+        "sold": 41,
+        "on_shelf": 53,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 6.5,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {}
+    },
+    "highland-creek-grocer": {
+      "name": "Highland Creek Grocer",
+      "type": "store",
+      "tier": 2,
+      "upstream": "dist-east",
+      "profile": "straight",
+      "description": "Grocer on Old Kingston Rd in Highland Creek. The front-end manager answers the phone during opening hours and reads counts off the till.",
+      "truth": {
+        "received": 83,
+        "sold": 27,
+        "on_shelf": 56,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 5.4,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {}
+    },
+    "juniper-lane-variety": {
+      "name": "Juniper Lane Variety",
+      "type": "store",
+      "tier": 3,
+      "upstream": "birchmount-fresh-market",
+      "profile": "forwarder",
+      "description": "Variety store on Juniper Lane in Scarborough that sells stock on to a neighbour. Passes spare tins to smaller stores, none of them on a distributor's list.",
+      "truth": {
+        "received": 46,
+        "sold": 11,
+        "on_shelf": 16,
+        "held": 0,
+        "returned": 2,
+        "forwards": [
+          {
+            "to_party_id": "willow-creek-convenience",
+            "to_name": "Willow Creek Convenience",
+            "qty": 17
+          }
+        ],
+        "removal": {
+          "after_hours": 10.8,
+          "batch": "B-4471"
+        },
+        "other_batches": {
+          "B-4480": 17
+        }
+      },
+      "params": {}
+    },
+    "willow-creek-convenience": {
+      "name": "Willow Creek Convenience",
+      "type": "store",
+      "tier": 3,
+      "upstream": "juniper-lane-variety",
+      "profile": "straight",
+      "description": "Convenience store by Willow Creek park in Scarborough. The front-end manager answers the phone during opening hours and reads counts off the till.",
+      "truth": {
+        "received": 17,
+        "sold": 7,
+        "on_shelf": 10,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 8.6,
+          "batch": "B-4471"
+        },
+        "other_batches": {
+          "B-4480": 19
+        }
+      },
+      "params": {}
+    },
+    "bayview-grocer": {
+      "name": "Bayview Grocer",
+      "type": "store",
+      "tier": 3,
+      "upstream": "birchmount-fresh-market",
+      "profile": "no_answer",
+      "description": "Grocer at the top of Bayview Ave. Staff are on the floor in the morning; the phone is only answered between 15:00 and 19:00.",
+      "truth": {
+        "received": 34,
+        "sold": 16,
+        "on_shelf": 18,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 8.1,
+          "batch": "B-4471"
+        },
+        "other_batches": {
+          "B-4480": 12
+        }
+      },
+      "params": {
+        "answer_hours": [
+          15,
+          19
+        ],
+        "form_after_hours": 3.0
+      }
+    },
+    "larkspur-corner-store": {
+      "name": "Larkspur Corner Store",
+      "type": "store",
+      "tier": 3,
+      "upstream": "birchmount-fresh-market",
+      "profile": "short_receiver",
+      "description": "Corner store on Larkspur Ave that checks every delivery note. Buys from a local grocer and checks every delivery note against the tins that arrived.",
+      "truth": {
+        "received": 31,
+        "sold": 12,
+        "on_shelf": 19,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 6.6,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {
+        "short_by": 6,
+        "sender": "birchmount-fresh-market"
+      }
+    },
+    "kingsway-mini-mart": {
+      "name": "Kingsway Mini Mart",
+      "type": "store",
+      "tier": 3,
+      "upstream": "pinecrest-grocers",
+      "profile": "callback",
+      "description": "Mini mart on Bloor St West in the Kingsway. The manager keeps the delivery notes in the office and asks to be called back the next morning at 11:00.",
+      "truth": {
+        "received": 27,
+        "sold": 12,
+        "on_shelf": 15,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 4.4,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {
+        "callback_hour": 11
+      }
+    },
+    "old-mill-market": {
+      "name": "Old Mill Market",
+      "type": "store",
+      "tier": 3,
+      "upstream": "pinecrest-grocers",
+      "profile": "short_receiver",
+      "description": "Small market near the Old Mill bridge. Buys from a local grocer and checks every delivery note against the tins that arrived.",
+      "truth": {
+        "received": 31,
+        "sold": 8,
+        "on_shelf": 23,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 5.1,
+          "batch": "B-4471"
+        },
+        "other_batches": {
+          "B-4480": 14
+        }
+      },
+      "params": {
+        "short_by": 8,
+        "sender": "pinecrest-grocers"
+      }
+    },
+    "rosehill-foods": {
+      "name": "Rosehill Foods",
+      "type": "store",
+      "tier": 3,
+      "upstream": "pinecrest-grocers",
+      "profile": "over_reporter",
+      "description": "Food store on Rosehill Ave by the reservoir park. Counts are read off a shared stock sheet, and the first figure given is often from the wrong line.",
+      "truth": {
+        "received": 31,
+        "sold": 10,
+        "on_shelf": 21,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 4.5,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {
+        "over_report_by": 19
+      }
+    },
+    "harrow-street-grocer": {
+      "name": "Harrow Street Grocer",
+      "type": "store",
+      "tier": 3,
+      "upstream": "fernbrook-food-town",
+      "profile": "reviser",
+      "description": "Grocer on Harrow St in Pickering village. Keeps careful paperwork and sends a correction when tins go back after a call.",
+      "truth": {
+        "received": 25,
+        "sold": 7,
+        "on_shelf": 18,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 7.6,
+          "batch": "B-4471"
+        },
+        "other_batches": {
+          "B-4480": 7
+        }
+      },
+      "params": {
+        "revise": {
+          "after_hours": 48.0,
+          "delta": 9
+        }
+      }
+    },
+    "clover-hill-variety": {
+      "name": "Clover Hill Variety",
+      "type": "store",
+      "tier": 3,
+      "upstream": "fernbrook-food-town",
+      "profile": "no_answer",
+      "description": "Variety store at the Clover Hill crossroads. One person runs the store alone; the phone often rings out or is engaged and is usually picked up only after a couple of tries.",
+      "truth": {
+        "received": 32,
+        "sold": 14,
+        "on_shelf": 18,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 5.5,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {
+        "answer_on_attempt": 3,
+        "form_after_hours": null
+      }
+    },
+    "maple-court-market": {
+      "name": "Maple Court Market",
+      "type": "store",
+      "tier": 3,
+      "upstream": "fernbrook-food-town",
+      "profile": "straight",
+      "description": "Market on Maple Ave in Pickering. The front-end manager answers the phone during opening hours and reads counts off the till.",
+      "truth": {
+        "received": 23,
+        "sold": 6,
+        "on_shelf": 17,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 7.1,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {}
+    },
+    "dundas-mini-mart": {
+      "name": "Dundas Mini Mart",
+      "type": "store",
+      "tier": 3,
+      "upstream": "annex-grocer",
+      "profile": "straight",
+      "description": "Mini mart on Dundas St West downtown. The front-end manager answers the phone during opening hours and reads counts off the till.",
+      "truth": {
+        "received": 26,
+        "sold": 7,
+        "on_shelf": 19,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 7.8,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
+      },
+      "params": {}
+    },
+    "spadina-foods": {
+      "name": "Spadina Foods",
+      "type": "store",
+      "tier": 3,
+      "upstream": "annex-grocer",
+      "profile": "straight",
+      "description": "Food store on Spadina Ave. The front-end manager answers the phone during opening hours and reads counts off the till.",
+      "truth": {
+        "received": 30,
+        "sold": 10,
+        "on_shelf": 19,
+        "held": 0,
+        "returned": 1,
+        "forwards": [],
+        "removal": {
+          "after_hours": 11.1,
+          "batch": "B-4471"
+        },
+        "other_batches": {
+          "B-4480": 10
+        }
+      },
+      "params": {}
+    },
+    "gable-street-co-op-grocery": {
+      "name": "Gable Street Co-op Grocery",
+      "type": "store",
+      "tier": 3,
+      "upstream": "annex-grocer",
+      "profile": "straight",
+      "description": "Co-operative grocery on Gable St in Ajax. The front-end manager answers the phone during opening hours and reads counts off the till.",
+      "truth": {
+        "received": 29,
+        "sold": 9,
+        "on_shelf": 20,
+        "held": 0,
+        "returned": 0,
+        "forwards": [],
+        "removal": {
+          "after_hours": 4.3,
+          "batch": "B-4471"
+        },
+        "other_batches": {}
       },
       "params": {}
     }
@@ -1754,7 +1818,7 @@
     "days": 10
   },
   "expected": {
-    "note": "Every simulated party's truth conserves and the batch adds up to units_total (checked by generate.py before writing). final: what the run ends with when the slice's follow-ups are manual (demo): the Queen St Grocer -> Corner Mart dispute stays open and Corner Mart' 25 tins stay on_shelf on 2.4.",
+    "note": "Every simulated party's truth conserves and the batch adds up to units_total (checked by generate.py before writing). final: what the run ends with when the slice's follow-ups are manual (demo): the Queen St Grocer -> Corner Mart dispute stays open and Corner Mart's 25 tins stay on the shelf.",
     "final": {
       "open_units": 40,
       "disputed_units": 15,
@@ -1768,14 +1832,15 @@
       "3": 14
     },
     "profiles": {
-      "straight": 14,
+      "straight": 13,
       "no_answer": 5,
       "callback": 3,
       "over_reporter": 3,
       "reviser": 2,
       "forwarder": 6,
       "short_receiver": 2,
-      "unreachable": 1
+      "unreachable": 1,
+      "own_copy": 1
     }
   }
 }
