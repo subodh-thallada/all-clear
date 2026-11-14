@@ -258,7 +258,7 @@ function Tins({ s }) {
 }
 
 const FLASH = 3200;
-const fresh = (s, st) => st && s.t - st.at < FLASH;
+const fresh = (s, st) => !!st && (st.hold || s.t - st.at < FLASH); // hold: the real call's marks stay lit
 
 export default function Flow({ s, actions }) {
   const [ref, scale] = useFitBox(W, H);

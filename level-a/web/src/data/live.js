@@ -63,6 +63,8 @@ const ROUTES = {
   consignee_found: [['ledger>found', 'found>due'], 'ink'],
   attempt_refused: [['sys>validator'], 'red'],
   memory_hit: [['memory>dispatch'], 'ink'],
+  memory_suspect: [['memory>dispatch', 'dispatch>w1'], 'green'],
+  call_placed: [['due>dispatch', 'dispatch>w1', 'w1>gate'], 'ink'],
   close_refused: [['found>close', 'close>clear'], 'red'],
   closed: [['found>close', 'close>clear'], 'green'],
 };
@@ -234,11 +236,17 @@ export function createLive(api) {
     });
 
     // One write, one movement: a line this browser has not seen before moves a dot.
+    // Trace mode: once this run has a real phone call, the diagram follows the real stores
+    // only. Their lines move the dots and stay marked on the stations; simulated stores
+    // keep working but no longer move the diagram.
+    const realIds = new Set(parties.filter((p) => p.real).map((p) => p.id));
+    const trace = realCalls.length > 0 || parties.some((p) => p.real && p.liveAttempt);
+    const traced = (e) => !trace || realIds.has(e.partyId);
     for (const e of events) {
       if (seenLines.has(e.id)) continue;
       seenLines.add(e.id);
       const route = ROUTES[e.kind];
-      if (primed && route) pulse(route[0], route[1]);
+      if (primed && route && traced(e)) pulse(route[0], route[1]);
     }
 
     // --- leases and workers -------------------------------------------------
@@ -352,7 +360,7 @@ export function createLive(api) {
     const shown = (pin && calls[pin]) || (focus && calls[focus]) || null;
 
     // --- stations: the mark of the newest relevant line -------------------------
-    const newest = (...kinds) => [...events].reverse().find((e) => kinds.includes(e.kind));
+    const newest = (...kinds) => [...events].reverse().find((e) => kinds.includes(e.kind) && traced(e));
     const name = (pid) => byId[pid]?.name || '';
     const station = { dispatch: null, memory: null, gate: null, validator: null, ask: null, ledger: null, found: null, close: null };
     const claim = newest('claim_rejected', 'claim_accepted');
@@ -365,8 +373,11 @@ export function createLive(api) {
     }
     const found = newest('consignee_found');
     if (found) station.found = { yes: true, name: name(found.partyId) || /: (.+?) \(/.exec(found.text)?.[1] || found.text, from: '', at: found.at };
-    const mem = newest('memory_hit');
+    const mem = newest('memory_hit', 'memory_suspect');
     if (mem) station.memory = { party: name(mem.partyId), episodes: [], at: mem.at };
+    const placed = newest('call_placed');
+    if (placed) station.dispatch = { party: name(placed.partyId), at: placed.at };
+    if (trace) for (const k of Object.keys(station)) if (station[k]) station[k] = { ...station[k], hold: true };
     const closeLine = newest('close_refused');
     let close = null;
     if (closeLine) {
@@ -454,9 +465,26 @@ export function createLive(api) {
     listeners.forEach((l) => l());
   };
 
+  // Follow the phone across runs: a real call placed by another (older, paused) run is the one
+  // the room hears, so the screen shows that run until Start over or a call elsewhere.
+  let pollN = 0;
+  let phoneRecall = null;
+  async function findPhone() {
+    try {
+      const r = await fetch(`${api}/admin/status`, { headers: headers(false), cache: 'no-store' });
+      if (!r.ok) return;
+      const live = ((await r.json()).live_attempts || []).find((a) => a.channel === 'voice');
+      if (live?.recall_id) phoneRecall = live.recall_id;
+    } catch {
+      /* the newest run is shown */
+    }
+  }
+
   async function poll() {
     try {
-      const r = await fetch(`${api}/wall/state`, { headers: headers(false), cache: 'no-store' });
+      if (key && pollN++ % 2 === 0) await findPhone();
+      const q = phoneRecall ? `?recall_id=${encodeURIComponent(phoneRecall)}` : '';
+      const r = await fetch(`${api}/wall/state${q}`, { headers: headers(false), cache: 'no-store' });
       if (!r.ok) throw new Error(`/wall/state answered ${r.status}`);
       last = await r.json();
       link = { ...link, ok: true, at: now(), error: null };
@@ -619,6 +647,7 @@ export function createLive(api) {
         follow = null;
         pin = null;
         focus = null;
+        phoneRecall = null;
       }),
       armFailpoint: () => post('/admin/failpoint', () => ({ name: snapshot.failpointArmed ? null : 'after_dial_request' }))(),
       // The kill beat (scripts/demo.py kill-arm). The API cannot kill a process: it arms the failpoint for
