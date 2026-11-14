@@ -75,6 +75,8 @@ services:
         sync: false
       - key: PHONE_CORNER
         sync: false
+      - key: PHONE_RYAN
+        sync: false
       # ---- Embeddings
       - key: EMBED_API_KEY
         sync: false

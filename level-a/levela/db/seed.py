@@ -75,6 +75,30 @@ def list_scenarios() -> list[str]:
     return sorted(p.stem for p in SCENARIO_DIR.glob("*.json"))
 
 
+LIVE_STORES = Path(__file__).resolve().parents[2] / "scenarios" / "live_stores.json"
+
+
+def live_store_entries(env, taken: set, slice_fields=None, path=LIVE_STORES) -> list[dict]:
+    """Directory entries for the live stores a caller may name on a real call
+    (scenarios/live_stores.json): only those whose phone_env holds an E.164
+    number on this machine, so an unset number never becomes a call. The
+    number comes from the environment, never from the repo."""
+    try:
+        stores = json.loads(Path(path).read_text(encoding="utf-8")).get("stores", [])
+    except (OSError, ValueError):
+        return []
+    out = []
+    for entry in stores:
+        phone = env.get(entry.get("phone_env", ""), "")
+        if entry.get("party_id") in taken or not E164.match(phone or ""):
+            continue
+        row = {k: v for k, v in entry.items() if k != "phone_env"}
+        row.update({"channel": "voice", "phone": phone, **_identity(entry, 3), "live_store": True,
+                    "slice": False, "hold_for_demo": False, "followups": "auto"})
+        out.append(row)
+    return out
+
+
 def _contact(entry: dict, sim: bool, env) -> tuple[str, str | None]:
     """(channel, phone). Real numbers come from the environment, never the repo.
     Distributors answer through their order system and have no phone."""
@@ -150,6 +174,9 @@ def start_recall(client, db, scenario: dict, *, all_sim=False, sim_parties=(), m
         channel, phone = _contact(entry, all_sim or entry["party_id"] in sim_set, env)
         directory.append({k: v for k, v in {**entry, "channel": channel, "phone": phone, **_identity(entry, 3),
                                             **slice_fields(entry)}.items() if k != "phone_env"})
+
+    if mode == "demo" and not all_sim:
+        directory += live_store_entries(env, {e["party_id"] for e in directory}, slice_fields)
 
     shipments, parties = [], []
     for s in scenario["parties"]:

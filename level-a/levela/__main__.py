@@ -110,6 +110,8 @@ def main(argv=None):
     m = sub.add_parser("metrics")
     m.add_argument("recall_id")
     sub.add_parser("preflight")
+    cap = sub.add_parser("calls", help="how many real phone calls may be live at once (the demo uses 1)")
+    cap.add_argument("--max-live", type=int, default=None, help="set it; omit to show the current value")
     args = p.parse_args(argv)
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
                         format="%(asctime)s %(levelname)-5s %(name)s: %(message)s")
@@ -214,6 +216,11 @@ def main(argv=None):
     elif args.cmd == "metrics":
         from .ledger import metrics
         _print(metrics(db, args.recall_id))
+    elif args.cmd == "calls":
+        from .orchestrator.claim import set_max_live, slots
+        if args.max_live is not None:
+            set_max_live(db, args.max_live)
+        print(json.dumps(slots(db)))
     elif args.cmd == "preflight":
         import os
 
