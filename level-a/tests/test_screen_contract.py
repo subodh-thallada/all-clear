@@ -320,7 +320,26 @@ def test_every_admin_call_the_screen_makes_answers_2xx_with_the_admin_key(api, a
     assert s["run"]["paused"] is False, "paused, then resumed"
     if LIVE_JS.is_file():
         used = set(re.findall(r"'(/admin/[a-z-]+)'", LIVE_JS.read_text(encoding="utf-8")))
-        assert used <= {path for path, _ in calls}, f"live.js posts to {sorted(used - {p for p, _ in calls})}"
+        known = {path for path, _ in calls} | {"/admin/recalls"}      # Start over: test_start_over_opens_a_fresh_demo_run
+        assert used <= known, f"live.js posts to {sorted(used - known)}"
+
+
+def test_start_over_opens_a_fresh_demo_run(api, app, db, monkeypatch):
+    """Start over in live.js posts this body: the long scenario in demo mode under a new recall id,
+    which the screen then shows (the newest run-time recall), with Harbour held for Call Harbour."""
+    monkeypatch.setenv("PHONE_HARBOUR", "+14165550101")
+    monkeypatch.setenv("PHONE_CORNER", "+14165550102")
+    body = {"scenario": "recall_long", "mode": "demo", "recall_id": "RCL-2026-1114-163000"}
+    no_key = {k: v for k, v in ADMIN.items() if k != "X-Admin-Token"}
+    assert api.post("/admin/recalls", headers=no_key, content=json.dumps(body)).status_code == 401
+    r = api.post("/admin/recalls", headers=ADMIN, content=json.dumps(body))
+    assert r.status_code == 200, r.text
+    assert r.json()["recall_id"] == body["recall_id"]
+    s = state(api, app)
+    assert s["recall"]["_id"] == body["recall_id"]
+    assert {p["party_id"]: p["hold_for_demo"] for p in s["parties"]}["harbour-market"] is True
+    assert api.post("/admin/recalls", headers=ADMIN, content=json.dumps(body)).status_code == 409, \
+        "the same id twice is refused, so the screen makes a new id from the time"
 
 
 def test_the_feed_kinds_the_screen_routes_by_are_written_by_the_backend():
