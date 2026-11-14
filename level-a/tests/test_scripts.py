@@ -478,7 +478,7 @@ def test_check_only_does_not_act_and_counts_what_is_on_the_wall():
     assert api.posts == []
 
 
-def test_judge_pauses_kills_and_releases_harbour_fire_and_lakeside_only():
+def test_judge_pauses_kills_and_releases_harbour_market_and_lakeside_only():
     def release(body, api):
         if body["party_id"] == "harbour-market":
             api.state["parties"] = [{"party_id": "harbour-market", "hold_for_demo": False,

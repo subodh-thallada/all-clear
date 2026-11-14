@@ -28,14 +28,19 @@ the reply on a call and drives the party-initiated events.
 |                | sender first claims, and stands by it on follow-up             |
 | unreachable    | never answers and ignores form links; the distributor's rep    |
 |                | reports for it at `rep_reports_at` once the party is escalated |
+| own_copy       | runs its own copy of the agent (Summit Foods, channel "agent") |
+|                | and reports through it; until the handoff between nodes is     |
+|                | wired, the simulator plays its report as an answered call with |
+|                | the truth                                                      |
 
 Truth: `{received? (tiers 2-3), sold, on_shelf, held, returned,
 forwards: [{to_party_id, to_name, qty}], removal?, other_batches: {batch:
 count}}`. A store that passes tins to another store books a forward to it.
-Every store follows a removal script, `removal: {at, batch}`: before
-simulated hour `at` its tins are on the shelf and the till still sells them;
-from `at` on (staff have pulled them) they are held and the till refuses the
-sale. A store answers the three checks on every call: the batch code read
+Every store follows a removal script, `removal: {after_hours, batch}`: until
+`after_hours` simulated hours after it first hears of the recall (its first
+picked-up call, or the form link it is sent) its tins are on the shelf and
+the till still sells them; from then on (staff have pulled them) they are
+held and the till refuses the sale. A store answers the three checks on every call: the batch code read
 under a tin (batch_seen), a sold count read off the till (sold_source
 "till_report") and whether the till refused a scanned tin (block_test), so a
 removal check after `at` books them held.
@@ -53,7 +58,7 @@ from dataclasses import dataclass, field
 from ..clock import hour_of_day, next_morning
 
 PROFILES = ("straight", "no_answer", "callback", "over_reporter", "reviser", "forwarder", "short_receiver",
-            "unreachable")
+            "unreachable", "own_copy")
 PURPOSES = ("initial", "retry", "receipt", "dispute_followup", "ask_question", "removal_check")
 
 ANSWER, NO_ANSWER, BUSY, CALLBACK = "answer", "no_answer", "busy", "callback"
@@ -74,6 +79,8 @@ class Context:
     callbacks_before: earlier calls that ended with a callback request.
     open_questions: [{id, text, answer_type}]. told_qty: the other side's
     number on a dispute follow-up. sender_name: who forwarded tins to it.
+    told_at: the simulated hour it first heard of the recall (an earlier
+    picked-up call); None when this call is the first to tell it.
     """
     purpose: str = "initial"
     attempt: int = 1
@@ -84,6 +91,7 @@ class Context:
     sender_name: str = ""
     reached_before: bool = False
     callbacks_before: int = 0
+    told_at: float | None = None
 
 
 @dataclass(frozen=True)
@@ -167,47 +175,51 @@ def _claims(profile: str, truth: dict, params: dict, ctx: Context) -> tuple[list
     nothing about counts, so the party gives none."""
     if ctx.purpose == "ask_question":
         return [], []
-    told, now = ctx.told_qty, ctx.sim_now
+    now = ctx.sim_now
+    told_at = now if ctx.told_at is None else ctx.told_at
     if ctx.purpose == "dispute_followup":
-        body = claim_body(truth, sim_now=now)
-        return [body], [_followup_line(profile, truth, params, told, now)]
+        body = claim_body(truth, sim_now=now, told_at=told_at)
+        return [body], [_followup_line(profile, truth, params, ctx.told_qty, body)]
     if profile == "over_reporter" and not ctx.reached_before:
-        wrong = claim_body(truth, sim_now=now, shelf_extra=int(params.get("over_report_by", 0)))
-        right = claim_body(truth, sim_now=now)
+        wrong = claim_body(truth, sim_now=now, told_at=told_at, shelf_extra=int(params.get("over_report_by", 0)))
+        right = claim_body(truth, sim_now=now, told_at=told_at)
         return [wrong, right], [spoken(wrong, ctx.sender_name),
                                 "Sorry, I was reading the wrong line. " + spoken(right, ctx.sender_name)]
-    misreport = params.get("misreport") if profile == "forwarder" and ctx.purpose != "removal_check" else None
-    body = claim_body(truth, sim_now=now, misreport=misreport)
+    # A forwarder's error is in what it says on the first call it picks up;
+    # the dispute follow-up hears the truth.
+    misreport = params.get("misreport") if profile == "forwarder" and not ctx.reached_before else None
+    body = claim_body(truth, sim_now=now, told_at=told_at, misreport=misreport)
     return [body], [spoken(body, ctx.sender_name)]
 
 
-def _followup_line(profile: str, truth: dict, params: dict, told: int | None, sim_now: float) -> str:
+def _followup_line(profile: str, truth: dict, params: dict, told_qty: int | None, body: dict) -> str:
     """A forwarder that over-reported checks its delivery notes and corrects;
-    everyone else stands by its count."""
+    everyone else stands by its count (`body`, the truth as it is now)."""
     lies = {m["to_party_id"]: m["extra"] for m in params.get("misreport") or []} if profile == "forwarder" else {}
     corrected = [f for f in truth.get("forwards") or [] if f["to_party_id"] in lies]
-    body = claim_body(truth, sim_now=sim_now)
     if corrected:
         extra = sum(lies[f["to_party_id"]] for f in corrected)
         sent = ", ".join(f"{f['qty']} went to {f['to_name']}" for f in corrected)
-        return f"Checked the delivery notes. {sent}. The other {extra} are still on our shelf. " + spoken(body)
-    if "received" in truth and told is not None and told != truth["received"]:
+        return f"Checked the delivery notes. {sent}. The other {extra} are still with us. " + spoken(body)
+    if "received" in truth and told_qty is not None and told_qty != truth["received"]:
         return f"No, {truth['received']}. I have the delivery note. " + spoken(body)
     return "Yes, those numbers are right. " + spoken(body)
 
 
 # ------------------------------------------------------------------ bodies
 
-def removed_by(truth: dict, sim_now: float | None) -> bool:
-    """Whether a store's staff have pulled its tins from the shelf by sim_now."""
+def removed_by(truth: dict, sim_now: float | None, told_at: float | None) -> bool:
+    """Whether a store's staff have pulled its tins from the shelf by sim_now,
+    having first heard of the recall at told_at."""
     removal = truth.get("removal")
-    return bool(removal) and sim_now is not None and sim_now >= float(removal["at"])
+    return (bool(removal) and sim_now is not None and told_at is not None
+            and sim_now >= told_at + float(removal["after_hours"]))
 
 
-def claim_body(truth: dict, *, sim_now: float | None = None, shelf_extra: int = 0,
+def claim_body(truth: dict, *, sim_now: float | None = None, told_at: float | None = None, shelf_extra: int = 0,
                misreport: list | None = None) -> dict:
     """The submit_count body for a truth at simulated hour sim_now (without
-    the call's ids).
+    the call's ids), for a party that first heard of the recall at told_at.
 
     shelf_extra inflates the tins on the shelf (an over-report). misreport
     moves `extra` tins from the shelf to the forward to one party (a sender's
@@ -219,7 +231,7 @@ def claim_body(truth: dict, *, sim_now: float | None = None, shelf_extra: int = 
     body.update({b: int(truth.get(b, 0)) for b in BUCKETS})
     removal = truth.get("removal")
     if removal:
-        done = removed_by(truth, sim_now)
+        done = removed_by(truth, sim_now, told_at)
         if done:
             body["held"] += body["on_shelf"]
             body["on_shelf"] = 0
@@ -301,24 +313,26 @@ def answer_line(question: dict, truth: dict) -> str:
 
 # ------------------------------------------------------------------ party-initiated events
 
-def form_fields(truth: dict, sim_now: float) -> dict | None:
+def form_fields(truth: dict, sim_now: float, told_at: float) -> dict | None:
     """The form submission for a truth at simulated hour sim_now, or None
     when it does not fit the form (the form holds one forward destination)."""
-    body = claim_body(truth, sim_now=sim_now)
+    body = claim_body(truth, sim_now=sim_now, told_at=told_at)
     return None if "forwards" in body else body
 
 
-def form_plan(profile: str, truth: dict, params: dict | None, sim_now: float) -> FormPlan | None:
+def form_plan(profile: str, truth: dict, params: dict | None, sim_now: float,
+              told_at: float | None = None) -> FormPlan | None:
     """Whether and when a party submits through a form link delivered at
-    sim_now. None: the party ignores the link."""
+    sim_now (the link tells it of the recall unless an earlier call did, at
+    told_at). None: the party ignores the link."""
     params = params or {}
-    if profile == "unreachable":
+    if profile in ("unreachable", "own_copy"):
         return None
     after = params.get("form_after_hours", DEFAULT_FORM_AFTER_H)
     if after is None:
         return None
     submit_at = sim_now + float(after)
-    fields = form_fields(truth, submit_at)
+    fields = form_fields(truth, submit_at, sim_now if told_at is None else told_at)
     return None if fields is None else FormPlan(submit_at=submit_at, fields=fields)
 
 
@@ -330,7 +344,7 @@ def revision_plan(profile: str, truth: dict, params: dict | None, accepted_at: f
     if profile != "reviser" or not revise:
         return None
     submit_at = accepted_at + float(revise["after_hours"])
-    fields = form_fields(revised_truth(truth, int(revise["delta"])), submit_at)
+    fields = form_fields(revised_truth(truth, int(revise["delta"])), submit_at, accepted_at)
     return FormPlan(submit_at=submit_at, fields=fields) if fields else None
 
 
@@ -348,5 +362,7 @@ def rep_report_at(profile: str, params: dict | None) -> float | None:
 
 
 def rep_report(truth: dict, sim_now: float) -> dict:
-    """The counts the rep reports at sim_now: the distributor's own record of the party."""
-    return claim_body(truth, sim_now=sim_now)
+    """The counts the rep reports at sim_now: the distributor's own record of
+    the party. The store heard of the recall from its distributor's hold, at
+    the start of the run (simulated hour 0)."""
+    return claim_body(truth, sim_now=sim_now, told_at=0.0)

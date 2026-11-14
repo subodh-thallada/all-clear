@@ -5,10 +5,12 @@ corroborated and 15 disputed, the recipient's shipped_in is 25, and the global
 equation equals 240 after every write. Plus: one edge per destination, what a
 later claim may and may not change (a transfer the recipient has not counted
 can be withdrawn, with the stub it created), a party two senders shipped to,
-stubs from directory entries (order system accounts, stores at tier 2),
-an store's installs booked as a transfer to the store, and the
+stubs from directory entries (order system accounts, stores at tier 2), a
+store's tins passed to another store booked as a transfer, and the
 counterpart's timer set to the recall's simulated now inside the claim
-transaction.
+transaction. Every store here has pulled its tins, so each claim carries the
+checks `held` needs (support.HELD_CHECKS); the checks themselves are tested
+in test_claims and test_validator.
 """
 from __future__ import annotations
 
@@ -20,7 +22,7 @@ from levela.clock import get_clock, server_now
 from levela.db.seed import load_scenario, start_recall
 from levela.ledger.claims import CHALLENGE_CODES, submit_claim
 from levela.ledger.transfers import stub_party
-from support import PRODUCT
+from support import HELD_CHECKS, PRODUCT
 
 RID = "RCL-2026-017"
 LONG = Path(__file__).parent / "fixtures" / "recall_long_mini.json"
@@ -42,7 +44,8 @@ def long_recall(client, db, assert_balance):
 
 
 def claim(client, db, party_id, attempt, *, rid=RID, source="sim", **raw):
-    return submit_claim(client, db, recall_id=rid, party_id=party_id, attempt_id=attempt, source=source, raw=raw)
+    return submit_claim(client, db, recall_id=rid, party_id=party_id, attempt_id=attempt, source=source,
+                        raw={**HELD_CHECKS, **raw})
 
 
 def party(db, party_id, rid=RID):
@@ -75,9 +78,9 @@ def test_4_forward_then_receipt_puts_the_gap_on_the_edge(client, db, recall, ass
     assert_balance(RID)
     cm = party(db, "corner-mart")
     assert (cm["name"], cm["type"], cm["tier"], cm["shipped_in"], cm["state"]) == (
-        "Corner Mart", "owner", 3, 0, "pending")
+        "Corner Mart", "store", 3, 0, "pending")
     assert (cm["found_via"], cm["discovered_by"], cm["slice"]) == ("claim", "claim:queen-st-grocer", True)
-    assert (cm["model"], cm["affected_batches"], cm["held_by_system"]) == ("B-4471", ["2.3", "2.4"], 0)
+    assert (cm["batch_code"], cm["held_by_system"], cm["system_on_shelf"]) == ("B-4471", 0, 0)
     assert cm["next_action_at"] == pytest.approx(sim_now(client, db), abs=0.5)   # due at once
     assert numbers(edge(db, "queen-st-grocer", "corner-mart")) == {
         "sender_qty": 40, "recipient_qty": None, "corroborated_qty": 0, "disputed_qty": 0,
@@ -99,9 +102,9 @@ def test_4_forward_then_receipt_puts_the_gap_on_the_edge(client, db, recall, ass
     # The sender's follow-up corrects to 25. The recipient is reconciled, but an
     # open question still needs it, so it is woken too.
     set_timer(db, "corner-mart", None, open_questions=["q-02"])
-    fixed = claim(client, db, "queen-st-grocer", "att_q2", held=95, forwarded_qty=25,
+    corrected = claim(client, db, "queen-st-grocer", "att_q2", held=95, forwarded_qty=25,
                   forwarded_to_name="Corner Mart")
-    assert fixed["accepted"] and fixed["open_units"] == 120 and fixed["woken"] == ["corner-mart"]
+    assert corrected["accepted"] and corrected["open_units"] == 120 and corrected["woken"] == ["corner-mart"]
     assert_balance(RID)
     assert numbers(edge(db, "queen-st-grocer", "corner-mart"))["state"] == "corroborated"
     assert [party(db, s)["state"] for s in ("queen-st-grocer", "corner-mart")] == ["reconciled", "reconciled"]
@@ -166,36 +169,36 @@ def test_a_direct_party_receiving_a_transfer_keeps_its_own_shipment(client, db, 
 # ---- V2: several destinations -------------------------------------------------------
 
 def test_one_edge_per_destination_and_what_a_later_claim_may_change(client, db, recall, assert_balance):
-    first = claim(client, db, "queen-st-grocer", "att_q1", held=80, forwards=[{"to_name": "Corner Mart", "qty": 30}, {"to_name": "Bloor Alarm", "qty": 10}])
-    assert first["accepted"] and first["discovered_parties"] == ["corner-mart", "bloor-alarm"]
-    assert sorted((e["to_party"], e["sender_qty"]) for e in first["edges"]) == [("bloor-alarm", 10),
+    first = claim(client, db, "queen-st-grocer", "att_q1", held=80, forwards=[{"to_name": "Corner Mart", "qty": 30}, {"to_name": "Bloor Foods", "qty": 10}])
+    assert first["accepted"] and first["discovered_parties"] == ["corner-mart", "bloor-foods"]
+    assert sorted((e["to_party"], e["sender_qty"]) for e in first["edges"]) == [("bloor-foods", 10),
                                                                                  ("corner-mart", 30)]
     assert party(db, "queen-st-grocer")["forwarded"] == 40
-    bloor = party(db, "bloor-alarm")
-    assert (bloor["name"], bloor["channel"], bloor["tier"], bloor["found_via"]) == ("Bloor Alarm", "form", 3, "claim")
+    bloor = party(db, "bloor-foods")
+    assert (bloor["name"], bloor["channel"], bloor["tier"], bloor["found_via"]) == ("Bloor Foods", "form", 3, "claim")
     assert_balance(RID)
 
     # Change a quantity (by party id this time), keep a party, add a party, and
     # name one party twice: its two counts are one transfer.
-    later = claim(client, db, "queen-st-grocer", "att_q2", held=75, forwards=[{"to_party_id": "corner-mart", "qty": 25}, {"to_name": "bloor alarm", "qty": 10},
+    later = claim(client, db, "queen-st-grocer", "att_q2", held=75, forwards=[{"to_party_id": "corner-mart", "qty": 25}, {"to_name": "bloor foods", "qty": 10},
                             {"to_name": "Parkdale Court", "qty": 6}, {"to_name": "Parkdale Court", "qty": 4}])
     assert later["accepted"] and later["discovered_parties"] == ["parkdale-court"]
     assert {(e["to_party"], e["before"]) for e in later["edges"]} == {("parkdale-court", None),
                                                                       ("corner-mart", "awaiting_recipient")}
     sent = {e["to_party"]: e["sender_qty"] for e in db.edges.find({"recall_id": RID})}
-    assert sent == {"corner-mart": 25, "bloor-alarm": 10, "parkdale-court": 10}
+    assert sent == {"corner-mart": 25, "bloor-foods": 10, "parkdale-court": 10}
     assert party(db, "queen-st-grocer")["forwarded"] == 45
     assert_balance(RID)
 
-    # Once Bloor Alarm has counted its tins, dropping it is refused, and so is
+    # Once Bloor Foods has counted its tins, dropping it is refused, and so is
     # restating no transfer at all: its count is booked against the edge.
-    assert claim(client, db, "bloor-alarm", "att_b1", received_qty=10, held=10)["accepted"]
+    assert claim(client, db, "bloor-foods", "att_b1", received_qty=10, held=10)["accepted"]
     assert_balance(RID)
     dropped = claim(client, db, "queen-st-grocer", "att_q3", held=85, forwards=[{"to_name": "Corner Mart", "qty": 25}, {"to_name": "Parkdale Court", "qty": 10}])
     assert not dropped["accepted"] and dropped["code"] == "forward_changed"
-    assert "Bloor Alarm" in dropped["reason"] and "end the call" in dropped["message"]
+    assert "Bloor Foods" in dropped["reason"] and "end the call" in dropped["message"]
     none = claim(client, db, "queen-st-grocer", "att_q4", held=120)
-    assert none["code"] == "forward_restate" and "Bloor Alarm" in none["reason"]
+    assert none["code"] == "forward_restate" and "Bloor Foods" in none["reason"]
     assert party(db, "queen-st-grocer")["forwarded"] == 45
     assert db.edges.count_documents({"recall_id": RID}) == 3
     assert_balance(RID)
@@ -269,8 +272,8 @@ def test_a_party_two_senders_shipped_to_names_the_sender_and_counts_both(client,
     assert not vague["accepted"] and vague["code"] == "receipt_sender_ambiguous"
     assert "Queen St Grocer" in vague["reason"] and "Harbour Market" in vague["reason"]
     assert vague["code"] not in CHALLENGE_CODES and "end the call" in vague["message"]
-    wrong = claim(client, db, "corner-mart", "att_cm2", received_qty=10, received_from="Bloor Alarm", held=35)
-    assert wrong["code"] == "receipt_sender_ambiguous" and "Bloor Alarm" in wrong["reason"]
+    wrong = claim(client, db, "corner-mart", "att_cm2", received_qty=10, received_from="Bloor Foods", held=35)
+    assert wrong["code"] == "receipt_sender_ambiguous" and "Bloor Foods" in wrong["reason"]
     assert numbers(edge(db, "harbour-market", "corner-mart"))["state"] == "awaiting_recipient"
     assert party(db, "corner-mart")["shipped_in"] == 25
     assert_balance(RID)
@@ -304,7 +307,7 @@ def test_forwarding_to_itself_or_to_nobody_is_refused(client, db, recall, assert
 
 def test_a_negative_transfer_is_refused_by_atlas_and_leaves_no_stub(client, db, recall, assert_balance):
     res = claim(client, db, "queen-st-grocer", "att_q1", held=80,
-                forwards=[{"to_name": "Corner Mart", "qty": 50}, {"to_name": "Bloor Alarm", "qty": -10}])
+                forwards=[{"to_name": "Corner Mart", "qty": 50}, {"to_name": "Bloor Foods", "qty": -10}])
     assert not res["accepted"] and res["code"] == "negative" and res["atlas_error"]["code"] == 121
     assert db.parties.count_documents({"recall_id": RID}) == 3 and db.edges.count_documents({}) == 0
     assert_balance(RID)
@@ -314,12 +317,12 @@ def test_a_negative_transfer_is_refused_by_atlas_and_leaves_no_stub(client, db, 
 
 def test_a_distributors_order_system_claim_opens_one_edge_per_account(client, db, long_recall, assert_balance):
     res = claim(client, db, "dist-north", "op-accounts-1", rid=LONG_RID, source="order_system",
-                forwards=[{"to_party_id": "bloor-alarm", "qty": 120}, {"to_party_id": "annex-fire", "qty": 180}])
-    assert res["accepted"] and res["discovered_parties"] == ["bloor-alarm", "annex-fire"]
+                forwards=[{"to_party_id": "bloor-foods", "qty": 120}, {"to_party_id": "annex-grocer", "qty": 180}])
+    assert res["accepted"] and res["discovered_parties"] == ["bloor-foods", "annex-grocer"]
     assert_balance(LONG_RID)
     dist = party(db, "dist-north", LONG_RID)
     assert (dist["forwarded"], dist["unresolved"], dist["channel"], dist["order_system"]) == (300, 0, "order_system", "north")
-    bloor = party(db, "bloor-alarm", LONG_RID)
+    bloor = party(db, "bloor-foods", LONG_RID)
     assert (bloor["type"], bloor["tier"], bloor["found_via"], bloor["discovered_by"]) == (
         "store", 2, "order_system", "order_system:dist-north")
     assert (bloor["account"], bloor["distributor"], bloor["channel"], bloor["phone"]) == (
@@ -327,32 +330,32 @@ def test_a_distributors_order_system_claim_opens_one_edge_per_account(client, db
     assert bloor["next_action_at"] == pytest.approx(sim_now(client, db, LONG_RID), abs=0.5)
     assert db.tool_events.count_documents({"attempt_id": "op-accounts-1", "kind": "order_system"}) == 1
 
-    # An account confirms its delivery and installs tins at a building
-    # owner's site: a transfer to a tier 3 owner. The distributor still waits
-    # on the other account, so it is woken.
+    # An account confirms its delivery and passes tins to a store on no list:
+    # a transfer to a tier 3 store. The distributor still waits on the other
+    # account, so it is woken.
     set_timer(db, "dist-north", None, rid=LONG_RID)
-    got = claim(client, db, "annex-fire", "att_a1", rid=LONG_RID, received_qty=180, held=100, forwards=[{"to_name": "Dundas Lofts", "qty": 80}])
-    assert got["accepted"] and got["discovered"] == "dundas-lofts" and got["woken"] == ["dist-north"]
-    lofts = party(db, "dundas-lofts", LONG_RID)
-    assert (lofts["type"], lofts["tier"], lofts["found_via"], lofts["channel"]) == ("owner", 3, "claim", "sim")
-    annex = party(db, "annex-fire", LONG_RID)
+    got = claim(client, db, "annex-grocer", "att_a1", rid=LONG_RID, received_qty=180, held=100, forwards=[{"to_name": "Dundas Mini Mart", "qty": 80}])
+    assert got["accepted"] and got["discovered"] == "dundas-mini-mart" and got["woken"] == ["dist-north"]
+    mart = party(db, "dundas-mini-mart", LONG_RID)
+    assert (mart["type"], mart["tier"], mart["found_via"], mart["channel"]) == ("store", 3, "claim", "sim")
+    annex = party(db, "annex-grocer", LONG_RID)
     assert (annex["shipped_in"], annex["forwarded"], annex["unresolved"]) == (180, 80, 0)
     assert party(db, "dist-north", LONG_RID)["state"] == "claimed"
     assert_balance(LONG_RID)
 
 
-def test_an_installers_installs_are_a_transfer_and_the_owner_books_them_installed(client, db, recall, assert_balance):
-    """Queen St Grocer on_shelf 40 at Corner Mart: its `forwarded`, an
-    edge, and a store that books its tins on_shelf. Installed
-    tins stay open (still on a shelf), so the owner is claimed, not reconciled."""
+def test_tins_passed_to_another_store_are_a_transfer_and_it_books_them_on_the_shelf(client, db, recall,
+                                                                                    assert_balance):
+    """Queen St Grocer passes 40 to Corner Mart: its `forwarded`, an edge,
+    and a store that books its tins on the shelf. Tins on the shelf stay
+    open, so Corner Mart is claimed, not reconciled."""
     sent = claim(client, db, "queen-st-grocer", "att_q1", held=50, returned=30, forwarded_qty=40,
                  forwarded_to_name="Corner Mart")
     assert sent["accepted"] and party(db, "queen-st-grocer")["forwarded"] == 40
-    got = claim(client, db, "corner-mart", "att_cm1", received_qty=40, on_shelf=40, sold_source="2.4",
-                block_test=False)
+    got = claim(client, db, "corner-mart", "att_cm1", received_qty=40, on_shelf=40, block_test=False)
     assert got["accepted"] and numbers(edge(db, "queen-st-grocer", "corner-mart"))["state"] == "corroborated"
     cm = party(db, "corner-mart")
     assert (cm["shipped_in"], cm["on_shelf"], cm["unresolved"], cm["state"]) == (40, 40, 0, "claimed")
     assert party(db, "queen-st-grocer")["state"] == "reconciled"
-    assert got["open_units"] == 160          # Harbour 40 and Lakeside 80 not called, 40 on_shelf
+    assert got["open_units"] == 160          # Harbour 40 and Lakeside 80 not called, 40 on the shelf
     assert_balance(RID)

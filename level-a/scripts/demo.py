@@ -21,7 +21,7 @@ printing "ok" or "MISSING" for each. Exit status: 0 everything seen,
                      attempt adopted, Corner Mart called once
     order system     1:45  switch North orders to v2: contract failure, repaired adapter, retry
     memory     2:20  switch East orders to v2: adapter from memory, no model call
-    close      2:35  press Close: Atlas refuses while tins are unexplained
+    close      2:35  press Close: Atlas refuses while tins are open
     wrap       2:50  resume random kills; the wrap lines
 
 Extras for the run-up and for questions:
@@ -57,7 +57,7 @@ DEFAULT_TIMEOUT_S = 60.0
 SKEW = timedelta(seconds=5)
 KILL_FAILPOINT = "after_dial_request"
 HARBOUR, QUEEN, LAKESIDE, CORNER = "harbour-market", "queen-st-grocer", "lakeside-foods", "corner-mart"
-DISPUTED_PANELS = 15
+DISPUTED_TINS = 15
 
 
 class DemoError(Exception):
@@ -249,7 +249,7 @@ def live_workers(api: Api) -> list[dict]:
 def act_kill_arm(ctx: Context) -> list[str]:
     """Arm first, so Corner Mart cannot be dialled before the failpoint is
     waiting for it; then let Corner Mart (and, unless --no-release, Queen St
-    Alarm's held reply, which names Corner Mart) go."""
+    Grocer's held reply, which names Corner Mart) go."""
     running = live_workers(ctx.api)
     if running and not ctx.args.force:
         names = ", ".join(f"{w.get('name')} (heartbeat {w.get('heartbeat_age_s')} s ago)" for w in running)
@@ -307,7 +307,7 @@ def _party_called_once(party_id: str) -> Callable[[View, View], bool]:
 
 def _disputed(v: View, _b: View) -> bool:
     e = v.edge(QUEEN, CORNER)
-    return bool(e) and e.get("disputed_qty") == DISPUTED_PANELS
+    return bool(e) and e.get("disputed_qty") == DISPUTED_TINS
 
 
 def _held(party_id: str, held: bool) -> Callable[[View, View], bool]:
@@ -344,8 +344,8 @@ BEATS = (
     Beat("run", "0:00", "Run in progress",
          "The wall: started at 4:55, the simulated day, 40 parties from 5, steps, kills survived, "
          "0 duplicate effects.",
-         "Nothing counts in a recall until every tin is explained. This agent will not close one until "
-         "the mass balance holds.",
+         "Lie to it, kill it, break the system under it: our agent still won't say 'all clear' until the "
+         "database shows every recalled tin off every shelf.",
          None,
          (Expect("a run is in progress on an open recall",
                  lambda v, _b: bool(v.run) and (v.state.get("recall") or {}).get("status") == "open"),
@@ -379,14 +379,15 @@ BEATS = (
          timeout_s=5.0),
     Beat("kill", "1:05", "Kill",
          "The worker dials Corner Mart on a teammate's phone and dies. The phone rings once. The teammate "
-         "says received 25. The edge turns disputed: 15 tins. Restart the worker: documents read, the "
+         "says received 25, all still on the shelf. The edge turns disputed: 15 tins. Restart the worker: "
+         "documents read, the "
          "attempt adopted, no second ring.",
          "The call was requested and the worker died before saving it. A naive agent redials. Ours finds "
          "the evidence first.",
          None,
          (Expect("Corner Mart found from Queen St Grocer's claim", lambda v, _b: v.party(CORNER) is not None),
           Expect("the failpoint fired on the call to Corner Mart", has_line("failpoint_fired", party_id=CORNER)),
-          Expect(f"the claim landed: {DISPUTED_PANELS} tins disputed", _disputed),
+          Expect(f"the claim landed: {DISPUTED_TINS} tins disputed", _disputed),
           Expect("the worker resumed: documents read, nothing replayed", after_fire("worker_resumed")),
           Expect("the in-doubt attempt was adopted, not redialled",
                  after_fire("attempt_adopted", party_id=CORNER)),
@@ -416,17 +417,19 @@ BEATS = (
          timeout_s=90.0),
     Beat("close", "2:35", "Closing gate",
          "Press Close. Atlas refuses and the wall shows the open tins. The three metrics sit side by side.",
-         "Fifteen tins are unexplained, so Atlas will not let the recall close.",
+         "Forty tins are still open, twenty-five on a shelf at Corner Mart and fifteen disputed, so Atlas will "
+         "not let us say all clear.",
          act_close,
          (Expect("Atlas refused the close", has_line("close_refused")),
-          Expect("the recall is still open with tins unexplained",
+          Expect("the recall is still open with tins open",
                  lambda v, _b: (v.state.get("recall") or {}).get("status") == "open"
                  and (v.metrics.get("open_units") or 0) > 0)),
          timeout_s=15.0),
     Beat("wrap", "2:50", "Wrap",
          "One sentence each: what is real, what is simulated, why it matters.",
          "What is real here: the calls, the kills and every refusal by the database. What is simulated: the "
-         "clock, the other parties and the order system. Today this is fire alarm tins. A different product is a different recall document on the same engine.",
+         "clock, the other parties, the order systems and the store's till. A different product is a different "
+         "recall document on the same engine.",
          act_wrap,
          (Expect("random kills resumed", lambda v, _b: (v.run.get("supervisor") or {}).get("paused") is False),),
          timeout_s=10.0),
@@ -525,8 +528,8 @@ def status_lines(state: dict) -> list[str]:
             f"Random kills {'paused' if (run.get('supervisor') or {}).get('paused') else 'on'}   "
             f"Saboteur {'on' if (run.get('saboteur') or {}).get('on') else 'off'}",
         ]
-    lines.append(f"Located {_pair(m.get('tins_located'))}   Fixed or returned {_pair(m.get('held_or_returned'))}   "
-                 f"Open {m.get('open_units')} (disputed {m.get('disputed_units')})   "
+    lines.append(f"Located {_pair(m.get('tins_located'))}   Held or returned {_pair(m.get('held_or_returned'))}   "
+                 f"Open {m.get('open_units')} (on a shelf {m.get('on_shelf')}, disputed {m.get('disputed_units')})   "
                  f"Mass balance {m.get('mass_balance')} of {m.get('units_total')}")
     for s in state.get("systems") or []:
         if s.get("system", "").endswith(" orders"):

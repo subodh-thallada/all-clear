@@ -28,7 +28,7 @@ PROMPT_VARIABLES = {"party_name", "batch_code", "batch_spoken", "product", "bran
                     "ask_delivery_note", "followup_note", "ask_counts", "questions"}
 WORKER_VARIABLES = PROMPT_VARIABLES | {"attempt_id", "party_id", "question_ids"}
 TOOL_BINDINGS = {"attempt_id", "party_id", "system__conversation_id", "system__call_sid"}
-INTEGER_FIELDS = {"on_hand", "sold", "returned", "destroyed", "forwarded_qty", "received_qty"}
+INTEGER_FIELDS = {"on_shelf", "sold", "returned", "held", "forwarded_qty", "received_qty"}
 STRING_FIELDS = {"forwarded_to_name", "delivery_note", "received_from"}
 ARRAY_FIELDS = {"forwards"}
 # Each tool: its file, the endpoint, the fields the model fills with their
@@ -127,7 +127,7 @@ def test_agent_config_has_the_vendor_shape():
     assert prompt["tool_ids"] == [f"{{{{{provision.tool_id_placeholder(n)}}}}}" for n in TOOLS]
     assert prompt["built_in_tools"]["end_call"]["params"] == {"system_tool_type": "end_call"}
     assert "call back" in prompt["built_in_tools"]["end_call"]["description"]
-    assert conv["tts"]["model_id"] == "eleven_flash_v2_5"
+    assert conv["tts"]["model_id"] == "eleven_flash_v2"
     assert conv["conversation"]["max_duration_seconds"] == 180
     assert conv["turn"] == {"turn_timeout": 7, "silence_end_call_timeout": 20}
     assert {"recall", "batch", "tins", "on hand", "delivery note", "Corner Mart",
@@ -189,7 +189,7 @@ def test_answer_value_matches_the_answer_types():
 
 def test_count_fields_say_when_to_send_zero():
     props = _tool_properties()
-    for name in ("on_hand", "sold", "returned", "destroyed", "forwarded_qty"):
+    for name in ("on_shelf", "sold", "returned", "held", "forwarded_qty"):
         assert "0" in props[name]["description"], f"{name} must say when to send 0"
     assert "leave it out" in props["received_qty"]["description"].lower()
 

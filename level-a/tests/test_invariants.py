@@ -27,8 +27,8 @@ def recall(client, db, assert_balance):
     start_recall(client, db, load_scenario("recall_1"), all_sim=True, emit=False)
     db.tool_events.insert_one({"kind": "tool_call", "attempt_id": "att_lake", "party_id": "lakeside-foods",
                                "recall_id": RID, "payload": {}, "received_at": server_now(client)})
-    for party_id, attempt, source, raw in (("lakeside-foods", "att_lake", "sim", {"held": 20, "returned": 60}),
-                                           ("harbour-market", "att_form", "form", {"held": 40})):
+    for party_id, attempt, source, raw in (("lakeside-foods", "att_lake", "sim", {"sold": 20, "sold_source": "till_report", "returned": 60}),
+                                           ("harbour-market", "att_form", "form", {"returned": 40})):
         assert submit_claim(client, db, recall_id=RID, party_id=party_id, attempt_id=attempt, source=source,
                             raw=raw)["accepted"]
         assert_balance(RID)
@@ -50,7 +50,7 @@ def test_all_four_hold_on_a_clean_run(client, db, recall):
 
 def test_a_claim_without_a_tool_event_fails_check_3(client, db, recall):
     submit_claim(client, db, recall_id=RID, party_id="queen-st-grocer", attempt_id="att_ghost", source="voice",
-                 raw={"held": 120})
+                 raw={"returned": 120})
     result = invariants.check(db, RID, {})
     assert result["passed"] == [True, True, False, True]
     [row] = result["details"]["claims_without_evidence"]

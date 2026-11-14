@@ -120,7 +120,7 @@ def feed_lines(db, kind):
     return list(db.feed.find({"kind": kind}).sort("at", 1))
 
 
-def add_corner_properties_stub(db, recall_id):
+def add_corner_mart_stub(db, recall_id):
     """What memory does in run 2: Corner Mart exists before anyone names it."""
     recall = db.recalls.find_one({"_id": recall_id})
     entry = next(e for e in recall["directory"] if e["party_id"] == "corner-mart")
@@ -130,7 +130,7 @@ def add_corner_properties_stub(db, recall_id):
 
 # ---------------------------------------------------------------- scripts and payloads
 
-def test_harbour_fire_plays_its_script_in_order(client, db, network, poster, assert_balance):
+def test_harbour_market_plays_its_script_in_order(client, db, network, poster, assert_balance):
     start(client, db)
     t0 = time.monotonic()
     attempt, placed = dial(network, db, R1, "harbour-market")
@@ -217,7 +217,7 @@ def test_delays_follow_the_time_scale(client, db, poster, settings):
 
 def test_delivery_note_only_when_asked(client, db, network, poster, assert_balance):
     start(client, db, "recall_2")
-    add_corner_properties_stub(db, R2)
+    add_corner_mart_stub(db, R2)
     dial(network, db, R2, "harbour-market", ask_note="yes")
     dial(network, db, R2, "lakeside-foods", ask_note="no")
     dial(network, db, R2, "corner-mart", ask_note="yes")      # its answer is null: nothing to say
@@ -263,9 +263,9 @@ def test_demo_hold_is_ignored_in_sim_mode(client, db, network, poster):
     assert len(poster.tools) == 1 and feed_lines(db, "sim_hold") == []
 
 
-def test_must_follow_holds_corner_properties_until_queen_st_has_claimed(client, db, network, poster, assert_balance):
+def test_must_follow_holds_corner_mart_until_queen_st_has_claimed(client, db, network, poster, assert_balance):
     start(client, db, "recall_2")
-    add_corner_properties_stub(db, R2)
+    add_corner_mart_stub(db, R2)
     dial(network, db, R2, "corner-mart")
     time.sleep(0.6)
     assert poster.tools == [], "Corner Mart must not answer before the sender reports the transfer"
@@ -545,22 +545,22 @@ def calls_to(db, party_id):
 def test_an_over_reporter_is_refused_then_books_the_truth_in_one_paced_call(client, db, long_net, long_poster,
                                                                            assert_balance):
     start_long(client, db, speed=6.0)                 # a simulated minute is 0.1 s: the pacing is measurable
-    add_account(client, db, "ridgeway-alarm-co")
-    by = LONG["sim_truth"]["ridgeway-alarm-co"]["params"]["over_report_by"]
-    attempt, placed = dial(long_net, db, RL, "ridgeway-alarm-co")
+    add_account(client, db, "ridgeway-food-co")
+    by = LONG["sim_truth"]["ridgeway-food-co"]["params"]["over_report_by"]
+    attempt, placed = dial(long_net, db, RL, "ridgeway-food-co")
     assert long_net.wait_idle(10)
 
     first, second = long_poster.tools
-    received = LONG["sim_truth"]["ridgeway-alarm-co"]["truth"]["received"]
+    received = LONG["sim_truth"]["ridgeway-food-co"]["truth"]["received"]
     assert first["result"]["code"] == "over_count"
     assert (first["result"]["reported_total"], first["result"]["shipped_in"]) == (received + by, received)
     assert second["result"]["accepted"] and second["body"]["received_qty"] == received
     assert second["at"] - first["at"] >= 0.1 - 0.02, "one simulated minute per turn"
-    assert booked(db, "ridgeway-alarm-co") == truth_buckets("ridgeway-alarm-co")
-    assert party_doc(db, "ridgeway-alarm-co")["state"] == "reconciled"
+    assert booked(db, "ridgeway-food-co") == truth_buckets("ridgeway-food-co")
+    assert party_doc(db, "ridgeway-food-co")["state"] == "reconciled"
     assert_balance(RL)
 
-    (row,) = calls_to(db, "ridgeway-alarm-co")
+    (row,) = calls_to(db, "ridgeway-food-co")
     assert (row["profile"], row["reply_kind"], row["script_key"], row["attempt_no"], row["status"]) == \
         ("over_reporter", "answer", None, 1, "completed")
     assert [r["claim"]["on_hand"] for r in row["replies"]] == [first["body"]["on_hand"], second["body"]["on_hand"]]
@@ -568,17 +568,17 @@ def test_an_over_reporter_is_refused_then_books_the_truth_in_one_paced_call(clie
     assert hook["payload"]["type"] == "post_call_transcription"
     assert db.attempts.find_one({"_id": attempt["_id"]})["state"] == "completed"
     lines = feed_lines(db, "sim_reply")
-    assert [line["text"].split(": ", 1)[0] for line in lines] == ["Ridgeway Alarm Co (simulated)"] * 2
+    assert [line["text"].split(": ", 1)[0] for line in lines] == ["Ridgeway Food Co (simulated)"] * 2
     assert "wrong line" in lines[1]["text"] and all(line.get("sim_label") for line in lines)
 
 
 def test_a_no_answer_party_rings_out_then_is_busy_then_answers_the_third_call(client, db, long_net, long_poster,
                                                                              assert_balance):
     start_long(client, db)
-    add_account(client, db, "elmvale-fire-systems")
+    add_account(client, db, "elmvale-foods")
     states = []
     for _ in range(3):
-        attempt, _ = dial(long_net, db, RL, "elmvale-fire-systems")
+        attempt, _ = dial(long_net, db, RL, "elmvale-foods")
         assert long_net.wait_idle(10)
         states.append(db.attempts.find_one({"_id": attempt["_id"]})["state"])
 
@@ -587,11 +587,11 @@ def test_a_no_answer_party_rings_out_then_is_busy_then_answers_the_third_call(cl
     assert [p["type"] for p in failures] == ["call_initiation_failure"] * 2
     assert [p["data"]["failure_reason"] for p in failures] == ["no-answer", "busy"]
     assert long_poster.hooks[2]["payload"]["type"] == "post_call_transcription"
-    rows = calls_to(db, "elmvale-fire-systems")
+    rows = calls_to(db, "elmvale-foods")
     assert [(r["status"], r["reply_kind"], r["attempt_no"]) for r in rows] == [
         ("no-answer", "no_answer", 1), ("busy", "busy", 2), ("completed", "answer", 3)]
     (tool,) = long_poster.tools
-    assert tool["result"]["accepted"] and booked(db, "elmvale-fire-systems") == truth_buckets("elmvale-fire-systems")
+    assert tool["result"]["accepted"] and booked(db, "elmvale-foods") == truth_buckets("elmvale-foods")
     (line,) = feed_lines(db, "sim_reply")
     assert "Sorry we missed your calls." in line["text"]
     assert_balance(RL)
@@ -599,19 +599,19 @@ def test_a_no_answer_party_rings_out_then_is_busy_then_answers_the_third_call(cl
 
 def test_a_callback_party_asks_for_tomorrow_morning_then_answers(client, db, long_net, long_poster):
     start_long(client, db)
-    add_account(client, db, "cedarbrae-life-safety")
-    hour = LONG["sim_truth"]["cedarbrae-life-safety"]["params"]["callback_hour"]
-    first, _ = dial(long_net, db, RL, "cedarbrae-life-safety")
+    add_account(client, db, "cedarbrae-supermarket")
+    hour = LONG["sim_truth"]["cedarbrae-supermarket"]["params"]["callback_hour"]
+    first, _ = dial(long_net, db, RL, "cedarbrae-supermarket")
     assert long_net.wait_idle(10)
 
     (cb,) = long_poster.callbacks
-    (row,) = calls_to(db, "cedarbrae-life-safety")
-    assert cb["body"] == {"attempt_id": first["_id"], "party_id": "cedarbrae-life-safety",
+    (row,) = calls_to(db, "cedarbrae-supermarket")
+    assert cb["body"] == {"attempt_id": first["_id"], "party_id": "cedarbrae-supermarket",
                           "callback_at": next_morning(row["sim_at"], hour)}
     assert row["reply_kind"] == "callback" and row["replies"][0]["callback_at"] == cb["body"]["callback_at"]
     assert long_poster.tools == [] and db.attempts.find_one({"_id": first["_id"]})["state"] == "completed"
 
-    dial(long_net, db, RL, "cedarbrae-life-safety", purpose="retry")
+    dial(long_net, db, RL, "cedarbrae-supermarket", purpose="retry")
     assert long_net.wait_idle(10)
     (tool,) = long_poster.tools
     assert tool["result"]["accepted"] and len(long_poster.callbacks) == 1, "it asks for a callback only once"
@@ -656,11 +656,11 @@ def test_a_slice_party_answers_questions_after_its_script_and_on_a_question_call
 def test_a_form_link_is_answered_once_in_sim_time_and_survives_an_api_restart(client, db, settings, long_poster,
                                                                              assert_balance):
     start_long(client, db, speed=0.5)                 # two simulated hours are a second of real time
-    add_account(client, db, "morrow-avenue-alarms")
-    add_account(client, db, "elmvale-fire-systems")
-    token = party_doc(db, "morrow-avenue-alarms")["form_token"]
-    link = {"recall_id": RL, "party_id": "morrow-avenue-alarms", "token": token}
-    after = LONG["sim_truth"]["morrow-avenue-alarms"]["params"]["form_after_hours"]
+    add_account(client, db, "morrow-avenue-market")
+    add_account(client, db, "elmvale-foods")
+    token = party_doc(db, "morrow-avenue-market")["form_token"]
+    link = {"recall_id": RL, "party_id": "morrow-avenue-market", "token": token}
+    after = LONG["sim_truth"]["morrow-avenue-market"]["params"]["form_after_hours"]
 
     first = SimNetwork(db, long_poster, settings, event_wait_s=0.05)
     try:
@@ -683,8 +683,8 @@ def test_a_form_link_is_answered_once_in_sim_time_and_survives_an_api_restart(cl
     try:
         again = second.form_link_delivered(**link)    # the harness re-sends after its own restart
         assert again == {**out, "duplicate": True}
-        ignored = second.form_link_delivered(recall_id=RL, party_id="elmvale-fire-systems",
-                                             token=party_doc(db, "elmvale-fire-systems")["form_token"])
+        ignored = second.form_link_delivered(recall_id=RL, party_id="elmvale-foods",
+                                             token=party_doc(db, "elmvale-foods")["form_token"])
         assert ignored["submit_at"] is None
         assert eventually(lambda: long_poster.forms, timeout=10)
         time.sleep(0.3)
@@ -694,12 +694,12 @@ def test_a_form_link_is_answered_once_in_sim_time_and_survives_an_api_restart(cl
     (form,) = long_poster.forms
     assert form["token"] == token and form["result"]["accepted"]
     assert sim_hour(client, db, form["when"]) >= out["submit_at"] - 1e-6, "not before its simulated time"
-    assert form["fields"] == profiles.claim_body(LONG["sim_truth"]["morrow-avenue-alarms"]["truth"])
-    assert booked(db, "morrow-avenue-alarms") == truth_buckets("morrow-avenue-alarms")
-    assert db.claims.find_one({"party_id": "morrow-avenue-alarms", "status": "accepted"})["source"] == "form"
+    assert form["fields"] == profiles.claim_body(LONG["sim_truth"]["morrow-avenue-market"]["truth"])
+    assert booked(db, "morrow-avenue-market") == truth_buckets("morrow-avenue-market")
+    assert db.claims.find_one({"party_id": "morrow-avenue-market", "status": "accepted"})["source"] == "form"
     events = {e["party_id"]: e for e in db.worker_state.find({"kind": "sim_event"})}
-    assert events["morrow-avenue-alarms"]["state"] == "done" and events["morrow-avenue-alarms"]["result"]["booked"]
-    assert events["elmvale-fire-systems"]["state"] == "ignored"
+    assert events["morrow-avenue-market"]["state"] == "done" and events["morrow-avenue-market"]["result"]["booked"]
+    assert events["elmvale-foods"]["state"] == "ignored"
     assert len([line for line in feed_lines(db, "sim_reply") if "form link" in line["text"]]) == 2
     assert_balance(RL)
 
@@ -707,26 +707,26 @@ def test_a_form_link_is_answered_once_in_sim_time_and_survives_an_api_restart(cl
 def test_a_reviser_corrects_its_count_through_the_form_48_sim_hours_after_acceptance(client, db, long_net,
                                                                                      long_poster, assert_balance):
     start_long(client, db, speed=0.02)                # 48 simulated hours pass in about a second
-    add_account(client, db, "glenholme-fire-services")
-    revise = LONG["sim_truth"]["glenholme-fire-services"]["params"]["revise"]
-    dial(long_net, db, RL, "glenholme-fire-services")
+    add_account(client, db, "glenholme-grocery")
+    revise = LONG["sim_truth"]["glenholme-grocery"]["params"]["revise"]
+    dial(long_net, db, RL, "glenholme-grocery")
     assert long_net.wait_idle(10)
     call_ended = sim_hour(client, db)
     (tool,) = long_poster.tools
-    assert tool["result"]["accepted"] and booked(db, "glenholme-fire-services") == truth_buckets("glenholme-fire-services")
-    event = db.worker_state.find_one({"_id": f"sim_event:{RL}:glenholme-fire-services:revise"})
-    call_began = calls_to(db, "glenholme-fire-services")[0]["sim_at"]
+    assert tool["result"]["accepted"] and booked(db, "glenholme-grocery") == truth_buckets("glenholme-grocery")
+    event = db.worker_state.find_one({"_id": f"sim_event:{RL}:glenholme-grocery:revise"})
+    call_began = calls_to(db, "glenholme-grocery")[0]["sim_at"]
     assert call_began <= event["due_at"] - revise["after_hours"] <= call_ended, "48 h after the acceptance"
 
     assert eventually(lambda: long_poster.forms, timeout=10)
     time.sleep(0.2)
     (form,) = long_poster.forms
     assert sim_hour(client, db, form["when"]) >= event["due_at"] - 1e-6
-    expected = truth_buckets("glenholme-fire-services")
+    expected = truth_buckets("glenholme-grocery")
     expected["on_hand"] -= revise["delta"]
     expected["returned"] += revise["delta"]
-    assert form["result"]["accepted"] and booked(db, "glenholme-fire-services") == expected
-    assert [c["source"] for c in db.claims.find({"party_id": "glenholme-fire-services", "status": "accepted"})
+    assert form["result"]["accepted"] and booked(db, "glenholme-grocery") == expected
+    assert [c["source"] for c in db.claims.find({"party_id": "glenholme-grocery", "status": "accepted"})
             .sort("created_at", 1)] == ["sim", "form"]
     assert db.worker_state.find_one({"_id": event["_id"]})["state"] == "done"
     assert_balance(RL)
@@ -734,8 +734,8 @@ def test_a_reviser_corrects_its_count_through_the_form_48_sim_hours_after_accept
 
 def test_the_rep_reports_for_the_unreachable_party_once_after_escalation(client, db, long_net, long_poster):
     start_long(client, db, sim_start=200.5)           # half a simulated hour before day 8, 09:00
-    add_account(client, db, "tallpine-fire-safety")
-    key = f"sim_event:{RL}:tallpine-fire-safety:rep"
+    add_account(client, db, "tallpine-general-store")
+    key = f"sim_event:{RL}:tallpine-general-store:rep"
     long_net.start()
     assert eventually(lambda: db.worker_state.find_one({"_id": key}))
     assert eventually(lambda: sim_hour(client, db) > 202.5)
@@ -744,18 +744,18 @@ def test_the_rep_reports_for_the_unreachable_party_once_after_escalation(client,
     assert db.worker_state.find_one({"_id": key})["due_at"] > 201.0
 
     db.operations.insert_one({"_id": "op-rep-tallpine", "recall_id": RL, "kind": "escalate_rep",
-                              "party_id": "tallpine-fire-safety", "state": "sent",
-                              "idempotency_key": f"{RL}:tallpine-fire-safety:escalate_rep"})
+                              "party_id": "tallpine-general-store", "state": "sent",
+                              "idempotency_key": f"{RL}:tallpine-general-store:escalate_rep"})
     assert eventually(lambda: long_poster.reports, timeout=5)
     time.sleep(0.2)
     (report,) = long_poster.reports
-    truth = LONG["sim_truth"]["tallpine-fire-safety"]["truth"]
-    assert report["body"] == {"recall_id": RL, "party_id": "tallpine-fire-safety", "source": "rep",
+    truth = LONG["sim_truth"]["tallpine-general-store"]["truth"]
+    assert report["body"] == {"recall_id": RL, "party_id": "tallpine-general-store", "source": "rep",
                               "evidence_id": "op-rep-tallpine", **profiles.rep_report(truth)}
     event = db.worker_state.find_one({"_id": key})
     assert event["state"] == "done" and event["result"]["op_id"] == "op-rep-tallpine"
     (line,) = [x for x in feed_lines(db, "sim_reply") if "rep reports" in x["text"]]
-    assert line["text"].startswith("Distributor North's rep reports for Tallpine Fire & Safety")
+    assert line["text"].startswith("Distributor North's rep reports for Tallpine General Store")
     assert line["system"] == "North orders"
 
 
@@ -796,7 +796,7 @@ def test_sim_voice_delivers_a_form_link():
         return httpx.Response(200, json={"accepted": True, "submit_at": 35.0, "duplicate": False})
 
     voice = SimVoice("http://api.test", "tool-secret", http=httpx.Client(transport=httpx.MockTransport(handler)))
-    out = voice.send_form_link(recall_id=RL, party_id="morrow-avenue-alarms", token="abc")
+    out = voice.send_form_link(recall_id=RL, party_id="morrow-avenue-market", token="abc")
     assert out["submit_at"] == 35.0
     assert seen == {"path": "/sim/form_link", "secret": "tool-secret",
-                    "body": {"recall_id": RL, "party_id": "morrow-avenue-alarms", "token": "abc"}}
+                    "body": {"recall_id": RL, "party_id": "morrow-avenue-market", "token": "abc"}}

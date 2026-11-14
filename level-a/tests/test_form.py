@@ -17,7 +17,7 @@ from levela.ledger.transfers import stub_party
 from levela.orchestrator import attempts
 
 TOOL = {"X-Tool-Secret": "test-tool-secret"}
-PARTY_FIELDS = ("shipped_in", "on_hand", "sold", "returned", "destroyed", "forwarded", "unresolved", "state")
+PARTY_FIELDS = ("shipped_in", "on_shelf", "sold", "returned", "held", "forwarded", "unresolved", "state")
 
 
 @pytest.fixture
@@ -139,7 +139,7 @@ def test_get_shows_the_recall_and_a_direct_party_fields(api, client, db):
     assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
     page = r.text
     for text in ("Harbour Market", "Maple Oat Granola Bars, tin of 6", "B-4471", "Undeclared peanut",
-                 'name="viewport"', '<label for="on_hand">', 'name="sold"', 'name="returned"', 'name="destroyed"',
+                 'name="viewport"', '<label for="on_shelf">', 'name="sold"', 'name="returned"', 'name="held"',
                  'name="forwarded_qty"', 'name="forwarded_to_name"', 'inputmode="numeric"', "<html lang=\"en\">"):
         assert text in page
     assert 'name="received_qty"' not in page and 'name="delivery_note"' not in page
@@ -170,7 +170,7 @@ def test_a_refused_form_attempt_falls_back_to_the_live_one(api, client, db, monk
     rid = start(client, db)
     att = dialed(db, rid, "harbour-market")
     monkeypatch.setattr(attempts, "live_attempt", lambda *a, **k: None)   # lose the race to the worker
-    page = submit(api, token(db, rid, "harbour-market"), on_hand=25, sold=10, returned=5)
+    page = submit(api, token(db, rid, "harbour-market"), on_shelf=25, sold=10, returned=5)
     assert "Accepted" in page
     assert_balance(rid)
     assert db.claims.find_one({"recall_id": rid})["attempt_id"] == att["_id"]
@@ -182,7 +182,7 @@ def test_a_rejected_submission_does_not_hold_the_party(api, client, db, assert_b
     The form attempt is closed, so the party can still be called (a live one
     held its one-live-attempt slot for the rest of the run)."""
     rid = start(client, db)
-    page = submit(api, token(db, rid, "harbour-market"), on_hand=60)
+    page = submit(api, token(db, rid, "harbour-market"), on_shelf=60)
     assert "Rejected by Atlas" in page
     assert_balance(rid)
     assert attempts.live_attempt(db, rid, "harbour-market") is None
@@ -199,7 +199,7 @@ def test_the_same_numbers_after_the_sender_reports_are_booked_not_the_stale_reje
     db.parties.insert_one(stub_party(rid, "corner-mart", "Corner Mart", None, "memory", datetime.now(timezone.utc)))
     tok = token(db, rid, "corner-mart")
     assert "No party has reported sending tins to you yet" in submit(api, tok, received_qty=25, held=25)
-    submit(api, token(db, rid, "queen-st-grocer"), on_hand=50, sold=30, forwarded_qty=40,
+    submit(api, token(db, rid, "queen-st-grocer"), on_shelf=50, sold=30, forwarded_qty=40,
            forwarded_to_name="Corner Mart")
     page = submit(api, tok, received_qty=25, held=25)
     assert "Accepted" in page and "already checked and refused" not in page
@@ -247,13 +247,13 @@ def test_a_party_memory_flagged_must_give_its_delivery_note_on_the_form(api, cli
 
 def test_a_direct_party_that_received_a_transfer_can_confirm_it(api, client, db, assert_balance):
     rid = start(client, db)
-    submit(api, token(db, rid, "queen-st-grocer"), on_hand=80, sold=30, forwarded_qty=10,
+    submit(api, token(db, rid, "queen-st-grocer"), on_shelf=80, sold=30, forwarded_qty=10,
            forwarded_to_name="Lakeside Foods")
     tok = token(db, rid, "lakeside-foods")
     page = api.get(f"/form/{tok}").text
     assert 'name="received_qty"' in page and "From Queen St Grocer" in page
     page = submit(api, tok, received_qty=10, held=30, returned=60)
-    assert "Accepted" in page and "Recorded: received 10, 30 on hand, 60 destroyed." in page
+    assert "Accepted" in page and "Recorded: received 10, 30 on hand, 60 held." in page
     lake = db.parties.find_one({"recall_id": rid, "party_id": "lakeside-foods"})
     assert (lake["shipped_in"], lake["unresolved"], lake["state"]) == (90, 0, "reconciled")
     assert db.edges.find_one({"recall_id": rid})["state"] == "corroborated"
@@ -262,9 +262,9 @@ def test_a_direct_party_that_received_a_transfer_can_confirm_it(api, client, db,
 
 def test_a_party_two_senders_shipped_to_picks_the_sender(api, client, db, assert_balance):
     rid = start(client, db)
-    submit(api, token(db, rid, "queen-st-grocer"), on_hand=50, sold=45, forwarded_qty=25,
+    submit(api, token(db, rid, "queen-st-grocer"), on_shelf=50, sold=45, forwarded_qty=25,
            forwarded_to_name="Corner Mart")
-    submit(api, token(db, rid, "harbour-market"), on_hand=20, sold=10, forwarded_qty=10,
+    submit(api, token(db, rid, "harbour-market"), on_shelf=20, sold=10, forwarded_qty=10,
            forwarded_to_name="Corner Mart")
     tok = token(db, rid, "corner-mart")
     page = api.get(f"/form/{tok}").text
@@ -283,7 +283,7 @@ def test_a_party_two_senders_shipped_to_picks_the_sender(api, client, db, assert
 
 def test_downstream_form_asks_for_the_receipt_and_books_the_dispute(api, client, db, assert_balance):
     rid = start(client, db)
-    page = submit(api, token(db, rid, "queen-st-grocer"), on_hand=50, sold=30, forwarded_qty=40,
+    page = submit(api, token(db, rid, "queen-st-grocer"), on_shelf=50, sold=30, forwarded_qty=40,
                   forwarded_to_name="Corner Mart")
     assert "Recorded: 50 on hand, 30 sold, 40 forwarded to Corner Mart." in page
     assert_balance(rid)
@@ -302,7 +302,7 @@ def test_downstream_form_asks_for_the_receipt_and_books_the_dispute(api, client,
 
 def test_party_names_are_escaped(api, client, db, assert_balance):
     rid = start(client, db)
-    submit(api, token(db, rid, "queen-st-grocer"), on_hand=50, sold=30, forwarded_qty=40,
+    submit(api, token(db, rid, "queen-st-grocer"), on_shelf=50, sold=30, forwarded_qty=40,
            forwarded_to_name='<b>Evil</b> & "Co"')
     assert_balance(rid)
     stub = db.parties.find_one({"recall_id": rid, "tier": "downstream"})
@@ -313,8 +313,8 @@ def test_party_names_are_escaped(api, client, db, assert_balance):
 def test_blank_or_oversized_submissions_book_nothing(api, client, db):
     rid = start(client, db)
     tok = token(db, rid, "harbour-market")
-    assert "Enter at least one number." in submit(api, tok, on_hand="", sold="  ")
-    big = api.post(f"/form/{tok}", content=b"on_hand=" + b"9" * 20000,
+    assert "Enter at least one number." in submit(api, tok, on_shelf="", sold="  ")
+    big = api.post(f"/form/{tok}", content=b"on_shelf=" + b"9" * 20000,
                    headers={"Content-Type": "application/x-www-form-urlencoded"})
     assert big.status_code == 413 and "That submission is too large." in big.text
     assert db.attempts.count_documents({}) == 0 and db.claims.count_documents({}) == 0
