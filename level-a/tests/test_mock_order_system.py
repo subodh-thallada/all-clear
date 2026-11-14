@@ -24,8 +24,8 @@ BATCH = "B-4471"
 TOKEN = "test-admin-token"
 # Fictional numbers (555-01xx). N-009 is the canary account in the change tests.
 NORTH = [
-    {"account": "N-009", "name": "Annex Fire", "phone": "+14165550109", "qty_shipped": 48, "qty_in_stock": 12},
-    {"account": "N-014", "name": "Bloor Alarm", "phone": "+14165550127", "qty_shipped": 60, "qty_in_stock": 22},
+    {"account": "N-009", "name": "Annex Grocer", "phone": "+14165550109", "qty_shipped": 48, "qty_in_stock": 12},
+    {"account": "N-014", "name": "Bloor Foods", "phone": "+14165550127", "qty_shipped": 60, "qty_in_stock": 22},
     {"account": "N-021", "name": "Dundas Pantry", "phone": "+14165550131", "qty_shipped": 72, "qty_in_stock": 30},
     {"account": "N-030", "name": "College Market", "phone": "+14165550138", "qty_shipped": 40, "qty_in_stock": 5},
     {"account": "N-041", "name": "Ossington Foods", "phone": "+14165550146", "qty_shipped": 80, "qty_in_stock": 41},

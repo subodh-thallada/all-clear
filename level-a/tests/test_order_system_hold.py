@@ -243,7 +243,7 @@ def test_read_accounts_makes_tier_2_stores_and_books_the_distributors_claim(nort
     op = ops.get(db, res["op_id"])
     assert op["readback_value"]["accounts"] == 5 and op["readback_value"]["shipped"] == 300
 
-    bloor = db.parties.find_one({"recall_id": RID, "party_id": "bloor-alarm"})
+    bloor = db.parties.find_one({"recall_id": RID, "party_id": "bloor-foods"})
     assert (bloor["type"], bloor["tier"], bloor["found_via"], bloor["channel"]) == ("store", 2, "order_system", "sim")
     assert (bloor["phone"], bloor["distributor"], bloor["account"]) == ("+14165550127", "dist-north", "N-014")
     assert bloor["discovered_by"] == "order_system" and bloor["next_action_at"] is not None and bloor["shipped_in"] == 0
@@ -287,7 +287,7 @@ def test_read_inventory_records_order_system_available_once_per_simulated_day(cl
     res = ops.read_inventory(ctx, bloor)
     assert res["action"] == "verified"
     op = ops.get(db, res["op_id"])
-    assert op["idempotency_key"].startswith(f"{RID}:bloor-alarm:read_inventory:d")
+    assert op["idempotency_key"].startswith(f"{RID}:bloor-foods:read_inventory:d")
     assert op["readback_value"] == {"account": "N-014", "qty_in_stock": 22, "qty_shipped": 60}
     assert db.parties.find_one({"_id": bloor["_id"]})["order_system_available"] == 22
     assert ops.read_inventory(ctx, bloor)["action"] == "duplicate"
@@ -301,10 +301,10 @@ def test_execute_skips_a_form_link_or_a_rep_escalation_without_touching_any_orde
     for want of a handler. Neither is an order system call."""
     ctx, app, _ = north
     now = datetime.now(timezone.utc)
-    docs = [{"_id": "op-form", "recall_id": RID, "kind": "send_form_link", "order_system": None, "party_id": "bloor-alarm",
-             "idempotency_key": f"{RID}:bloor-alarm:form:3", "state": "sent", "request": {}, "created_at": now},
-            {"_id": "op-rep", "recall_id": RID, "kind": "escalate_rep", "order_system": "north", "party_id": "bloor-alarm",
-             "idempotency_key": f"{RID}:bloor-alarm:escalate_rep", "state": "sent", "request": {}, "created_at": now}]
+    docs = [{"_id": "op-form", "recall_id": RID, "kind": "send_form_link", "order_system": None, "party_id": "bloor-foods",
+             "idempotency_key": f"{RID}:bloor-foods:form:3", "state": "sent", "request": {}, "created_at": now},
+            {"_id": "op-rep", "recall_id": RID, "kind": "escalate_rep", "order_system": "north", "party_id": "bloor-foods",
+             "idempotency_key": f"{RID}:bloor-foods:escalate_rep", "state": "sent", "request": {}, "created_at": now}]
     db.operations.insert_many(docs)
     for doc in docs:
         for res in (ops.execute(ctx, doc), ops.resolve_in_doubt(ctx, doc)):
