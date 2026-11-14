@@ -20,17 +20,17 @@ RECALL_OPT := $(if $(RECALL),--recall $(RECALL))
 RECALL_ID_OPT := $(if $(RECALL),--recall-id $(RECALL))
 SPEED_OPT := $(if $(SPEED),--speed $(SPEED))
 
-.PHONY: help setup-db seed api worker order systems supervisor test test-slow reset demo demo-4 \
+.PHONY: help setup-db seed api worker order_systems supervisor test test-slow reset demo demo-4 \
         dryrun preflight provision kill-demo long-run status
 
 help: ## list the targets
-	@awk 'BEGIN { FS = ":.*## " } /^[a-z0-9-]+:.*## / { printf "  %-11s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
+	@awk 'BEGIN { FS = ":.*## " } /^[a-z0-9_-]+:.*## / { printf "  %-11s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 setup-db: ## create the collections, validators and indexes (idempotent)
 	$(PYTHON) -m levela setup-db
 
-seed: ## load the 16 synthetic past recalls and the vector index (once)
-	$(PYTHON) -m levela load-history
+seed: ## create the schema and Atlas search indexes (idempotent)
+	$(PYTHON) -m levela setup-db --search-indexes
 
 api: ## the API server: tools, webhooks, form, admin, wall, scheduler
 	$(PYTHON) -m levela api --host $(HOST) --port $(PORT)
@@ -38,7 +38,7 @@ api: ## the API server: tools, webhooks, form, admin, wall, scheduler
 worker: ## the worker pool on its own (no random kills)
 	$(PYTHON) -m levela worker --workers $(WORKERS) $(RECALL_OPT)
 
-order systems: ## the two mock distributor order systems (north 8101, east 8102)
+order_systems: ## the two mock distributor order systems (north 8101, east 8102)
 	PYTHON="$(PYTHON)" bash scripts/start_order_systems.sh
 
 supervisor: ## the worker under random kills (2 to 5 real minutes)
@@ -59,10 +59,10 @@ demo: ## start the long run in demo mode: slice and order system change held (AP
 demo-4: ## start the four-party slice alone (recall_1) in demo mode (API up)
 	$(PYTHON) scripts/demo.py start --scenario recall_1 --mode demo
 
-dryrun: ## the seed kit's dry run in a scratch database
-	$(PYTHON) -m seedkit dryrun
+dryrun: ## check transactions, validators and change streams in a scratch database
+	$(PYTHON) -m pytest -q tests/test_atlas_basics.py -m "not slow"
 
-preflight: ## check Atlas, the schema, the history and the vector index
+preflight: ## check Atlas, the schema, the clean slate and the vector index
 	$(PYTHON) -m levela preflight
 
 provision: ## create or update the ElevenLabs tools, webhook and agent
