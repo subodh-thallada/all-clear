@@ -58,7 +58,7 @@
     },
     "turn": {
       "turn_timeout": 7,
-      "silence_end_call_timeout": 20
+      "silence_end_call_timeout": 61
     },
     "asr": {
       "keywords": [
