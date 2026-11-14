@@ -1,129 +1,85 @@
-# All Clear — how the Level A engine becomes All Clear
+# All Clear — build plan (backend)
 
-The authoritative product spec is `../docs/All_Clear_build_spec_and_test_plan.md` (repo root
-`docs/`). This file is the builders' contract for turning the Level A code base (a food-recall
-agent, copied here without its git history and without the Nov 13 seed kit) into All Clear: a
-supplier's recall tool for faulty **fire alarm panels**, with live monitoring. Where this file
-and the spec disagree, the spec wins; record any deviation in this file.
+The product spec is `docs/All_Clear_build_spec_and_test_plan.md` at the repo root (Nov 14, food
+version: an 800 g tin of milk powder, batch B-4471). It is authoritative. This file is the
+builders' contract for getting the existing engine there. Record any deviation here.
 
-The package keeps the codename `levela` and the folder `level-a/` (spec: "The repo and the
-package keep the codename"). Everything a person reads — the screen, the panel page, the voice
-agent, the form, feed lines, docs, README — says **All Clear**, panels, batch, parties.
+**Scope of this build: the backend only, end to end.** Do not modify `level-a/web/` (the React +
+three.js screen); it is out of scope for now. The API must still serve `GET /wall/state` with
+data that matches the new domain, and a minimal server-rendered simulated store page.
 
-## 0. No seed kit
+## Where the code is
 
-The old code imported `seedkit` (schema constants, the embedder, history loading). It is not in
-this repo and must not come back. Move what the engine needs into `levela` itself:
-`levela/db/schema.py` (collections, validators, indexes, vector index definition,
-`ensure_vector_index`) and `levela/memory/embed.py` (Voyage + local hash embedder). Drop the
-16-recall synthetic history: memory fills from runs (recall 1 then recall 2 is the memory proof,
-test 11). `load-history` becomes a no-op or is removed; `preflight` keeps its other checks.
+The engine came from Level A (a food recall: stores, boxes, lot, portal). It was then half
+converted toward a fire-alarm-panel version (that conversion is now abandoned). What is done and
+stays: collection `parties` (+ `party_id`, `from_party`/`to_party`), `batch_code` / batch
+`B-4471`, the distributor **order system** (`levela/mock/order_system.py`,
+`levela/systems/order_client.py`, "North orders" / "East orders", env `ORDER_*_URL`), the planner
+(`levela/orchestrator/planner.py`; `levela/harness/decide.py` is a subagent's next-action
+decision), name matching (`levela/ledger/names.py`, Atlas Search fuzzy with a normalised exact
+match fallback), seed-kit removal (`levela/db/schema.py`, `levela/memory/embed.py`). What must
+change: every fire-alarm word, bucket and field below goes to the food version.
 
-## 1. Glossary (old → new) — apply everywhere: code, data, tests, prompts, docs
+## Glossary (fire-alarm version in the code → food version in the spec)
 
-| Old (Level A) | New (All Clear) |
+| In the code now | Spec (food) |
 |---|---|
-| collection `stores`, `store_id`, `from_store`/`to_store`, "store" | collection `parties`, `party_id`, `from_party`/`to_party`, "party" |
-| store tiers `direct`/level 1–3 | `tier` 1, 2, 3 (ints) and `type` `distributor` / `installer` / `owner` |
-| `lot_code`, lot `L-4471`, "lot" | `batch_code`, batch `B-4471`, "batch" |
-| boxes | panels (model `DEMO-7`) |
-| product "Maple Oat Granola Bars", brand, hazard "Undeclared peanut" | product "DEMO-7 fire alarm control panel", supplier **Kestrel Life Safety** (invented), hazard "The sounder circuit may fail to activate in an alarm on software 2.3 and 2.4" |
-| buckets `on_hand`, `sold`, `returned`, `destroyed`, `forwarded`, `unresolved` | `in_stock`, `installed`, `fixed`, `returned`, `forwarded`, `unresolved` (`sold` and `destroyed` are gone) |
-| "documented", "recovered" metrics | "panels located" (in stock + installed + fixed + returned), "fixed or returned" |
-| "Recall closed" / "RECALL OPEN" | "All clear" / "NOT ALL CLEAR: n panels open (…)" |
-| consignees | parties |
-| distributor **portal** (`levela/mock/portal.py`, `systems/portal_client.py`, `portal` field, "portal North") | distributor **order system** (`levela/mock/order_system.py`, `systems/order_client.py`, `system` field, "North orders" / "East orders"); env `ORDER_NORTH_URL`, `ORDER_EAST_URL` |
-| portal fields `lot`, `qty_in_stock`; v2 `lot_code`, `inventory.available` | `batch`, `qty_in_stock`; v2 `batch_code`, `inventory.available` |
-| `orchestrator/boss.py` ("boss") | `orchestrator/planner.py` ("planner"). The old `harness/planner.py` (a subagent's next-action decision) becomes `harness/decide.py` |
-| Harbour Market (judge, 40) | **Harbour Fire** — installer, voice (judge), 40 |
-| Queen St Grocer (120: 50 on hand, 30 sold, 40 forwarded to Corner Mart) | **Queen St Alarm** — installer, simulated, 120: 50 in stock, 30 returned, 40 installed at Corner Properties |
-| Lakeside Foods (80: 20 on hand, 60 destroyed) | **Lakeside Systems** — installer, simulated, 80: 20 in stock, 60 returned |
-| Corner Mart (hidden; received 25) | **Corner Properties** — building owner (hidden; teammate on voice): received 25, all installed, display shows 2.4 → 15 disputed + 25 installed-not-fixed |
-| Distributor North / East | Distributor North / Distributor East (they answer through their order systems) |
-| other 35 food stores | installers (tier 2, from the order systems' account lists) and building owners / further installers (tier 3, named in claims). Invented Toronto-flavoured names (e.g. Bloor Alarm, Annex Fire, Dundas Lofts, Maple Court, Bayview Annex, Spadina Works) |
-| phone numbers | stay in the 555-01xx block; `PHONE_HARBOUR` / `PHONE_CORNER` env (both the demo phone today) |
-| wall (`levela/wall`, plain JS) | the screen: `web/` (React + three.js), built to `web/dist`, served at `/wall` (contract `web/src/api/types.ts`) |
+| panels, DEMO-7, "fire alarm control panel", supplier Kestrel Life Safety, software versions | tins: **Maple Farm milk powder 800 g** (invented), barcode (invented, e.g. `0 62345 18803 5`), batch **B-4471**, defect `seal_fault` ("faulty lid seal"); the company doing the recall: invent one (e.g. Maple Farm Foods); the plant: e.g. "Maple Farm plant, Guelph" (invented) |
+| party types `distributor` / `installer` / `owner` (and `part_maker`) | `plant` (tier 0), `distributor`, `store`, `self` (a node's own depot) |
+| Harbour Fire, Queen St Alarm, Lakeside Systems, Corner Properties | **Harbour Market**, **Queen St Grocer**, **Lakeside Foods**, **Corner Mart** (the original Level A names) |
+| buckets `in_stock`, `installed`, `fixed`, `returned`, `forwarded`, `unresolved` | `sold`, `on_shelf`, `held`, `returned`, `forwarded`, `unresolved` — `installed→on_shelf` (the open bucket), `fixed→held` (needs evidence), `in_stock→held` (merged: stock kept off sale is held), `sold` is new (tins that reached shoppers, bounded by the till) |
+| `fixed_by_panel`, `connected_unfixed` | `held_by_system`, `system_on_shelf`; new `sold_by_till` |
+| checks `model_seen`, `version_seen`, `sounder_test` | `batch_seen`, `sold_source`, `block_test` |
+| recall `model`, `affected_versions`, `fixed_version`, `fix_verified` | `product`, `barcode`, `affected_batches`, `action` (return or destroy), `barcode_verified`, `defect`, `checks` |
+| `panels`, `panel_events` | `store_systems`, `store_events`; `complaints` is new |
+| `/panel/{serial}`, `/panels/{serial}/events` | `/store/{id}`, `/stores/{id}/events`; `/complaints` is new |
+| metrics "panels located", "fixed or returned" | "tins located" (sold + on shelf + held + returned), "held or returned" |
+| headline `NOT ALL CLEAR: n panels open (…)` | `NOT ALL CLEAR: n tins open (a not located, b still on a shelf, c disputed)` (non-zero parts only) or `ALL CLEAR` |
 
-## 2. The ledger (spec "Data model", "Rules enforced by Atlas", "Checks")
+## Ledger (spec "Data model", "Rules enforced by Atlas", "Checks", "Proof that a tin left the shelf")
 
-- `recalls` gains `model`, `affected_versions` (`["2.3","2.4"]`), `fixed_version` (`"2.5"`),
-  `checks` (the three questions), `source` (`signal` | `manual`), `source_signal`.
-- `parties` gains `type`, the new buckets, `version_seen`, `model_seen`, `sounder_test`,
-  `affected_versions` (copied from the recall when the party is created), `connected_unfixed`,
-  `fixed_by_panel`.
-- Conservation: `shipped_in = in_stock + installed + fixed + returned + forwarded + unresolved`.
-- **Fixed needs evidence** (validator on `parties`): `fixed ≤ fixed_by_panel` OR
-  (`version_seen` is a string not in `affected_versions` AND `sounder_test` is `true`); and
-  `installed ≥ connected_unfixed`. The phone can never claim more fixed panels than the evidence
-  allows; a connected panel's own test outranks the phone.
-- Close gate: `open_units = Σ(unresolved + installed) + Σ edges' open or disputed qty`; `closed`
-  only at 0. The headline names the parts: `NOT ALL CLEAR: 39 panels open (15 disputed, 24 awaiting fix)`.
-- Party ladder: `claimed` needs `unresolved == 0`, `installed == 0` and all edges corroborated.
-- An installer installing at a building books `forwarded` to the owner (edge); the owner books
-  `installed`, and later `fixed`. A claim that leaves panels `installed` sets a fix check 48
-  simulated hours later (ask the three checks again). Each simulated owner follows a fix script:
-  installed first, fixed 2–4 simulated days later (version 2.5, sounder yes).
-- `submit_count` fields: `in_stock`, `returned`, `installed`, `fixed`, `forwarded_qty`,
-  `forwarded_to_name`, `received_qty`, `model_seen`, `version_seen`, `sounder_test`. On a
-  rejection the reply names the two values that disagree (e.g. `reported 60, shipped_in 40`, or
-  `version_seen 2.4 is affected`).
-- Spoken names are matched to existing parties before a stub is created: Atlas Search fuzzy
-  matching when available (`$search` with `fuzzy`), otherwise a normalised exact match.
+- Conservation: `shipped_in = sold + on_shelf + held + returned + forwarded + unresolved`.
+- **Removal needs evidence** (validator on `parties`, insert AND update): `held ≤ held_by_system`
+  OR (`batch_seen` equals the party's `batch_code` AND `block_test` is true); `sold ≤ sold_by_till`
+  OR `sold_source == "till_report"`; `on_shelf ≥ system_on_shelf`; plus (sub-recall) `sub.state:
+  "closed"` needs `on_shelf == 0` and `unresolved == 0`. The batch code is copied onto each party.
+- Close gate: `open_units = Σ(unresolved + on_shelf) + Σ edges' open/disputed qty`; `closed` only at 0.
+- Party ladder: `claimed` needs `unresolved == 0`, `on_shelf == 0` and all edges corroborated.
+- A claim that leaves tins on the shelf sets a removal check 4 simulated hours later; each
+  simulated store follows a removal script (on the shelf first, held 4–12 simulated hours later).
+- `submit_count` (store): `sold`, `on_shelf`, `held`, `returned`, `forwarded_qty`,
+  `forwarded_to_name`, `received_qty`, and the checks `batch_seen`, `sold_source`, `block_test`;
+  rejections name the two values that disagree.
+- Scenario (spec "Scenario for the demo"): Harbour Market 40 (voice, judge, free); Queen St Grocer
+  120 (simulated: 50 sold, 30 held, 40 passed to Corner Mart); Lakeside Foods 80 (simulated: 20
+  sold, 60 held); Corner Mart (hidden, connected store, voice teammate): received 25, all still on
+  the shelf → slice ends with 15 disputed + 25 on the shelf. Long run: spec "Scenario at scale"
+  (2,400 tins: 240 slice, 1,300 North, 860 East; tiers; profiles incl. Summit Foods "own copy").
 
-## 3. Monitoring (spec "Live monitoring")
+## Features (see the spec sections)
 
-Collections `panels` (24 connected panels; `_id` = serial), `panel_events` (unique
-`(serial, test_id)`; validator on `kind`/`result`), `signals` (validator: `approved` needs
-`approved_by`; partial unique: one open signal per batch). Signal rule: ≥3 failed tests at ≥3
-sites within 30 simulated days → `proposed` signal with `shipped_to`; later failures join it.
-`POST /admin/signals/approve` (a person) sets `approved_by` and creates the recall in one
-transaction (`source: signal`). No agent tool can approve; the gate's allowlists never contain
-`approve_signal`. A PASS from a panel on the fixed version after the recall opened moves one
-panel `installed → fixed` at its party and adds 1 to `fixed_by_panel` (event + panel
-`fixed_event` + ledger in one transaction; a repeated `test_id` moves nothing). Linking: when a
-claim names an owner, panels whose `site_label` matches are linked (`party_id`), and the party's
-`connected_unfixed` counts its linked panels without a passing test. Endpoints:
-`GET /panel/{serial}` (the page, served from `web/dist/panel.html`), `GET /panel-api/{serial}`,
-`POST /panel-api/{serial}/test`, `POST /panel-api/{serial}/update` (page actions, server-side,
-same code path), `POST /panels/{serial}/events` (header: shared secret `PANEL_SECRET`),
-`POST /admin/panels/{serial}` (set fault/version). Day 0 of the run: three connected panels at
-three sites fail → signal proposed → approved by `operator-1` → recall opens with the 5 names
-on the shipment records.
+- Store records: complaints + classification (reason code → `$vectorSearch` on complaint episodes
+  → model with cited evidence ids → low confidence asks the quality lead; findings correct memory),
+  store systems + events (`baseline`, `sale`, `blocked_sale`, `quarantine`, `customer_return`,
+  `delivery`), signals + human approval gate, the plant call (three questions as data, shipped count
+  checked against receiving records, person confirms batches/action, `barcode_verified` before
+  blocks roll out), the simulated store page. Tests 34–39.
+- Dispatch: leases `lease.owner/until/token`, `in_flight`, 8 s, renewal 2 s, in-doubt claim first,
+  4 worker processes, supervisor kills/restarts, adoption, planner, gate, saboteur, questions,
+  pause/resume (`runs.state`), `GET /admin/audit/{party_id}`. Tests 6, 7, 21–33, 40, 41.
+- Sub-recall, agent to agent: nodes (`NODE_ID`, `MONGODB_DB`, `PORT`, `PARENT_URL`), `links`,
+  `buyers`, `/agent/recalls`, `/agent/reports`, `/agent/health`, HMAC `X-AllClear-Signature`,
+  Summit Foods node (`scenarios/summit.json`), reports as claims (`source: agent`), buyers told,
+  quiet-agent ladder, `scripts/scan_names.py`. Tests 43–49.
+- Voice + governed memory: prompts for store / plant / buyer (reads the recall's instruction, never
+  answers a health question), tools, provisioning (the ElevenLabs agent and the imported Twilio
+  number already exist: `ELEVEN_AGENT_ID`, `ELEVEN_PHONE_ID` in `.env` — update, never duplicate;
+  English agents must use TTS model `eleven_flash_v2` or `eleven_turbo_v2`), episodes `scope`,
+  `expires_at`, `invalidated_by`, TTL index, filter fields. Tests 11, 42.
 
-## 4. Dispatch (spec "Dispatch, workers and harness")
+## Rules for builders
 
-Party lease fields `lease.owner`, `lease.until`, `lease.token`, `in_flight`, `priority`,
-`open_questions`. In-doubt claim first (`lease.until < $$NOW` and `in_flight != null`, sort
-`lease.until`), then the due claim. Lease 8 real seconds, renewed every 2 s; fencing by
-`lease.owner` + `lease.token`; recovery at claim time; release + result in one transaction.
-Four identical worker processes (`WORKERS=1` fallback). The supervisor starts four, kills one
-at random every 2–5 real minutes with SIGKILL (Windows: `TerminateProcess`), restarts it after
-3 s; `runs.kills`, `runs.adoptions`. Change stream on `parties` wakes workers; else 500 ms poll.
-
-## 5. Voice (spec "External interfaces", "Voice agent behaviour", "If the phone fails")
-
-ElevenLabs Agents over Twilio. `scripts/provision_agent.py` creates/updates the agent, the
-`submit_count`, `submit_answer` and `request_callback` webhook tools, the post-call webhook, and
-**imports the Twilio number** (`TWILIO_NUMBER`, `TWILIO_SID`, `TWILIO_TOKEN`) into ElevenLabs when
-`ELEVEN_PHONE_ID` is empty, printing the ids to put in `.env`. Agent prompt per spec (installer:
-counts one at a time; owner: count + the three checks; read back digit by digit; challenge with
-the two values from the tool; never explain how to repair or update a panel). Fallback level 1:
-browser voice at `/talk/{token}` using the ElevenLabs widget or a signed URL; level 2/3: the form.
-
-## 6. The screen (`web/`)
-
-React + three.js (`@react-three/fiber`, `drei`). `GET /wall` serves `web/dist/index.html`,
-`/screen/*` serves `web/dist` assets, `GET /panel/{serial}` serves `web/dist/panel.html`. The
-JSON contract is `web/src/api/types.ts`; `levela/api/wall.py` must produce exactly `WallState`.
-The 3D view is the recall as a city: the supplier's plant with batch B-4471, the two distributors'
-warehouses with their order-system terminals, installers' depots, building owners' buildings with
-their panels inside, transfers as arcs (disputed in red), the All Clear dispatch with four worker
-towers holding leases on parties (a draining ring), live calls (real vs simulated), connected
-panels pulsing their test results, the signal, and the headline the database allows.
-
-## 7. Process and quality rules for builders
-
-- Python: `level-a/.venv/Scripts/python.exe`. Tests: `pytest -q -m "not slow"` from `level-a/`
+- Python: `level-a/.venv/Scripts/python.exe`; tests from `level-a/`: `pytest -q -m "not slow"`
   against `LEVELA_TEST_URI` (local replica set `mongodb://127.0.0.1:27027/?replicaSet=rs0`).
 - Never print or copy secrets from `level-a/.env`. Never place a real phone call. Never run git.
-- Keep the spec's test numbers in test names/docstrings (tests 1–37) so the map in README holds.
+- Keep the spec's test numbers in test names/docstrings (tests 1–49).
