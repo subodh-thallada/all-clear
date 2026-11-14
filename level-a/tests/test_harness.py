@@ -435,10 +435,12 @@ def test_a_claimed_party_waiting_on_its_counterpart_is_released_without_a_run(db
 def test_a_disputed_transfer_gets_one_followup_per_side(db, world):
     """Queen St says 40 went to Corner Mart, Corner Mart says 25 arrived: each
     side is told the other's number once, and the dispute stays open."""
+    # Corner Mart keeps its 25 on the shelf, as in the slice: the dispute
+    # follow-up owed now beats the 4 h removal check that claim also sets.
     world.voice.script.update({
         "queen-st-grocer": [{"sold": 50, "sold_source": "till_report", "held": 30, "batch_seen": "B-4471", "block_test": True, "forwarded_qty": 40,
                              "forwarded_to_name": "Corner Mart"}],
-        "corner-mart": [{"received_qty": 25, "held": 25, "batch_seen": "B-4471", "block_test": True}]})
+        "corner-mart": [{"received_qty": 25, "on_shelf": 25}]})
     for sid in ("queen-st-grocer", "corner-mart"):
         party, fence = lease(db, sid)
         assert execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())["result"]["outcome"] == \

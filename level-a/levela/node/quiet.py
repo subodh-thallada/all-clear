@@ -36,7 +36,9 @@ def utcnow() -> datetime:
 
 
 def health(settings, http, link: dict, *, ask_report: bool = False) -> dict | None:
-    """The peer's /agent/health, or None when it does not answer."""
+    """The peer's /agent/health, or None when it does not answer. No secret
+    for the pairing raises links.MissingLinkSecret (nothing was asked, so the
+    agent is not quiet: the ladder must not move)."""
     secret = links.link_secret(settings, link["peer_node"])
     url = f"{link['peer_url'].rstrip('/')}/agent/health" + ("?ask=report" if ask_report else "")
     try:

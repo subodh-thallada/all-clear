@@ -97,7 +97,10 @@ SYSTEM_BY_KIND = {
 
 
 def recent(db, recall_id: str | None = None, limit: int = 60) -> list[dict]:
-    """Newest first. Lines for this recall plus global lines (recall_id null)."""
+    """Newest first. Lines for this recall plus global lines (recall_id null).
+    Each row keeps its `_id` (the wall sends it as the line's stable `id`, so
+    two lines with the same time, kind and text stay two lines on screen);
+    `_id` also breaks ties between lines written in the same millisecond."""
     q = {} if recall_id is None else {"recall_id": {"$in": [recall_id, None]}}
-    rows = list(db.feed.find(q, {"_id": 0}).sort("at", -1).limit(limit))
+    rows = list(db.feed.find(q).sort([("at", -1), ("_id", -1)]).limit(limit))
     return rows
