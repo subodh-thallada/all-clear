@@ -416,6 +416,35 @@ def test_wall_state_adds_real_calls_only_for_the_admin_key(api, app, client, db,
     assert "real_calls" not in api.get("/wall/state").json()    # the cached public body is unchanged
 
 
+def test_live_words_reads_elevenlabs_once_per_interval(monkeypatch):
+    """While a real call is live, the words so far come from ElevenLabs, read at
+    most once per LIVE_WORDS_EVERY_S whoever polls; a failed read keeps the last turns."""
+    reads = []
+
+    class Reply:
+        status_code = 200
+
+        def json(self):
+            return {"status": "in-progress", "transcript": [{"role": "agent", "message": "Hey there!"},
+                                                            {"role": "user", "message": None},
+                                                            {"role": "user", "message": "Yes, Harbour Market."}]}
+
+    def get(url, headers, timeout):
+        reads.append((url, headers["xi-api-key"]))
+        return Reply()
+
+    monkeypatch.setattr(wall.httpx, "get", get)
+    wall._live_words.clear()
+    off = types.SimpleNamespace(voice_provider="sim", eleven_api_key="k", eleven_base_url="https://x")
+    assert wall.live_words(off) is None
+    on = types.SimpleNamespace(voice_provider="elevenlabs", eleven_api_key="k", eleven_base_url="https://x")
+    words = wall.live_words(on)
+    assert words("conv_1") == [{"role": "agent", "message": "Hey there!"},
+                               {"role": "user", "message": "Yes, Harbour Market."}]
+    assert words("conv_1")[1]["message"] == "Yes, Harbour Market."
+    assert reads == [("https://x/v1/convai/conversations/conv_1", "k")]      # the second read was cached
+
+
 def test_wall_page_and_screen_assets(monkeypatch, tmp_path, settings, client):
     monkeypatch.setattr(wall, "SCREEN_DIR", tmp_path / "missing")
     bare = TestClient(create_app(settings, client=client, sim_network=StubNetwork()))

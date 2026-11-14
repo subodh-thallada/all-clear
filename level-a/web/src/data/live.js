@@ -600,13 +600,14 @@ export function createLive(api) {
         ];
       }),
       // Start over: pause the clock of every open run (so no old timer rings a phone again)
-      // and open a fresh run of the long scenario under a new recall id. Nothing is deleted:
-      // the calls of earlier runs stay in memory, for Vector Search to find.
+      // and open a small, quiet run: recall_1 (Harbour, two held simulated stores, Corner Mart
+      // and the live stores in the directory), every store held until Call Harbour. Nothing is
+      // deleted: the calls of earlier runs stay in memory, for Vector Search to find.
       startOver: act(() => {
         const open = (last?.recalls || []).filter((r) => r.status !== 'closed').map((r) => r._id);
         return [
           ...open.map((recall_id) => ['/admin/clock', { recall_id, action: 'pause' }, true]),
-          ['/admin/recalls', { scenario: 'recall_long', mode: 'demo', recall_id: freshId() }],
+          ['/admin/recalls', { scenario: 'recall_1', mode: 'demo', hold_slice: true, recall_id: freshId() }],
         ];
       }, () => {
         follow = null;

@@ -67,9 +67,11 @@ export default function Toolbar({ s, actions }) {
       <button type="button" className="tb danger" onClick={() => actions.killWorker()} title={live ? 'The kill beat: arms the failpoint for Corner Mart, then releases Corner Mart and Queen St Grocer. The worker that dials Corner Mart dies before it saves the call (3)' : 'Kill a worker (3)'}>
         <Icon.Skull size={16} /> {live ? 'Arm the kill' : 'Kill a worker'}
       </button>
-      <button type="button" className="tb" onClick={actions.switchNorth} disabled={northDone} title="Distributor North's order system moves to v2 (4)">
-        <Icon.Swap size={16} /> Change order system
-      </button>
+      {(!live || s.systems.north.name) && (
+        <button type="button" className="tb" onClick={actions.switchNorth} disabled={northDone} title="Distributor North's order system moves to v2 (4)">
+          <Icon.Swap size={16} /> Change order system
+        </button>
+      )}
       <div className="more">
         <button type="button" className="tb icon" onClick={() => setMore((v) => !v)} aria-expanded={more} title="More controls">
           <Icon.Dots size={18} />

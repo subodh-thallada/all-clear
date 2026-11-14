@@ -58,6 +58,7 @@ from datetime import datetime
 from fastapi import APIRouter, FastAPI, Header, Request
 from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
+import httpx
 from pymongo.errors import PyMongoError
 
 from .. import clock, config, feed, runs
@@ -154,27 +155,71 @@ def wall_state(request: Request, recall_id: str | None = None,
     state = st.wall_cache.get(recall_id or "", lambda: build_state(st.db, st.settings, recall_id))
     if secret_matches(x_admin_token, st.settings.admin_token):
         # Not cached and not written into the cached body, which the public screen shares.
-        state = {**state, "real_calls": jsonable(real_calls(st.db, (state.get("recall") or {}).get("_id")))}
+        state = {**state, "real_calls": jsonable(real_calls(st.db, (state.get("recall") or {}).get("_id"),
+                                                            words=live_words(st.settings)))}
     return JSONResponse(state)
 
 
 REAL_CALLS = 12          # the newest real calls of the recall
+LIVE_WORDS_EVERY_S = 1.5  # one ElevenLabs read per live call per this many seconds, whoever polls
+LIVE_WORDS_TIMEOUT_S = 2.0
+_live_words: dict[str, tuple[float, list]] = {}
+_live_words_lock = threading.Lock()
+
+
+def live_words(settings):
+    """conversation_id -> the turns said so far, read from ElevenLabs while the
+    call is live (GET /v1/convai/conversations/{id}), cached briefly so several
+    screens polling once a second cost one read. None when calls are not real
+    ElevenLabs calls. A failed read gives the last turns seen, or none: the
+    words are a view, and the post-call webhook still saves the transcript."""
+    key = getattr(settings, "eleven_api_key", "")
+    if getattr(settings, "voice_provider", "") != "elevenlabs" or not key:
+        return None
+    base = getattr(settings, "eleven_base_url", "https://api.elevenlabs.io")
+
+    def read(conversation_id: str) -> list:
+        now = time.monotonic()
+        with _live_words_lock:
+            hit = _live_words.get(conversation_id)
+            if hit and now - hit[0] < LIVE_WORDS_EVERY_S:
+                return hit[1]
+        turns = hit[1] if hit else []
+        try:
+            r = httpx.get(f"{base}/v1/convai/conversations/{conversation_id}", headers={"xi-api-key": key},
+                          timeout=LIVE_WORDS_TIMEOUT_S)
+            if r.status_code == 200:
+                turns = [{"role": t.get("role"), "message": t["message"]} for t in (r.json().get("transcript") or [])
+                         if isinstance(t, dict) and isinstance(t.get("message"), str) and t["message"]]
+        except (httpx.HTTPError, ValueError) as exc:
+            log.debug("live words for %s not read: %s", conversation_id, exc)
+        with _live_words_lock:
+            _live_words[conversation_id] = (now, turns)
+            if len(_live_words) > 64:
+                for old in sorted(_live_words, key=lambda k: _live_words[k][0])[:32]:
+                    _live_words.pop(old, None)
+        return turns
+
+    return read
 REAL_CALL_TURNS = 120    # turns of one call's transcript
 
 
-def real_calls(db, rid: str | None) -> list[dict]:
+def real_calls(db, rid: str | None, words=None) -> list[dict]:
     """The recall's real phone calls, newest first: the number dialled only
     as its last four digits, and the transcript once the post-call webhook
-    has saved it ([{role, message}], hooks._transcript)."""
+    has saved it ([{role, message}], hooks._transcript). While a call is live,
+    `words(conversation_id)` may give the turns so far (live_words)."""
     if not rid:
         return []
     rows = _safe_find(db.attempts, {"recall_id": rid, "channel": "voice"},
                       {"party_id": 1, "state": 1, "purpose": 1, "seq": 1, "to_number": 1, "intent_at": 1,
                        "connected_at": 1, "ended_at": 1, "call_duration_secs": 1, "termination_reason": 1,
-                       "summary": 1, "transcript": 1},
+                       "summary": 1, "transcript": 1, "conversation_id": 1},
                       sort=[("intent_at", -1), ("_id", -1)], limit=REAL_CALLS)
     out = []
     for a in rows:
+        if words and not a.get("transcript") and a.get("state") in attempts.LIVE and a.get("conversation_id"):
+            a = {**a, "transcript": words(a["conversation_id"])}
         digits = "".join(ch for ch in str(a.get("to_number") or "") if ch.isdigit())
         out.append({
             "_id": a["_id"], "party_id": a.get("party_id"), "state": a.get("state"), "purpose": a.get("purpose"),

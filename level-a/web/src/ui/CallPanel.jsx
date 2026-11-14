@@ -60,7 +60,7 @@ function Transcript({ call, source, words, admin }) {
       {source === 'live' && call.real && said.length === 0 && (
         <p className="hint">
           {!admin ? 'Unlock the buttons to see what was said on this call.'
-            : call.live ? 'ElevenLabs sends the words when the call ends. What Atlas decides shows here as it happens.'
+            : call.live ? 'Listening. The words appear here as they are said, and what Atlas decides as it happens.'
               : 'Waiting for the words from ElevenLabs.'}
         </p>
       )}
