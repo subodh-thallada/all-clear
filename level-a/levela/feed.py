@@ -15,6 +15,14 @@ Kinds in use (the screen in web/ styles lines by kind and level):
   followup_opened  followups_released  needs_human
   failpoint_armed  failpoint_fired  sim_reply  sim_hold  sim_released
   post_call  form_claim  info  error
+  store_event  complaint_received  complaint_classified  signal_proposed  signal_approved
+  plant_called  plant_answer  agent_handoff  agent_report  buyers_told
+
+`system` tags each line with the outside system it concerns, as the screen
+prints it in its left column (spec "What the run looks like"): phone, form,
+North orders, East orders, store, stores, signal, agent, ledger, worker,
+supervisor, invariants, gate, planner, memory. A line about a simulated party
+says so: `simulated` is set from the party's channel by the wall.
 """
 from __future__ import annotations
 
@@ -71,7 +79,7 @@ def emit(db, kind: str, text: str, *, recall_id: str | None = None, party_id: st
 
 
 SYSTEM_BY_KIND = {
-    "claim_accepted": "ledger", "claim_rejected": "atlas", "claim_duplicate": "ledger", "close_refused": "atlas",
+    "claim_accepted": "ledger", "claim_rejected": "ledger", "claim_duplicate": "ledger", "close_refused": "ledger",
     "recall_closed": "ledger", "party_discovered": "ledger", "edge_opened": "ledger", "edge_disputed": "ledger",
     "edge_corroborated": "ledger", "attempt_opened": "phone", "attempt_refused": "atlas", "call_placed": "phone",
     "call_failed": "phone", "call_in_doubt": "phone", "attempt_adopted": "worker", "attempt_abandoned": "worker",
@@ -81,6 +89,10 @@ SYSTEM_BY_KIND = {
     "memory_note": "memory", "form_claim": "form", "sim_reply": "phone", "sim_hold": "phone", "sim_released": "phone",
     "gate_refused": "gate", "gate_stopped": "gate", "invariants": "invariants", "supervisor": "supervisor",
     "planner": "planner", "question_added": "planner", "answer_recorded": "phone",
+    "store_event": "store", "complaint_received": "stores", "complaint_classified": "stores",
+    "signal_proposed": "signal", "signal_approved": "signal", "plant_called": "phone", "plant_answer": "phone",
+    "agent_handoff": "agent", "agent_report": "agent", "buyers_told": "agent", "needs_human": "phone",
+    "callback_requested": "phone", "report_received": "phone", "error": "api",
 }
 
 

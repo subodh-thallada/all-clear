@@ -26,8 +26,8 @@ LONG = Path(__file__).parent / "fixtures" / "recall_long_mini.json"
 LONG_RID = "RCL-LONG-MINI"
 NOW = datetime(2026, 11, 14, 21, 55, tzinfo=timezone.utc)
 
-# What an older setup installed: the party validator with conservation alone
-# (before "fixed needs evidence"), the ledger collections and their indexes.
+# What an older setup made: the party validator with conservation alone
+# (before "removal needs evidence"), the ledger collections and their indexes.
 WAVE1_PARTY_VALIDATOR = copy.deepcopy(VALIDATORS["parties"])
 WAVE1_PARTY_VALIDATOR["$expr"] = WAVE1_PARTY_VALIDATOR["$expr"]["$and"][0]
 WAVE1_COLLECTIONS = SPEC_COLLECTIONS + ["feed", "sim_calls"]
@@ -100,21 +100,35 @@ def test_setup_is_idempotent(db):
     assert set(db.list_collection_names()) >= set(COLLECTIONS)
 
 
+def test_spec_6_one_live_attempt_per_party(db):
+    """Spec test 6: a second attempt for one party cannot be opened while one
+    is in intent, dialed or connected (the partial unique index)."""
+    base = {"recall_id": "R", "party_id": "harbour-market"}
+    db.attempts.insert_one({**base, "_id": "a1", "seq": 1, "state": "intent"})
+    with pytest.raises(DuplicateKeyError) as info:
+        db.attempts.insert_one({**base, "_id": "a2", "seq": 2, "state": "dialed"})
+    assert info.value.details["keyPattern"] == {"recall_id": 1, "party_id": 1}
+    db.attempts.update_one({"_id": "a1"}, {"$set": {"state": "completed"}})
+    db.attempts.insert_one({**base, "_id": "a2", "seq": 2, "state": "dialed"})
+    db.attempts.insert_one({**base, "recall_id": "R2", "_id": "b1", "seq": 1, "state": "intent"})   # another recall
+    assert db.attempts.count_documents({"state": {"$in": ["intent", "dialed", "connected"]}}) == 2
+
+
 # ---- upgrading a wave-1 database ----------------------------------------------------
 
 def test_setup_upgrades_an_older_party_validator_in_place(fresh_db):
     fresh_db.create_collection("parties", validator=WAVE1_PARTY_VALIDATOR, validationLevel="strict",
                                validationAction="error")
-    fresh_db.parties.insert_one(_party("queen", 120, type_="installer", channel="sim"))
-    # The older rule let a phone claim fixed panels with no evidence.
-    fresh_db.parties.insert_one(_party("owner", 25, type_="owner", channel="sim", fixed=25, unresolved=0))
+    fresh_db.parties.insert_one(_party("queen", 120, type_="store", channel="sim"))
+    # The older rule let a phone claim held tins with no evidence.
+    fresh_db.parties.insert_one(_party("corner", 25, type_="store", channel="sim", held=25, unresolved=0))
     out = setup(fresh_db, collections=["parties", "operations"])
     assert (out["created"], out["validators_updated"], out["validators"]) == (
         ["operations"], ["parties"], ["operations", "parties"])
     assert set(fresh_db.list_collection_names()) == {"parties", "operations"}
     assert fresh_db.parties.find_one({"_id": "R:queen"})["unresolved"] == 120     # documents untouched
     with pytest.raises(WriteError):
-        fresh_db.parties.insert_one(_party("owner-2", 25, type_="owner", channel="sim", fixed=25, unresolved=0))
+        fresh_db.parties.insert_one(_party("corner-2", 25, type_="store", channel="sim", held=25, unresolved=0))
     fresh_db.parties.insert_one(_party())
     assert "by_recall_due" in fresh_db.parties.index_information()
     with pytest.raises(WriteError):
@@ -129,7 +143,8 @@ def test_setup_upgrades_a_whole_older_database(fresh_db):
     for coll, keys, opts in WAVE1_INDEXES:
         fresh_db[coll].create_index(keys, **opts)
     out = setup(fresh_db)
-    assert sorted(out["created"]) == sorted(V2_COLLECTIONS) and out["validators_updated"] == ["parties"]
+    assert sorted(out["created"]) == sorted(set(COLLECTIONS) - set(WAVE1_COLLECTIONS))
+    assert out["validators_updated"] == ["parties", "claims"]
     assert set(fresh_db.list_collection_names()) == set(COLLECTIONS)
     again = setup(fresh_db)
     assert (again["created"], again["validators_updated"]) == ([], [])
@@ -138,7 +153,7 @@ def test_setup_upgrades_a_whole_older_database(fresh_db):
 def test_setup_can_install_only_the_ledger(fresh_db):
     out = setup(fresh_db, collections=LEDGER_COLLECTIONS)
     assert sorted(out["created"]) == sorted(LEDGER_COLLECTIONS)
-    assert out["validators"] == ["edges", "parties", "recalls"]
+    assert out["validators"] == ["claims", "edges", "parties", "recalls"]
     assert "uniq_dedupe_key" in fresh_db.claims.index_information()
 
 
@@ -149,26 +164,27 @@ def _parties(db, rid):
 
 
 def test_start_recall_long_in_demo_mode_holds_the_slice(client, db):
-    out = start_recall(client, db, load_scenario(LONG), mode="demo", sim_parties=["harbour-fire", "corner-properties"],
+    out = start_recall(client, db, load_scenario(LONG), mode="demo", sim_parties=["harbour-market", "corner-mart"],
                        emit=False)
     assert out["mode"] == "demo" and out["options"]["followups"] == "manual"
     parties = _parties(db, LONG_RID)
-    dist, harbour, queen = parties["dist-north"], parties["harbour-fire"], parties["queen-st-alarm"]
+    dist, harbour, queen = parties["dist-north"], parties["harbour-market"], parties["queen-st-grocer"]
     assert (dist["channel"], dist["phone"], dist["order_system"], dist["type"], dist["tier"]) == (
         "order_system", None, "north", "distributor", 1)
     assert (dist["slice"], dist["hold_for_demo"], dist["followups"], dist["profile"]) == (False, False, "auto", None)
     assert (harbour["type"], harbour["tier"], harbour["channel"], harbour["phone"]) == (
-        "installer", 1, "sim", "+14165550141")
-    assert (harbour["model"], harbour["affected_versions"], harbour["unresolved"]) == ("DEMO-7", ["2.3", "2.4"], 40)
+        "store", 1, "sim", "+14165550141")
+    assert (harbour["batch_code"], harbour["unresolved"], harbour["held_by_system"]) == ("B-4471", 40, 0)
+    assert (harbour["batch_seen"], harbour["sold_source"], harbour["block_test"]) == (None, None, None)
     for s in (harbour, queen):
         assert (s["slice"], s["hold_for_demo"], s["followups"]) == (True, True, "manual")
     for s in parties.values():
         assert (s["found_via"], s["next_action_at"], s["ladder_step"], s["lease_epoch"]) == ("shipment", 9.0, 1, 0)
     directory = {e["party_id"]: e for e in db.recalls.find_one({"_id": LONG_RID})["directory"]}
-    assert (directory["corner-properties"]["hold_for_demo"], directory["corner-properties"]["tier"]) == (True, 3)
-    assert (directory["corner-properties"]["type"], directory["annex-fire"]["tier"]) == ("owner", 2)
-    assert (directory["bloor-alarm"]["account"], directory["bloor-alarm"]["hold_for_demo"]) == ("N-014", False)
-    assert "phone_env" not in directory["corner-properties"]
+    assert (directory["corner-mart"]["hold_for_demo"], directory["corner-mart"]["tier"]) == (True, 3)
+    assert (directory["corner-mart"]["type"], directory["annex-grocer"]["tier"]) == ("store", 2)
+    assert (directory["bloor-foods"]["account"], directory["bloor-foods"]["hold_for_demo"]) == ("N-014", False)
+    assert "phone_env" not in directory["corner-mart"]
 
     run = get_run(db, LONG_RID)
     assert run["parties_at_start"] == 3 and run["schedule"]["hold_slice_in_demo"] is True
@@ -191,7 +207,7 @@ def test_start_recall_holds_follow_the_mode_and_the_override(client, db):
     recall_1 = load_scenario("recall_1")          # no schedule: nothing is held unless asked
     assert held("R1-demo", recall_1, mode="demo", all_sim=True) == set()
     assert held("R1-hold", recall_1, mode="demo", all_sim=True, hold_slice=True,
-                seconds_per_sim_hour=0.05) == {"harbour-fire", "queen-st-alarm", "lakeside-systems"}
+                seconds_per_sim_hour=0.05) == {"harbour-market", "queen-st-grocer", "lakeside-foods"}
     assert get_clock(db, "R1-hold", max_age_s=0).seconds_per_sim_hour == 0.05
     assert get_clock(db, "R1-hold", max_age_s=0).real_start == NOW
 

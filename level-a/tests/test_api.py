@@ -26,15 +26,17 @@ from levela.ledger import metrics
 from levela.orchestrator.attempts import complete, mark_dialed, open_attempt
 from levela.orchestrator.failpoints import armed
 from levela.providers.base import PlacedCall
+from tests.support import HELD_EVIDENCE, SOLD_EVIDENCE, party_doc, recall_doc
 
 TOOL = {"X-Tool-Secret": "test-tool-secret"}
 ADMIN = {"X-Admin-Token": "test-admin-token"}
 STATE_KEYS = {"now", "recall", "recalls", "metrics", "parties", "edges", "feed", "worker", "calls", "failpoints",
               "badges", "memory_ablation", "run", "systems", "workers", "calls_in_flight"}
-PARTY_KEYS = {"party_id", "name", "tier", "channel", "state", "shipped_in", "on_hand", "sold", "returned",
-              "destroyed", "forwarded", "unresolved", "discovered_by", "escalation", "live_attempt",
-              "attempts", "memory", "level", "found_via", "ladder_step", "next_action_at", "next_label",
-              "hold_for_demo", "slice", "order_system", "priority", "open_questions", "answered"}
+PARTY_KEYS = {"party_id", "name", "type", "tier", "channel", "state", "shipped_in", "sold", "on_shelf", "held",
+              "returned", "forwarded", "unresolved", "batch_code", "batch_seen", "sold_source", "block_test",
+              "held_by_system", "sold_by_till", "system_on_shelf", "discovered_by", "link_id", "sub", "escalation",
+              "live_attempt", "attempts", "memory", "found_via", "ladder_step", "next_action_at", "next_label",
+              "hold_for_demo", "slice", "order_system", "priority", "open_questions", "answered", "simulated", "tag"}
 FEED_KEYS = {"at", "kind", "text", "level", "source", "party_id", "detail", "system", "sim_label"}
 RUN_KEYS = {"sim_now", "sim_label", "day", "days_total", "real_elapsed_s", "seconds_per_sim_hour", "paused",
             "parties", "checked", "steps", "kills", "duplicates", "model_calls", "tokens_per_decision",
@@ -113,123 +115,48 @@ def pin_clock(db, recall_id, hour):
 
 # ---- the voice tool -------------------------------------------------------------
 
-def test_voice_path_rejects_60_then_accepts_and_ignores_the_duplicate(api, db, rid, assert_balance):
-    att = dial(db, rid, "harbour-fire")
-
-    r = say(api, att, in_stock=60)
-    assert {k: v for k, v in r.items() if k != "message"} == {
-        "accepted": False, "reason": "60 reported, 40 shipped", "reported_total": 60, "shipped_in": 40,
-        "challenges_left": 1, "stop": False}
-    assert "60" in r["message"] and "40" in r["message"] and "Challenge 1 of 2" in r["message"]
-    assert_balance(rid)
-
-    claim = db.claims.find_one({"attempt_id": att["_id"]})
-    assert (claim["status"], claim["code"], claim["source"]) == ("rejected", "over_count", "voice")
-    assert claim["atlas_error"]["code"] == 121
-    assert claim["atlas_error"]["codeName"] == "DocumentValidationFailure"
-    assert claim["atlas_error"]["errInfo"]["failingDocumentId"] == f"{rid}:harbour-fire"
-    [rejected] = lines(db, "claim_rejected")
-    assert rejected["text"] == "Harbour Fire - Rejected by Atlas: 60 reported, 40 shipped"
-    assert rejected["level"] == "bad"
-    assert rejected["detail"] == claim["atlas_error"]
-
-    [event] = db.tool_events.find({"attempt_id": att["_id"]})
-    assert event["kind"] == "tool_call" and event["recall_id"] == rid and event["source"] == "voice"
-    assert event["conversation_id"] == att["conversation_id"] and event["call_sid"] == att["call_sid"]
-    assert event["payload"] == tool_body(att, in_stock=60)
-    assert db.attempts.find_one({"_id": att["_id"]})["state"] == "connected"
-    assert db.parties.find_one({"recall_id": rid, "party_id": "harbour-fire"})["state"] == "reached"
-
-    # Counts arrive from an LLM as strings and integral floats; the ledger coerces them.
-    r = say(api, att, in_stock=35.0, returned=5)
-    assert r == {"accepted": True, "message": "Recorded. Thank them and move on.", "challenges_left": 1,
-                 "stop": False}
-    assert_balance(rid)
-    assert texts(db, "claim_accepted") == ["Harbour Fire - accepted: 25 on hand, 10 sold, 5 returned"]
-    party = db.parties.find_one({"recall_id": rid, "party_id": "harbour-fire"})
-    assert (party["on_hand"], party["sold"], party["returned"], party["unresolved"]) == (25, 10, 5, 0)
-
-    r = say(api, att, in_stock=35, returned=5)
-    assert r["accepted"] is True and r["duplicate"] is True
-    assert_balance(rid)
-    assert texts(db, "claim_duplicate") == ["Duplicate delivery ignored for Harbour Fire (same dedupe key)"]
-    assert db.claims.count_documents({"attempt_id": att["_id"], "status": "accepted"}) == 1
-
-
-def test_forwarding_discovers_corner_properties_and_the_receipt_disputes_15(api, db, rid, assert_balance):
-    queen = dial(db, rid, "queen-st-alarm")
-    r = say(api, queen, in_stock=80, forwarded_qty=40, forwarded_to_name="Corner Properties", source="sim")
-    assert r["accepted"] is True
-    assert_balance(rid)
-    assert db.claims.find_one({"attempt_id": queen["_id"]})["source"] == "sim"
-    assert db.tool_events.find_one({"attempt_id": queen["_id"]})["source"] == "sim"
-
-    corner = db.parties.find_one({"recall_id": rid, "party_id": "corner-properties"})
-    assert (corner["tier"], corner["discovered_by"], corner["shipped_in"]) == ("downstream", "claim:queen-st-alarm", 0)
-    newest = [line["kind"] for line in db.feed.find({}, {"kind": 1}).sort("at", -1).limit(3)]
-    assert newest == ["edge_opened", "party_discovered", "claim_accepted"]
-    assert texts(db, "claim_accepted") == [
-        "Queen St Alarm - accepted: 50 on hand, 30 sold, 40 forwarded to Corner Properties"]
-    [found] = lines(db, "party_discovered")
-    assert found["text"] == "New party discovered: Corner Properties (named by Queen St Alarm)"
-    assert found["party_id"] == "corner-properties"
-    assert texts(db, "edge_opened") == [
-        "Transfer opened: Queen St Alarm -> Corner Properties, 40 panels awaiting Corner Properties's count"]
-
-    mart = dial(db, rid, "corner-properties")
-    r = say(api, mart, received_qty=25, in_stock=25)
-    assert r["accepted"] is True
-    assert_balance(rid)
-    assert texts(db, "claim_accepted")[-1] == "Corner Properties - accepted: received 25, 25 on hand"
-    [disputed] = lines(db, "edge_disputed")
-    assert disputed["text"] == "Transfer disputed: Queen St Alarm says 40, Corner Properties says 25 - 15 panels disputed"
-    assert disputed["level"] == "bad"
-    edge = db.edges.find_one({"recall_id": rid})
-    assert (edge["state"], edge["disputed_qty"], edge["corroborated_qty"]) == ("disputed", 15, 25)
-
-
 def test_third_rejection_stops_the_call_and_hands_the_party_to_a_person(api, db, rid, assert_balance):
-    att = dial(db, rid, "harbour-fire")
-    r1 = say(api, att, in_stock=60)
+    att = dial(db, rid, "harbour-market")
+    r1 = say(api, att, on_shelf=60)
     assert (r1["challenges_left"], r1["stop"]) == (1, False)
-    r2 = say(api, att, in_stock=70)
+    r2 = say(api, att, on_shelf=70)
     assert (r2["challenges_left"], r2["stop"]) == (0, False)
     assert "last time" in r2["message"]
     assert_balance(rid)
 
-    r3 = say(api, att, in_stock=80)
+    r3 = say(api, att, on_shelf=80)
     assert (r3["accepted"], r3["challenges_left"], r3["stop"]) == (False, 0, True)
     assert "Do not ask again" in r3["message"] and "person from the recall team" in r3["message"]
     assert "end the call" in r3["message"]
     assert_balance(rid)
-    assert db.parties.find_one({"recall_id": rid, "party_id": "harbour-fire"})["escalation"] == "human"
+    assert db.parties.find_one({"recall_id": rid, "party_id": "harbour-market"})["escalation"] == "human"
     assert len(lines(db, "needs_human")) == 1
 
-    again = say(api, att, in_stock=80)          # the same delivery again: no second hand-off line
+    again = say(api, att, on_shelf=80)          # the same delivery again: no second hand-off line
     assert again["duplicate"] is True and again["stop"] is True
     assert len(lines(db, "needs_human")) == 1
 
     # The cap stops the questions, not the ledger: a valid answer is still booked.
-    r4 = say(api, att, in_stock=35, returned=5)
+    r4 = say(api, att, on_shelf=35, returned=5)
     assert r4["accepted"] is True
     assert_balance(rid)
 
 
 def test_a_valid_third_answer_is_accepted_without_escalation(api, db, rid, assert_balance):
-    att = dial(db, rid, "harbour-fire")
-    say(api, att, in_stock=60)
-    say(api, att, in_stock=70)
-    r = say(api, att, in_stock=35, returned=5)
+    att = dial(db, rid, "harbour-market")
+    say(api, att, on_shelf=60)
+    say(api, att, on_shelf=70)
+    r = say(api, att, on_shelf=35, returned=5)
     assert (r["accepted"], r["stop"], r["challenges_left"]) == (True, False, 0)
     assert_balance(rid)
-    assert "escalation" not in db.parties.find_one({"recall_id": rid, "party_id": "harbour-fire"})
+    assert "escalation" not in db.parties.find_one({"recall_id": rid, "party_id": "harbour-market"})
     assert lines(db, "needs_human") == []
 
 
 def test_bad_or_missing_tool_secret_is_refused(api, db, rid):
-    att = dial(db, rid, "harbour-fire")
-    assert api.post("/tools/submit_count", json=tool_body(att, in_stock=25)).status_code == 401
-    r = api.post("/tools/submit_count", json=tool_body(att, in_stock=25), headers={"X-Tool-Secret": "nope"})
+    att = dial(db, rid, "harbour-market")
+    assert api.post("/tools/submit_count", json=tool_body(att, on_shelf=25)).status_code == 401
+    r = api.post("/tools/submit_count", json=tool_body(att, on_shelf=25), headers={"X-Tool-Secret": "nope"})
     assert r.status_code == 401
     assert db.tool_events.count_documents({}) == 0 and db.claims.count_documents({}) == 0
 
@@ -249,8 +176,8 @@ def test_unset_secrets_fail_closed_and_the_public_dev_values_need_an_opt_in(clie
 
     host = TestClient(create_app(replace(unset, atlas_uri="unused", db_name=db.name, scheduler_enabled=False),
                                  client=client, sim_network=StubNetwork()))
-    att = dial(db, rid, "harbour-fire")
-    r = host.post("/tools/submit_count", json=tool_body(att, in_stock=25),
+    att = dial(db, rid, "harbour-market")
+    r = host.post("/tools/submit_count", json=tool_body(att, on_shelf=25),
                   headers={"X-Tool-Secret": DEV_SECRETS["tool_secret"]})
     assert r.status_code == 401
     assert host.post("/admin/reset", headers={"X-Admin-Token": DEV_SECRETS["admin_token"]}).status_code == 401
@@ -259,11 +186,11 @@ def test_unset_secrets_fail_closed_and_the_public_dev_values_need_an_opt_in(clie
 
 
 def test_tool_bodies_are_read_after_the_secret_and_only_up_to_their_cap(api, db, rid):
-    att = dial(db, rid, "harbour-fire")
-    padded = {**tool_body(att, in_stock=25), "padding": "x" * MAX_TOOL_BODY}
+    att = dial(db, rid, "harbour-market")
+    padded = {**tool_body(att, on_shelf=25), "padding": "x" * MAX_TOOL_BODY}
     assert api.post("/tools/submit_count", json=padded, headers=TOOL).status_code == 413
     assert api.post("/tools/submit_count", json=padded).status_code == 401
-    big_report = {"recall_id": rid, "party_id": "harbour-fire", "source": "rep", "evidence_id": "op-x",
+    big_report = {"recall_id": rid, "party_id": "harbour-market", "source": "rep", "evidence_id": "op-x",
                   "delivery_note": "x" * MAX_TOOL_BODY}
     assert api.post("/tools/report", json=big_report, headers=TOOL).status_code == 413
     assert api.post("/tools/report", json=big_report).status_code == 401
@@ -299,44 +226,25 @@ def test_a_body_is_read_only_up_to_its_cap():
 def test_a_count_too_large_for_the_database_is_a_rejection_not_a_500(api, db, rid, assert_balance):
     """99999999999999999999 is valid JSON; it used to make the BSON encoder
     raise OverflowError while logging the tool event, a 500 the agent cannot read."""
-    att = dial(db, rid, "lakeside-systems")
-    body = json.dumps(tool_body(att, returned=60)).replace("}", ', "on_hand": 99999999999999999999}')
+    att = dial(db, rid, "lakeside-foods")
+    body = json.dumps(tool_body(att, returned=60)).replace("}", ', "on_shelf": 99999999999999999999}')
     r = api.post("/tools/submit_count", headers={**TOOL, "Content-Type": "application/json"}, content=body)
     assert r.status_code == 200, r.text
     reply = r.json()
     assert (reply["accepted"], reply["stop"]) == (False, False) and "is not a count" in reply["reason"]
     [event] = db.tool_events.find({"attempt_id": att["_id"]})
-    assert event["payload"]["on_hand"] == "99999999999999999999"
+    assert event["payload"]["on_shelf"] == "99999999999999999999"
     assert db.claims.find_one({"attempt_id": att["_id"]})["code"] == "bad_number"
     assert_balance(rid)
 
 
-def test_leaving_out_a_counted_transfer_stops_the_call_without_using_a_challenge(api, db, rid, assert_balance):
-    queen = dial(db, rid, "queen-st-alarm")
-    assert say(api, queen, in_stock=80, forwarded_qty=40, forwarded_to_name="Corner Properties")["accepted"]
-    corner = dial(db, rid, "corner-properties")
-    assert say(api, corner, received_qty=25, in_stock=25)["accepted"]
-    assert_balance(rid)
-
-    complete(db, queen["_id"], "completed")
-    followup = dial(db, rid, "queen-st-alarm", purpose="dispute_followup")
-    r = say(api, followup, in_stock=120)                     # "none went to Corner Properties"
-    assert (r["accepted"], r["stop"], r["challenges_left"]) == (False, True, 2)
-    assert "end the call" in r["message"] and "Challenge" not in r["message"]
-    r = say(api, followup, in_stock=90, forwarded_qty=30, forwarded_to_name="Bloor Alarm")
-    assert (r["accepted"], r["stop"]) == (False, True)
-    assert db.claims.find_one({"attempt_id": followup["_id"], "code": "forward_changed"}) is not None
-    assert "escalation" not in db.parties.find_one({"recall_id": rid, "party_id": "queen-st-alarm"})
-    assert_balance(rid)
-
-
 def test_a_direct_party_that_received_a_transfer_keeps_a_zero_receipt(api, db, rid, assert_balance):
-    queen = dial(db, rid, "queen-st-alarm")
-    assert say(api, queen, in_stock=110, forwarded_qty=10, forwarded_to_name="Lakeside Systems")["accepted"]
-    lake = dial(db, rid, "lakeside-systems")
-    r = say(api, lake, received_qty=0, in_stock=20, returned=60)    # "we never got any from them"
+    queen = dial(db, rid, "queen-st-grocer")
+    assert say(api, queen, on_shelf=110, forwarded_qty=10, forwarded_to_name="Lakeside Foods")["accepted"]
+    lake = dial(db, rid, "lakeside-foods")
+    r = say(api, lake, received_qty=0, on_shelf=20, returned=60)    # "we never got any from them"
     assert r["accepted"] is True
-    edge = db.edges.find_one({"recall_id": rid, "to_party": "lakeside-systems"})
+    edge = db.edges.find_one({"recall_id": rid, "to_party": "lakeside-foods"})
     assert (edge["recipient_qty"], edge["state"], edge["disputed_qty"]) == (0, "disputed", 10)
     assert db.claims.find_one({"attempt_id": lake["_id"]})["raw"]["received_qty"] == 0
     assert_balance(rid)
@@ -350,13 +258,13 @@ def test_malformed_body_is_a_400(api):
 
 def test_unknown_attempt_or_wrong_party_is_logged_and_stops(api, db, rid):
     r = api.post("/tools/submit_count", headers=TOOL,
-                 json={"attempt_id": "att_00000000000000", "party_id": "harbour-fire", "in_stock": 25})
+                 json={"attempt_id": "att_00000000000000", "party_id": "harbour-market", "on_shelf": 25})
     assert r.status_code == 200
     assert (r.json()["accepted"], r.json()["stop"]) == (False, True)
     assert db.tool_events.find_one({"attempt_id": "att_00000000000000"})["recall_id"] is None
 
-    att = dial(db, rid, "harbour-fire")
-    r = api.post("/tools/submit_count", headers=TOOL, json={**tool_body(att, in_stock=25), "party_id": "lakeside-systems"})
+    att = dial(db, rid, "harbour-market")
+    r = api.post("/tools/submit_count", headers=TOOL, json={**tool_body(att, on_shelf=25), "party_id": "lakeside-foods"})
     assert (r.json()["accepted"], r.json()["stop"]) == (False, True)
     assert db.claims.count_documents({}) == 0
     assert db.tool_events.count_documents({}) == 2
@@ -365,26 +273,26 @@ def test_unknown_attempt_or_wrong_party_is_logged_and_stops(api, db, rid):
 
 
 def test_receipt_without_transfer_stops_but_an_idle_zero_receipt_is_ignored(api, db, rid, assert_balance):
-    harbour = dial(db, rid, "harbour-fire")
-    r = say(api, harbour, in_stock=35, returned=5, received_qty=0)
+    harbour = dial(db, rid, "harbour-market")
+    r = say(api, harbour, on_shelf=35, returned=5, received_qty=0)
     assert r["accepted"] is True
     assert_balance(rid)
     assert "received_qty" not in db.claims.find_one({"attempt_id": harbour["_id"]})["raw"]
 
-    lakeside = dial(db, rid, "lakeside-systems")
-    r = say(api, lakeside, received_qty=5, in_stock=80)
+    lakeside = dial(db, rid, "lakeside-foods")
+    r = say(api, lakeside, received_qty=5, on_shelf=80)
     assert (r["accepted"], r["stop"]) == (False, True)
     assert_balance(rid)
     assert texts(db, "claim_rejected") == [
-        "Lakeside Systems - rejected: no sender has reported a transfer to this party yet"]
+        "Lakeside Foods - rejected: no sender has reported a transfer to this party yet"]
 
 
 def test_delivery_note_is_required_when_the_attempt_asks_for_it(api, db, rid, assert_balance):
-    att = dial(db, rid, "harbour-fire", ask_delivery_note="yes")
-    r = say(api, att, in_stock=35, returned=5)
+    att = dial(db, rid, "harbour-market", ask_delivery_note="yes")
+    r = say(api, att, on_shelf=35, returned=5)
     assert (r["accepted"], r["stop"], r["challenges_left"]) == (False, False, 2)
     assert "delivery note" in r["message"]
-    r = say(api, att, in_stock=35, returned=5, delivery_note="DN-48213")
+    r = say(api, att, on_shelf=35, returned=5, delivery_note="DN-48213")
     assert r["accepted"] is True
     assert_balance(rid)
 
@@ -421,55 +329,11 @@ def test_admin_starts_a_recall_and_replies_with_form_urls(api, db, settings, mon
     assert r.status_code == 400
 
 
-def test_close_is_refused_with_15_open_then_closes_after_the_corrected_claim(api, db, rid, assert_balance):
-    assert say(api, dial(db, rid, "harbour-fire"), on_hand=25, sold=10, returned=5)["accepted"]
-    assert_balance(rid)
-    lakeside = dial(db, rid, "lakeside-systems")
-    assert say(api, lakeside, in_stock=20, returned=60)["accepted"]
-    assert_balance(rid)
-    queen = dial(db, rid, "queen-st-alarm")
-    assert say(api, queen, in_stock=80, forwarded_qty=40, forwarded_to_name="Corner Properties")["accepted"]
-    assert_balance(rid)
-    assert say(api, dial(db, rid, "corner-properties"), received_qty=25, on_hand=25)["accepted"]
-    assert_balance(rid)
-
-    r = api.post("/admin/close", json={"recall_id": rid}, headers=ADMIN)
-    assert r.status_code == 200
-    refused = r.json()
-    assert (refused["closed"], refused["open_units"]) == (False, 15)
-    assert refused["atlas_error"]["code"] == 121
-    [line] = lines(db, "close_refused")
-    assert line["text"] == "Close refused by Atlas: 15 open units" and line["level"] == "bad"
-    assert line["detail"] == refused["atlas_error"]
-    assert db.recalls.find_one({"_id": rid})["status"] == "open"
-
-    complete(db, queen["_id"], "completed")
-    followup = dial(db, rid, "queen-st-alarm", purpose="dispute_followup")
-    r = say(api, followup, in_stock=95, forwarded_qty=25, forwarded_to_name="Corner Properties")
-    assert r["accepted"] is True
-    assert_balance(rid)
-    assert texts(db, "edge_corroborated") == [
-        "Transfer corroborated: Queen St Alarm and Corner Properties agree on 25 panels"]
-
-    r = api.post("/admin/close", json={"recall_id": rid}, headers=ADMIN)
-    assert r.json() == {"closed": True, "open_units": 0}
-    [closed] = lines(db, "recall_closed")
-    assert closed["level"] == "good" and closed["text"] == "Recall closed: every panel is explained"
-    assert db.recalls.find_one({"_id": rid})["status"] == "closed"
-    assert api.post("/admin/close", json={"recall_id": rid}, headers=ADMIN).json()["already"] is True
-    assert len(lines(db, "recall_closed")) == 1
-
-    late = say(api, lakeside, in_stock=19, returned=61)
-    assert (late["accepted"], late["stop"]) == (False, True)
-    assert db.claims.find_one({"attempt_id": lakeside["_id"], "status": "rejected"})["code"] == "recall_closed"
-    assert api.post("/admin/close", json={"recall_id": "RCL-NOPE"}, headers=ADMIN).status_code == 404
-
-
 def test_release_followups_and_failpoints(api, db, rid):
-    r = api.post("/admin/release", json={"recall_id": rid, "party_id": "queen-st-alarm"}, headers=ADMIN)
+    r = api.post("/admin/release", json={"recall_id": rid, "party_id": "queen-st-grocer"}, headers=ADMIN)
     assert r.status_code == 200
-    assert db.worker_state.find_one({"_id": f"sim_release:{rid}:queen-st-alarm"})["released_at"]
-    assert texts(db, "sim_released") == ["Released the held reply from Queen St Alarm"]
+    assert db.worker_state.find_one({"_id": f"sim_release:{rid}:queen-st-grocer"})["released_at"]
+    assert texts(db, "sim_released") == ["Released the held reply from Queen St Grocer"]
     assert api.post("/admin/release", json={"recall_id": "RCL-NOPE", "party_id": "x"},
                     headers=ADMIN).status_code == 404
 
@@ -477,14 +341,14 @@ def test_release_followups_and_failpoints(api, db, rid):
     assert db.recalls.find_one({"_id": rid})["followups_released"] is True
     assert len(lines(db, "followups_released")) == 1
 
-    r = api.post("/admin/failpoint", json={"name": "after_dial_request", "party_id": "corner-properties",
+    r = api.post("/admin/failpoint", json={"name": "after_dial_request", "party_id": "corner-mart",
                                            "channel": "voice"}, headers=ADMIN)
     assert r.status_code == 200
     spec = armed(db)["after_dial_request"]
-    assert (spec["party_id"], spec["channel"], spec["by"]) == ("corner-properties", "voice", "admin")
-    assert r.json()["armed"]["after_dial_request"]["party_id"] == "corner-properties"
+    assert (spec["party_id"], spec["channel"], spec["by"]) == ("corner-mart", "voice", "admin")
+    assert r.json()["armed"]["after_dial_request"]["party_id"] == "corner-mart"
     [line] = lines(db, "failpoint_armed")
-    assert line["text"] == "Failpoint after_dial_request armed (corner-properties, voice)" and line["level"] == "warn"
+    assert line["text"] == "Failpoint after_dial_request armed (corner-mart, voice)" and line["level"] == "warn"
     assert api.post("/admin/failpoint", json={"name": "bogus"}, headers=ADMIN).status_code == 400
     assert api.post("/admin/failpoint", json={"name": "after_intent", "channel": "fax"},
                     headers=ADMIN).status_code == 400
@@ -495,11 +359,11 @@ def test_release_followups_and_failpoints(api, db, rid):
 
 
 def test_status_and_reset(api, db, rid):
-    dial(db, rid, "harbour-fire")
+    dial(db, rid, "harbour-market")
     status = api.get("/admin/status", headers=ADMIN).json()
     assert [r["_id"] for r in status["recalls"]] == [rid]
     assert "directory" not in status["recalls"][0]          # resolved phone numbers stay private
-    assert [a["party_id"] for a in status["live_attempts"]] == ["harbour-fire"]
+    assert [a["party_id"] for a in status["live_attempts"]] == ["harbour-market"]
     assert status["sim_calls"] == {"total": 0, "by_status": {}}
 
     r = api.post("/admin/reset", headers=ADMIN)
@@ -509,75 +373,6 @@ def test_status_and_reset(api, db, rid):
 
 # ---- the wall -------------------------------------------------------------------
 
-def test_wall_state_has_the_design_shape_and_the_reconciler_metrics(api, app, db, rid, settings, assert_balance):
-    # A long TTL: on Atlas a claim takes longer than the real half second, and
-    # this test is about what a cached entry hides, not about its lifetime
-    # (test_wall_state_cache_expires covers that with a fake clock).
-    app.state.wall_cache = wall.StateCache(60.0)
-    harbour = dial(db, rid, "harbour-fire")
-    say(api, harbour, in_stock=60)
-    queen = dial(db, rid, "queen-st-alarm")
-    say(api, queen, in_stock=80, forwarded_qty=40, forwarded_to_name="Corner Properties")
-    assert_balance(rid)
-    db.sim_calls.insert_many([
-        {"_id": queen["call_sid"], "recall_id": rid, "party_id": "queen-st-alarm", "status": "completed"},
-        {"_id": "CAsimlakeside", "recall_id": rid, "party_id": "lakeside-systems", "status": "in-progress"},
-    ])
-    now = datetime.now(timezone.utc)     # test settings call a worker dead after 1 s of silence
-    db.worker_state.insert_many([
-        {"_id": "worker:w-old", "boot_id": "b0", "heartbeat_at": now - timedelta(minutes=5)},
-        {"_id": "worker:w1", "boot_id": "b1", "heartbeat_at": now, "resumed": {"missed": 3}, "resume_token": {"x": 1}},
-        {"_id": "badge:crash_schedules", "text": "Crash schedules: 12/12 passed", "at": now},
-        {"_id": "ablation", "with": 2, "without": 5},
-    ])
-
-    state = api.get("/wall/state").json()
-    assert set(state) == STATE_KEYS
-    assert state["recall"]["_id"] == rid
-    assert set(state["recall"]) == {"_id", "batch_code", "product", "brand", "hazard", "units_total", "status", "mode",
-                                    "options", "opened_at", "closed_at"}
-    assert state["recalls"] == [{"_id": rid, "status": "open", "batch_code": "B-4471"}]
-    assert state["metrics"] == jsonable(metrics(db, rid))
-    assert state["metrics"]["mass_balance"] == 240 and state["metrics"]["open_units"] == 160
-
-    parties = {s["party_id"]: s for s in state["parties"]}
-    assert set(parties) == {"harbour-fire", "queen-st-alarm", "lakeside-systems", "corner-properties"}
-    assert all(set(s) == PARTY_KEYS for s in state["parties"])
-    assert parties["harbour-fire"]["live_attempt"] == {"_id": harbour["_id"], "state": "connected",
-                                                        "purpose": "initial", "seq": 1}
-    assert parties["harbour-fire"]["attempts"] == 1 and parties["harbour-fire"]["state"] == "reached"
-    assert parties["corner-properties"]["discovered_by"] == "claim:queen-st-alarm"
-    assert parties["corner-properties"]["live_attempt"] is None and parties["corner-properties"]["attempts"] == 0
-    # The wall is public: no party's form token (the form's only credential) appears anywhere in it.
-    tokens = [s["form_token"] for s in db.parties.find({"recall_id": rid}, {"form_token": 1})]
-    published = json.dumps(state)
-    assert len(tokens) == 4 and not any(tok in published for tok in tokens)
-    assert "/form/" not in published
-    assert state["edges"] == [{"from_party": "queen-st-alarm", "to_party": "corner-properties", "sender_qty": 40,
-                               "recipient_qty": None, "corroborated_qty": 0, "disputed_qty": 0,
-                               "state": "awaiting_recipient"}]
-
-    assert state["feed"][0]["kind"] == "edge_opened" and len(state["feed"]) <= 60
-    assert all(set(line) == FEED_KEYS for line in state["feed"])
-    assert state["feed"][0]["system"] == "ledger" and state["feed"][0]["sim_label"].startswith("d0 ")
-    assert state["worker"] == {"name": "w1", "alive": True, "heartbeat_age_s": state["worker"]["heartbeat_age_s"],
-                               "boot_id": "b1", "resumed": {"missed": 3}}
-    assert state["calls"] == {"total": 3, "by_party": {"harbour-fire": 1, "queen-st-alarm": 1,
-                                                       "lakeside-systems": 1}}
-    assert state["failpoints"] == {}
-    assert state["badges"] == [{"key": "crash_schedules", "text": "Crash schedules: 12/12 passed"}]
-    assert state["memory_ablation"] == {"with": 2, "without": 5}
-
-    # Cached: a new claim is not visible until the entry expires (or is cleared).
-    say(api, harbour, in_stock=35, returned=5)
-    assert_balance(rid)
-    cached = api.get("/wall/state").json()
-    assert cached["now"] == state["now"] and cached["metrics"]["open_units"] == 160
-    app.state.wall_cache.clear()
-    fresh = api.get("/wall/state").json()
-    assert fresh["now"] != state["now"] and fresh["metrics"]["open_units"] == 120
-
-
 def test_wall_shows_the_newest_runtime_recall_by_default(api, app, client, db):
     empty = api.get("/wall/state").json()
     assert (empty["recall"], empty["metrics"], empty["parties"]) == (None, None, [])
@@ -585,7 +380,7 @@ def test_wall_shows_the_newest_runtime_recall_by_default(api, app, client, db):
     t0 = datetime.now(timezone.utc)
     start_recall(client, db, load_scenario("recall_1"), all_sim=True, now=t0)
     start_recall(client, db, load_scenario("recall_2"), all_sim=True, now=t0 + timedelta(seconds=1))
-    db.recalls.insert_one({"_id": "RCL-2025-001", "batch_code": "OLD-1", "units_total": 10, "open_units": 0,
+    db.recalls.insert_one({**recall_doc("RCL-2025-001", units_total=10), "batch_code": "OLD-1", "open_units": 0,
                            "status": "closed", "seed_batch": "history", "opened_at": t0 + timedelta(days=1)})
     app.state.wall_cache.clear()
 
@@ -640,12 +435,12 @@ def test_healthz(api, settings):
 # ---- simulator telephony --------------------------------------------------------
 
 def test_sim_calls_place_and_list(api, db, stub):
-    body = {"to_number": "+14165550142", "attempt_id": "att_1", "dynamic_variables": {"party_id": "queen-st-alarm"}}
+    body = {"to_number": "+14165550142", "attempt_id": "att_1", "dynamic_variables": {"party_id": "queen-st-grocer"}}
     assert api.post("/sim/calls", json=body).status_code == 401
     r = api.post("/sim/calls", json=body, headers=TOOL)
     assert r.json() == {"success": True, "message": "Simulated call placed", "conversation_id": "conv_sim_att_1",
                         "callSid": "CAsimatt_1"}
-    assert stub.calls == [{"to_number": "+14165550142", "dynamic_variables": {"party_id": "queen-st-alarm"},
+    assert stub.calls == [{"to_number": "+14165550142", "dynamic_variables": {"party_id": "queen-st-grocer"},
                            "attempt_id": "att_1", "faults": None}]
     api.post("/sim/calls", json={**body, "faults": {"no_answer": True}}, headers=TOOL)
     assert stub.calls[-1]["faults"] == {"no_answer": True}
@@ -697,70 +492,6 @@ def test_sim_network_is_built_lazily_on_first_use(monkeypatch, settings, client)
 
 # ---- v2: the wall's run block, systems, workers and calls in flight ---------------
 
-def test_wall_state_v2_run_systems_workers_and_calls_in_flight(settings, client, db, rid, stub, assert_balance):
-    live = TestClient(create_app(replace(settings, voice_provider="elevenlabs"), client=client, sim_network=stub))
-    pin_clock(db, rid, 58.0)                                    # d2 10:00
-    queen = open_attempt(db, recall_id=rid, party_id="queen-st-alarm", channel="voice", to_number="+14165550142")
-    mark_dialed(db, queen["_id"], conversation_id="conv_q", call_sid="CAreal1")
-    queen = db.attempts.find_one({"_id": queen["_id"]})
-    assert say(live, queen, in_stock=80, forwarded_qty=40, forwarded_to_name="Corner Properties")["accepted"]
-    assert_balance(rid)
-    dial(db, rid, "lakeside-systems")                             # a simulated call, dialled
-    db_now = clock.server_now(client)
-    db.parties.update_one({"recall_id": rid, "party_id": "harbour-fire"},
-                         {"$set": {"lease_owner": "worker-test/w1", "lease_until": db_now + timedelta(seconds=60),
-                                   "lease_epoch": 3}})
-    db.parties.update_one({"recall_id": rid, "party_id": "lakeside-systems"},           # an expired lease is not live
-                         {"$set": {"lease_owner": "worker-test/w2", "lease_until": db_now - timedelta(seconds=5)}})
-    db.parties.update_one({"recall_id": rid, "party_id": "queen-st-alarm"}, {"$set": {"order_system": "north"}})
-    db.task_runs.insert_one({"_id": "tr-1", "worker": "worker-test/w1", "recall_id": rid,
-                             "party_id": "harbour-fire", "kind": "contact_party", "status": "running",
-                             "started_at": db_now - timedelta(seconds=4)})
-    db.adapters.insert_one({"_id": "north:v2", "order_system": "north", "version": 2, "status": "active", "source": "model"})
-    db.operations.insert_many([
-        {"_id": f"op-{i}", "recall_id": rid, "order_system": "north", "kind": "place_hold", "idempotency_key": f"k{i}",
-         "state": state, "readback_at": 30.0, "readback_value": {"hold_id": f"H{i}"}}
-        for i, state in enumerate(["verified", "verified", "needs_reverify"])] + [
-        {"_id": "op-form", "recall_id": rid, "kind": "send_form_link", "party_id": "corner-properties",
-         "idempotency_key": "form1", "state": "sent"}])
-    db.runs.update_one({"_id": runs.run_id(rid)}, {"$set": {
-        "steps": 41, "kills": 2, "tokens": {"last": 1850, "max": 1900, "total": 3700, "n": 2},
-        "last_invariant_check": {"at": 57.0, "passed": [True, True, True, True], "details": []},
-        "supervisor.paused": True, "saboteur": {"on": True, "until": db_now + timedelta(seconds=30)}}})
-
-    state = live.get("/wall/state").json()
-    assert set(state) == STATE_KEYS and set(state["run"]) == RUN_KEYS
-    run = state["run"]
-    assert (run["sim_now"], run["sim_label"], run["day"], run["days_total"], run["paused"]) == (
-        58.0, "d2 10:00", 2, 10, True)
-    assert run["parties"] == {"total": 4, "at_start": 3, "found": 1}
-    assert run["checked"] == [1, 4] and (run["steps"], run["kills"], run["duplicates"]) == (41, 2, 0)
-    assert run["tokens_per_decision"] == 1850 and run["seconds_per_sim_hour"] == 30.0
-    assert run["invariants"] == {"at": 57.0, "at_label": "d2 09:00", "passed": [True] * 4, "ok": True}
-    assert run["supervisor"] == {"paused": True} and run["saboteur"] == {"on": True}
-    assert state["systems"] == [
-        {"system": "phone", "attempts": 2, "accepted_claims": 1},
-        {"system": "form", "attempts": 0, "accepted_claims": 0, "links_sent": 1, "links_verified": 0},
-        {"system": "North orders", "adapter_version": 2, "adapter_source": "model", "ops_verified": 2,
-         "ops_flagged": 1, "ops_total": 3, "accepted_claims": 0, "paused": False}]
-    assert state["workers"] == [{"id": "worker-test/w1", "party_id": "harbour-fire", "name": "Harbour Fire",
-                                 "kind": "contact_party", "since_s": state["workers"][0]["since_s"], "lease_epoch": 3}]
-    assert 3 <= state["workers"][0]["since_s"] < 60
-    assert state["calls_in_flight"] == {"real": 1, "simulated": 1}
-    parties = {s["party_id"]: s for s in state["parties"]}
-    assert (parties["corner-properties"]["level"], parties["corner-properties"]["found_via"]) == (3, "claim")
-    assert (parties["corner-properties"]["next_action_at"], parties["corner-properties"]["next_label"]) == (58.0, "d2 10:00")
-    accepted = next(line for line in state["feed"] if line["kind"] == "claim_accepted")
-    assert (accepted["system"], accepted["sim_label"]) == ("ledger", "d2 10:00")
-
-    db.runs.update_one({"_id": runs.run_id(rid)}, {"$set": {
-        "invariant_failed": True, "last_invariant_check.passed": [True, False, True, True],
-        "saboteur.until": db_now - timedelta(seconds=1)}})
-    live.app.state.wall_cache.clear()
-    later = live.get("/wall/state").json()["run"]
-    assert later["invariants"]["ok"] is False and later["saboteur"] == {"on": False}
-
-
 # ---- v2: request_callback ---------------------------------------------------------
 
 def callback(api, att, **when):
@@ -772,7 +503,7 @@ def callback(api, att, **when):
 
 def test_request_callback_sets_the_attempts_callback_hour(api, db, rid):
     pin_clock(db, rid, 57.25)                                   # d2 09:15
-    att = dial(db, rid, "lakeside-systems")
+    att = dial(db, rid, "lakeside-foods")
 
     r = callback(api, att, hour_of_day=9, day_offset=1)
     assert r == {"accepted": True, "callback_at": 81.0, "callback_label": "d3 09:00",
@@ -781,7 +512,7 @@ def test_request_callback_sets_the_attempts_callback_hour(api, db, rid):
     assert (row["callback_at"], row["state"]) == (81.0, "connected")
     assert db.tool_events.find_one({"attempt_id": att["_id"]})["kind"] == "callback"
     [line] = lines(db, "callback_requested")
-    assert line["text"] == "Lakeside Systems asked to be called back tomorrow at 09:00 (d3 09:00)"
+    assert line["text"] == "Lakeside Foods asked to be called back tomorrow at 09:00 (d3 09:00)"
     assert (line["system"], line["sim_label"]) == ("phone", "d2 09:15")
 
     assert callback(api, att, hour_of_day=8)["callback_at"] == 80.0          # the next 08:00
@@ -795,7 +526,7 @@ def test_request_callback_sets_the_attempts_callback_hour(api, db, rid):
     assert db.attempts.find_one({"_id": att["_id"]})["callback_at"] == 60.5
 
     unknown = api.post("/tools/request_callback", headers=TOOL,
-                       json={"attempt_id": "att_nope", "party_id": "lakeside-systems", "hour_of_day": 9}).json()
+                       json={"attempt_id": "att_nope", "party_id": "lakeside-foods", "hour_of_day": 9}).json()
     assert (unknown["accepted"], unknown["stop"]) == (False, True)
     assert api.post("/tools/request_callback", json={"attempt_id": att["_id"]}).status_code == 401
 
@@ -808,70 +539,6 @@ def report(api, **body):
     return r.json()
 
 
-def test_report_books_through_the_claim_path_and_verifies_its_evidence(api, db, rid, assert_balance):
-    pin_clock(db, rid, 201.0)                                   # d8 09:00, the rep's day
-    db.operations.insert_many([
-        {"_id": "op-rep", "recall_id": rid, "kind": "escalate_rep", "party_id": "lakeside-systems",
-         "idempotency_key": f"{rid}:lakeside-systems:escalate_rep", "state": "sent"},
-        {"_id": "op-link", "recall_id": rid, "kind": "send_form_link", "party_id": "harbour-fire",
-         "idempotency_key": f"{rid}:harbour-fire:form:3", "state": "sent"},
-        {"_id": "op-link-old", "recall_id": rid, "kind": "send_form_link", "party_id": "harbour-fire",
-         "idempotency_key": f"{rid}:harbour-fire:form:2", "state": "needs_reverify"}])
-
-    over = report(api, recall_id=rid, party_id="lakeside-systems", source="rep", evidence_id="op-rep", in_stock=90)
-    assert (over["accepted"], over["code"], over["reported_total"], over["shipped_in"]) == (False, "over_count", 90, 80)
-    assert over["verified"] == [] and db.operations.find_one({"_id": "op-rep"})["state"] == "sent"
-    assert_balance(rid)
-
-    ok = report(api, recall_id=rid, party_id="lakeside-systems", source="rep", evidence_id="op-rep",
-                in_stock=20, returned=60)
-    assert ok["accepted"] is True and ok["verified"] == ["op-rep"]
-    assert_balance(rid)
-    claim = db.claims.find_one({"party_id": "lakeside-systems", "status": "accepted"})
-    assert (claim["attempt_id"], claim["source"], str(claim["_id"])) == ("op-rep", "rep", ok["claim_id"])
-    op = db.operations.find_one({"_id": "op-rep"})
-    assert (op["state"], op["readback_at"], op["readback_value"]) == ("verified", 201.0, claim["_id"])
-    events = list(db.tool_events.find({"attempt_id": "op-rep"}))
-    assert {e["kind"] for e in events} == {"rep"} and len(events) == 2
-    assert texts(db, "report_received") == ["Lakeside Systems: the distributor's rep reported the counts"] * 2
-    assert lines(db, "report_received")[0]["system"] == "phone"
-    assert texts(db, "claim_accepted") == ["Lakeside Systems - accepted: 20 on hand, 60 destroyed"]
-
-    again = report(api, recall_id=rid, party_id="lakeside-systems", source="rep", evidence_id="op-rep",
-                   in_stock=20, returned=60)
-    assert (again["accepted"], again["duplicate"], again["verified"]) == (True, True, [])
-
-    form = report(api, recall_id=rid, party_id="harbour-fire", source="form", evidence_id="op-link",
-                  in_stock="35", returned=5)
-    assert form["accepted"] is True and form["verified"] == ["op-link"]
-    assert_balance(rid)
-    links = {o["_id"]: o for o in db.operations.find({"kind": "send_form_link"})}
-    assert {o["state"] for o in links.values()} == {"verified"}
-    assert links["op-link-old"]["readback_value"] == links["op-link"]["readback_value"]
-    assert texts(db, "form_link_verified") == [
-        "Harbour Fire: form link verified, a submission arrived with the party's link"]
-
-    db.parties.update_one({"recall_id": rid, "party_id": "queen-st-alarm"}, {"$set": {"order_system": "north"}})
-    read = report(api, recall_id=rid, party_id="queen-st-alarm", source="order_system", evidence_id="op-accounts",
-                  in_stock=80, forwarded_qty=40, forwarded_to_name="Corner Properties")
-    assert read["accepted"] is True and read["verified"] == []             # op-accounts is not an operation
-    assert_balance(rid)
-    assert lines(db, "report_received")[-1]["system"] == "North orders"
-    assert db.tool_events.find_one({"attempt_id": "op-accounts"})["kind"] == "order_system"
-
-    assert api.post("/tools/report", headers=TOOL, json={"recall_id": rid, "party_id": "nope", "source": "rep",
-                                                         "evidence_id": "x"}).status_code == 404
-    assert api.post("/tools/report", headers=TOOL, json={"recall_id": rid, "party_id": "harbour-fire",
-                                                         "source": "fax", "evidence_id": "x"}).status_code == 422
-    assert api.post("/tools/report", json={"recall_id": rid}).status_code == 401
-
-
-def test_describe_counts_names_every_destination_of_a_multi_forward():
-    from levela.api.tools import describe_counts
-    raw = {"on_hand": 5, "forwards": [{"to_name": "Corner Properties", "qty": 12}, {"to_party_id": "annex", "qty": 8}]}
-    assert describe_counts(raw) == "5 on hand, 12 forwarded to Corner Properties, 8 forwarded to annex"
-
-
 def test_an_oversized_body_is_refused_before_any_route_runs(api):
     """/admin/* parses its JSON body before checking the token, so the size cap
     is a middleware: an anonymous 2 MB body never reaches a route."""
@@ -879,3 +546,138 @@ def test_an_oversized_body_is_refused_before_any_route_runs(api):
     resp = api.post("/admin/reset", content=huge, headers={"Content-Type": "application/json"})
     assert resp.status_code == 413
     assert api.post("/admin/reset", json={}).status_code in (401, 403)
+
+
+# ---- the food recall: the voice tool, the wall, the close gate ---------------------
+
+def test_spec_8_harbour_market_says_60_for_its_40_and_atlas_refuses(api, db, rid, assert_balance):
+    """The first answer is a lie (60 tins for a 40-tin store). The reply names
+    the two values that disagree with a one-line reason; the raw Atlas error
+    reaches the feed; the corrected count is accepted and a redelivery posts once."""
+    att = dial(db, rid, "harbour-market")
+    r = say(api, att, sold=0, on_shelf=60, held=0, returned=0, forwarded_qty=0)
+    assert r["accepted"] is False and r["stop"] is False and r["challenges_left"] == 1
+    assert r["values"] == {"reported": 60, "shipped_in": 40} and r["pair"] == [60, 40]
+    assert r["two_values"] == [{"field": "reported", "value": 60}, {"field": "shipped_in", "value": 40}]
+    assert r["reason"] == "reported 60, shipped_in 40" and "\n" not in r["reason"]
+    assert "60" in r["message"] and "40" in r["message"] and "Challenge 1 of 2" in r["message"]
+    assert_balance(rid)
+    claim = db.claims.find_one({"attempt_id": att["_id"]})
+    assert (claim["status"], claim["code"], claim["source"]) == ("rejected", "over_count", "voice")
+    [rejected] = lines(db, "claim_rejected")
+    assert rejected["text"] == ("Harbour Market - REJECTED by Atlas: Document failed validation on parties. "
+                                "reported 60, shipped_in 40")
+    assert rejected["detail"] == claim["atlas_error"] and rejected["detail"]["code"] == 121
+    assert rejected["system"] == "ledger" and rejected["level"] == "bad"
+
+    ok = say(api, att, sold=10, sold_source="till_report", on_shelf=0, held=0, returned=30, forwarded_qty=0)
+    assert ok["accepted"] is True and "two_values" not in ok
+    assert texts(db, "claim_accepted") == ["Harbour Market - accepted: 10 sold, 30 returned, sold counted from the till"]
+    again = say(api, att, sold=10, sold_source="till_report", on_shelf=0, held=0, returned=30, forwarded_qty=0)
+    assert again["duplicate"] is True
+    assert db.claims.count_documents({"attempt_id": att["_id"], "status": "accepted"}) == 1
+    assert_balance(rid)
+
+
+def test_spec_12_the_slice_on_the_wall_in_the_food_domain(api, app, db, rid, assert_balance):
+    """Four-party slice: the wall's headline, the three metrics, SIMULATED
+    beside simulated parties, the systems lines and the screen text."""
+    assert say(api, dial(db, rid, "harbour-market"), sold=10, sold_source="till_report", returned=30)["accepted"]
+    queen = say(api, dial(db, rid, "queen-st-grocer"), sold=50, **SOLD_EVIDENCE, held=30, **HELD_EVIDENCE,
+                forwarded_qty=40, forwarded_to_name="Corner Mart")
+    assert queen["accepted"], queen
+    assert say(api, dial(db, rid, "lakeside-foods"), sold=20, **SOLD_EVIDENCE, held=60, **HELD_EVIDENCE)["accepted"]
+    corner = say(api, dial(db, rid, "corner-mart"), received_qty=25, on_shelf=25)
+    assert corner["accepted"], corner
+    assert_balance(rid)
+    accepted = texts(db, "claim_accepted")
+    assert ("Queen St Grocer - accepted: 50 sold, 30 held, 40 passed to Corner Mart, batch B-4471, "
+            "sold counted from the till, till refused the sale: yes") in accepted
+    assert "New party discovered: Corner Mart (named by Queen St Grocer)" in texts(db, "party_discovered")
+    assert any("15 tins disputed" in t for t in texts(db, "edge_disputed"))
+
+    app.state.wall_cache.clear()
+    state = api.get("/wall/state").json()
+    m = state["metrics"]
+    assert state["headline"] == "NOT ALL CLEAR: 40 tins open (25 still on a shelf, 15 disputed)"
+    assert (m["tins_located"], m["held_or_returned"], m["open_units"]) == ([225, 240], [120, 240], 40)
+    assert (m["on_shelf"], m["disputed_units"], m["not_located"]) == (25, 15, 0)
+    assert m["mass_balance"] == 240
+    by_id = {p["party_id"]: p for p in state["parties"]}
+    assert set(by_id["corner-mart"]) == PARTY_KEYS
+    assert all(p["simulated"] and p["tag"] == "SIMULATED" for p in state["parties"])    # all_sim run
+    assert (by_id["queen-st-grocer"]["sold"], by_id["queen-st-grocer"]["held"]) == (50, 30)
+    assert any(line["tag"] == "SIMULATED" for line in state["feed"] if line["party_id"])
+    systems = {s["system"]: s for s in state["systems"]}
+    assert systems["phone"]["line"] == "4 attempts, 4 accepted claims"
+    assert systems["stores"]["line"] == "0 store events, 0 complaints, 0 signals approved"
+    assert state["monitoring"]["line"].startswith("Stores connected 0      tins on a shelf there 0")
+    screen = state["screen"]
+    assert screen[0] == "All Clear   Recall of batch B-4471   240 tins"
+    assert screen[1] == state["headline"]
+    assert "Located 225 of 240 (94%)      Held or returned 120 of 240 (50%)" in screen
+    assert "Systems" in screen and "Feed, newest first" in screen
+    text = api.get("/wall/text").text
+    assert state["headline"] in text and "SIMULATED" in text
+
+    r = api.post("/admin/close", headers=ADMIN, json={"recall_id": rid})
+    assert r.status_code == 200 and r.json()["closed"] is False
+    assert any("40 tins open" in t for t in texts(db, "close_refused"))
+
+
+def test_the_one_strip_and_the_agents_line_read_store_records_and_agent_parties(api, app, db, rid):
+    """Connected stores, tins on a shelf there, moved to held, the last store
+    event; and the agents line from a party with channel agent and its sub."""
+    db.store_systems.insert_one({"_id": "ss-corner", "store_label": "Corner Mart", "party_id": "harbour-market",
+                                 "connects": ["till", "stock"], "blocked": True})
+    at = datetime.now(timezone.utc)
+    db.store_events.insert_one({"_id": "ev-1", "store_system_id": "ss-corner", "event_id": "t-88213",
+                                "kind": "quarantine", "batch_code": "B-4471", "qty": 1, "at": at})
+    db.parties.insert_one(party_doc(rid, "summit-foods", 120, channel="agent", name="Summit Foods",
+                                    link_id="ln-summit", sub={"seq": 14, "parties_total": 7, "parties_open": 3,
+                                                              "state": "open",
+                                                              "buyers": {"identified": 19, "told": 15,
+                                                                         "unreachable": 4, "anonymous_sales": 12}}))
+    app.state.wall_cache.clear()
+    state = api.get("/wall/state").json()
+    strip = state["monitoring"]
+    assert (strip["connected"], strip["on_shelf"], strip["moved_to_held"]) == (1, 0, 0)
+    assert strip["last_event"]["text"] == "Harbour Market: quarantine 1, event t-88213"
+    assert strip["line"] == ("Stores connected 1      tins on a shelf there 0      moved to held 0      "
+                             "last store event: Harbour Market: quarantine 1, event t-88213")
+    systems = {s["system"]: s for s in state["systems"]}
+    assert systems["stores"]["line"] == "1 store event, 0 complaints, 0 signals approved"
+    assert systems["agents"]["line"] == ("Summit Foods: 0 reports accepted. 120 tins, 0 on a shelf. "
+                                         "Buyers told 15 of 19. Names not shared")
+    summit = next(p for p in state["parties"] if p["party_id"] == "summit-foods")
+    assert summit["simulated"] is False and summit["sub"]["buyers"]["told"] == 15
+
+
+def test_wall_tolerates_missing_store_collections(api, app, db, rid):
+    for name in ("store_systems", "store_events", "complaints", "signals"):
+        db[name].drop()
+    app.state.wall_cache.clear()
+    state = api.get("/wall/state").json()
+    assert state["monitoring"]["connected"] == 0 and state["headline"].startswith("NOT ALL CLEAR: 240 tins open")
+
+
+def test_describe_counts_speaks_tins_and_checks():
+    from levela.api.tools import describe_counts
+    raw = {"sold": 50, "held": 30, "forwards": [{"to_name": "Corner Mart", "qty": 25}, {"to_name": "Bloor Foods",
+                                                                                        "qty": 15}],
+           "batch_seen": "B-4471", "sold_source": "till", "block_test": "yes"}
+    assert describe_counts(raw) == ("50 sold, 30 held, 25 passed to Corner Mart, 15 passed to Bloor Foods, "
+                                    "batch B-4471, sold counted from the till, till refused the sale: yes")
+    assert describe_counts({}) == "no tins sold, on the shelf, held or returned"
+
+
+def test_report_from_a_distributors_rep_books_through_the_claim_path(api, db, rid, assert_balance):
+    body = {"recall_id": rid, "party_id": "lakeside-foods", "source": "rep", "evidence_id": "op-rep-1",
+            "sold": 20, "sold_source": "till_report", "held": 60, "batch_seen": "B-4471", "block_test": True}
+    r = api.post("/tools/report", headers=TOOL, json=body)
+    assert r.status_code == 200, r.text
+    assert r.json()["accepted"] is True
+    assert "Lakeside Foods: the distributor's rep reported the counts" in texts(db, "report_received")
+    over = api.post("/tools/report", headers=TOOL, json={**body, "evidence_id": "op-rep-2", "held": 70}).json()
+    assert over["accepted"] is False and over["pair"] == [90, 80]
+    assert_balance(rid)

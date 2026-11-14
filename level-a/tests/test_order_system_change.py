@@ -184,7 +184,7 @@ def test_18_only_open_operations_are_flagged_and_only_they_retry_under_the_repai
             assert op == before[op["_id"]], "a verified operation is never touched again"
         else:
             assert (op["state"], op["adapter_version"]) == ("verified", 2), op["_id"]
-    assert db.parties.find_one({"recall_id": RID, "party_id": ids["N-021"]})["order_system_in_stock"] == 30
+    assert db.parties.find_one({"recall_id": RID, "party_id": ids["N-021"]})["order_system_available"] == 30
     assert [h["idempotency_key"] for h in order_system.holds_log()] == [f"{RID}:dist-north:place_hold"]
     assert db.parties.find_one({"_id": dist["_id"]})["order_system_paused"] is False
     assert db.episodes.count_documents({"kind": "adapter", "order_system": "north"}) == 1

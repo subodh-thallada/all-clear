@@ -1,13 +1,17 @@
-"""Spec test 10 on the v2 engine: recall 1 with every party simulated.
+"""Spec test 10: recall 1 (the four-party slice) with every party simulated.
 
 The API (TestClient, hosting the SimNetwork) and a pool of four worker
 threads with the real harness and the planner run in this process. Follow-ups
 are manual, as in the demo, so the dispute stays open until released.
 
-Pass: once the run settles the metrics are exact (4 of 4 checked, 225 of 240
-documented, 65 recovered), the one dispute is 15 panels, every party was
-called once, and Atlas refuses to close; after POST /admin/followups the
-follow-up books Queen St Alarm's corrected count and the recall closes.
+Pass: once the run settles, inside 30 s, the slice is open by exactly 40 tins
+(15 disputed between Queen St Grocer and Corner Mart, 25 still on the shelf
+at Corner Mart), 225 of 240 tins located and 120 held or returned, every
+party was called once, Harbour Market's lie was refused before its true
+count, and Atlas refuses to close. After POST /admin/followups the follow-up
+books Queen St Grocer's corrected count: the dispute is gone, 240 of 240
+are located, and the 25 tins on Corner Mart's shelf still keep the recall
+open.
 """
 from __future__ import annotations
 
@@ -25,7 +29,7 @@ from levela.orchestrator.worker import WorkerPool
 from levela.providers import ClientPoster, FakeVoice, SimNetwork
 
 RID = "RCL-2026-017"
-PARTIES = ("harbour-fire", "queen-st-alarm", "lakeside-systems", "corner-properties")
+PARTIES = ("harbour-market", "queen-st-grocer", "lakeside-foods", "corner-mart")
 FINISH_S = 30.0
 
 
@@ -69,31 +73,36 @@ def test_10_recall_1_all_simulated_on_the_v2_engine(client, db, settings, assert
     t0 = time.monotonic()
     thread.start()
     try:
-        _wait(lambda: metrics(db, RID)["checks_completed"] == [4, 4] and _quiet(db), 60,
-              f"recall 1 did not settle: {metrics(db, RID)}")
+        def settled():
+            m = metrics(db, RID)
+            return m["open_units"] == 40 and m["disputed_units"] == 15 and m["on_shelf"] == 25 and _quiet(db)
+        _wait(settled, 60, f"recall 1 did not settle: {metrics(db, RID)}")
         elapsed = time.monotonic() - t0
         m = metrics(db, RID)
-        assert (m["checks_completed"], m["units_documented"], m["units_recovered"]) == ([4, 4], [225, 240], [65, 240])
-        assert (m["open_units"], m["disputed_units"]) == (15, 15)
+        assert (m["tins_located"], m["held_or_returned"]) == ([225, 240], [120, 240])
+        assert (m["open_units"], m["disputed_units"], m["on_shelf"], m["not_located"]) == (40, 15, 25, 0)
         assert_balance(RID)
-        edge = db.edges.find_one({"recall_id": RID, "from_party": "queen-st-alarm", "to_party": "corner-properties"})
+        edge = db.edges.find_one({"recall_id": RID, "from_party": "queen-st-grocer", "to_party": "corner-mart"})
         assert (edge["sender_qty"], edge["recipient_qty"], edge["corroborated_qty"], edge["disputed_qty"],
                 edge["state"]) == (40, 25, 25, 15, "disputed")
+        corner = db.parties.find_one({"recall_id": RID, "party_id": "corner-mart"})
+        assert (corner["on_shelf"], corner["held"], corner["removal_check_at"] is not None) == (25, 0, True)
         assert {sid: voice.count(sid) for sid in PARTIES} == dict.fromkeys(PARTIES, 1), "one call per party"
-        harbour = list(db.claims.find({"recall_id": RID, "party_id": "harbour-fire"}).sort("created_at", 1))
+        harbour = list(db.claims.find({"recall_id": RID, "party_id": "harbour-market"}).sort("created_at", 1))
         assert [(c["status"], c.get("code")) for c in harbour] == [("rejected", "over_count"), ("accepted", None)]
         refused = api.post("/admin/close", headers=admin, json={"recall_id": RID}).json()
-        assert (refused["closed"], refused["open_units"]) == (False, 15)
+        assert (refused["closed"], refused["open_units"]) == (False, 40)
         assert refused["atlas_error"]["code"] == 121, "Atlas's close gate refused it"
         assert elapsed < FINISH_S, f"recall 1 took {elapsed:.1f} s"
 
         assert api.post("/admin/followups", headers=admin, json={"recall_id": RID}).status_code == 200
-        _wait(lambda: metrics(db, RID)["open_units"] == 0 and _quiet(db), 60,
+        _wait(lambda: metrics(db, RID)["disputed_units"] == 0 and _quiet(db), 60,
               f"after /admin/followups the dispute was never followed up: {metrics(db, RID)}")
         assert_balance(RID)
-        closed = api.post("/admin/close", headers=admin, json={"recall_id": RID}).json()
-        assert closed["closed"] is True
-        assert metrics(db, RID)["units_documented"] == [240, 240]
+        m = metrics(db, RID)
+        assert (m["tins_located"], m["open_units"], m["on_shelf"]) == ([240, 240], 25, 25)
+        still = api.post("/admin/close", headers=admin, json={"recall_id": RID}).json()
+        assert (still["closed"], still["open_units"]) == (False, 25), "tins on a shelf keep the recall open"
         assert db.runs.find_one({"_id": f"run:{RID}"}).get("planner_last_at") is not None, "the planner ranked the work"
         assert [line["text"] for line in db.feed.find({"kind": "error"})] == []
     finally:

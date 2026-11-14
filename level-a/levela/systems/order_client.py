@@ -74,7 +74,7 @@ def order_url(name: str, env=None) -> str:
 
 
 def build_order_systems(env=None, *, names=None, timeout: float = DEFAULT_TIMEOUT_S) -> dict:
-    """{name: OrderClient} for the harness context (ctx.order systems)."""
+    """{name: OrderClient} for the harness context (ctx.order_systems)."""
     env = os.environ if env is None else env
     found = {k[len("ORDER_"):-len("_URL")].lower() for k in env if k.startswith("ORDER_") and k.endswith("_URL")}
     names = sorted(names or (set(DEFAULT_PORTS) | found))

@@ -3,7 +3,8 @@
 Only the API needs a public HTTPS URL: ElevenLabs calls its tools
 (`/tools/submit_count`, `/tools/submit_answer`, `/tools/request_callback`) and
 its post-call webhook (`/hooks/post_call`) during real calls, the judge may open
-the party form on a phone, and the wall is served from it. Host it somewhere
+the party form on a phone, and the screen and the SIMULATED store page
+(`/store/<id>`) are served from it. Host it somewhere
 that does not depend on the venue's Wi-Fi.
 
 | Process | Where | Why |
@@ -11,14 +12,16 @@ that does not depend on the venue's Wi-Fi.
 | API (`python -m levela api`) | Render, Fly.io or Railway | Public URL for the webhooks; hosts the simulator's calls and the scheduler (invariants once per simulated hour, scheduled order system changes) |
 | Worker under the supervisor (`python scripts/supervisor.py`) | Team laptop | It is killed on purpose; the restarts are part of the demo |
 | Mock order systems (`scripts/start_order_systems.sh`) | Team laptop | State in memory, one process per distributor, own faults and version switch |
+| Summit Foods' node (`make summit`) | Team laptop | A second copy of the same code: its own API, two workers and its own database on the same cluster; it reaches our API over signed HTTP (`PARENT_URL`) |
+| Store script (`make store-script`) | Team laptop | The connected stores' SIMULATED tills and stock records, posting store events to the API |
 | Atlas | The sandbox cluster | System of record for everything above |
 
 `API_BASE_URL` means "how this process reaches the API": on the host it is
 `http://127.0.0.1:8000` (the API's simulator posts its replies back to the API),
 on the laptop it is the host's public URL. `PUBLIC_BASE_URL` is the public URL
 everywhere. Secrets go in the host's dashboard (or `fly secrets set`), never in
-a file in git. Use the same `TOOL_SECRET`, `ADMIN_TOKEN` and
-`ELEVEN_WEBHOOK_SECRET` on the host and in the laptop's `.env`.
+a file in git. Use the same `TOOL_SECRET`, `ADMIN_TOKEN`,
+`ELEVEN_WEBHOOK_SECRET` and `AGENT_LINK_SECRET` on the host and in the laptop's `.env`.
 
 ## Render (the default)
 
@@ -51,7 +54,7 @@ fly launch --no-deploy --copy-config --config deploy/fly.toml --name <unique-nam
 fly secrets set --config deploy/fly.toml ATLAS_URI='...' TOOL_SECRET='...' ADMIN_TOKEN='...' \
     ELEVEN_WEBHOOK_SECRET='...' ELEVEN_API_KEY='...' ELEVEN_AGENT_ID='...' ELEVEN_PHONE_ID='...' \
     TWILIO_SID='...' TWILIO_TOKEN='...' PHONE_HARBOUR='...' PHONE_CORNER='...' EMBED_API_KEY='...' \
-    ANTHROPIC_API_KEY='...' ORDER_NORTH_URL='...' ORDER_EAST_URL='...' \
+    ANTHROPIC_API_KEY='...' ORDER_NORTH_URL='...' ORDER_EAST_URL='...' AGENT_LINK_SECRET='...' \
     PUBLIC_BASE_URL='https://<unique-name>.fly.dev'
 fly deploy . --config deploy/fly.toml --dockerfile deploy/Dockerfile --ha=false
 fly scale count 1 --config deploy/fly.toml

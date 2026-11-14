@@ -154,6 +154,15 @@ class Settings:
     # hour and scheduled order system changes. Tests switch it off and call tick().
     scheduler_enabled: bool = True
 
+    # Sub-recall between nodes (spec "Sub-recall, agent to agent"). node_id
+    # names this copy; parent_url is set only on a child node (Summit Foods).
+    # The link secret is shared per pairing; LINK_SECRET_<PEER> overrides it
+    # for one peer (levela.node.links.link_secret). PORT is the API's port.
+    node_id: str = "maple-farm"
+    parent_url: str = ""
+    agent_link_secret: str = ""
+    port: int = 8000
+
     @classmethod
     def from_env(cls, env=None, **overrides) -> "Settings":
         if env is None:
@@ -205,6 +214,10 @@ class Settings:
             order_north_url=(g("ORDER_NORTH_URL") or cls.order_north_url).rstrip("/"),
             order_east_url=(g("ORDER_EAST_URL") or cls.order_east_url).rstrip("/"),
             scheduler_enabled=_bool(g("SCHEDULER_ENABLED"), True),
+            node_id=g("NODE_ID") or cls.node_id,
+            parent_url=(g("PARENT_URL") or "").rstrip("/"),
+            agent_link_secret=g("AGENT_LINK_SECRET") or "",
+            port=int(_float(g("PORT"), 8000)),
         )
         return replace(s, **overrides) if overrides else s
 

@@ -28,7 +28,7 @@ from levela.systems.order_client import OrderSystemTimeout
 from support import PRODUCT
 from test_mock_order_system import EAST, BATCH, NORTH, arm, make_order_system, switch, v2_adapter
 
-RID = "RCL-T-PORTAL"
+RID = "RCL-T-ORDERS"
 ACCOUNTS = {"north": NORTH, "east": EAST}
 
 
@@ -41,8 +41,8 @@ def scenario(order_systems=("north",)) -> dict:
     return {"scenario_id": "order_system_test", "synthetic": True, "directory": [], "sim": {}, "expected": {},
             "parties": parties,
             "recall": {"_id": RID, "batch_code": BATCH, "batch_spoken": "B, four four seven one",
-                       "product": "DEMO-7 fire alarm control panel", "supplier": "Kestrel Life Safety",
-                       "hazard": "The sounder circuit may fail to activate in an alarm", "unit": "panel", **PRODUCT,
+                       "product": "Maple Farm milk powder 800 g", "supplier": "Maple Farm Foods",
+                       "hazard": "The lid seal may fail, so the powder can spoil", "unit": "tin", **PRODUCT,
                        "units_total": sum(s["shipped_in"] for s in parties)}}
 
 
@@ -60,7 +60,7 @@ def make_ctx(settings, client, db, order_systems: dict, failpoints=None) -> Simp
 def book_ledger(db, distributor: dict, accounts: list[dict], corroborated=("N-009",)) -> dict:
     """The ledger as the distributor's forwards claim and the corroborating
     accounts' receipt claims leave it: account parties, one edge per account,
-    the distributor's panels all forwarded. Returns {account: party_id}."""
+    the distributor's tins all forwarded. Returns {account: party_id}."""
     recall = db.recalls.find_one({"_id": RID})
     now = datetime.now(timezone.utc)
     ids, _ = ops.upsert_accounts(db, recall, distributor, accounts, now=now, sim=9.0)
@@ -75,7 +75,7 @@ def book_ledger(db, distributor: dict, accounts: list[dict], corroborated=("N-00
                       "created_at": now, "updated_at": now})
         if agreed:
             db.parties.update_one({"recall_id": RID, "party_id": sid},
-                                 {"$set": {"shipped_in": qty, "in_stock": qty, "state": "reconciled"}})
+                                 {"$set": {"shipped_in": qty, "sold": qty, "sold_source": "till_report", "state": "reconciled"}})
     db.edges.insert_many(edges)
     total = sum(a["qty_shipped"] for a in accounts)
     db.parties.update_one({"_id": distributor["_id"]}, [{"$set": {
@@ -236,7 +236,7 @@ def test_a_kill_after_the_intent_sends_once_after_the_read_back_shows_nothing(no
 
 # -- accounts and inventory -----------------------------------------------------------------
 
-def test_read_accounts_makes_tier_2_installers_and_books_the_distributors_claim(north, db, assert_balance):
+def test_read_accounts_makes_tier_2_stores_and_books_the_distributors_claim(north, db, assert_balance):
     ctx, _, dist = north
     res = ops.read_accounts(ctx, dist)
     assert res["action"] == "verified" and len(res["created"]) == len(NORTH)
@@ -244,7 +244,7 @@ def test_read_accounts_makes_tier_2_installers_and_books_the_distributors_claim(
     assert op["readback_value"]["accounts"] == 5 and op["readback_value"]["shipped"] == 300
 
     bloor = db.parties.find_one({"recall_id": RID, "party_id": "bloor-alarm"})
-    assert (bloor["type"], bloor["tier"], bloor["found_via"], bloor["channel"]) == ("installer", 2, "order_system", "sim")
+    assert (bloor["type"], bloor["tier"], bloor["found_via"], bloor["channel"]) == ("store", 2, "order_system", "sim")
     assert (bloor["phone"], bloor["distributor"], bloor["account"]) == ("+14165550127", "dist-north", "N-014")
     assert bloor["discovered_by"] == "order_system" and bloor["next_action_at"] is not None and bloor["shipped_in"] == 0
 
@@ -254,7 +254,7 @@ def test_read_accounts_makes_tier_2_installers_and_books_the_distributors_claim(
     assert claim["source"] == "order_system" and claim["status"] == "accepted"
     assert claim["raw"]["forwards"] == [{"to_party_id": s, "qty": a["qty_shipped"]}
                                         for s, a in zip(res["created"], NORTH)]
-    assert "accounts read: 5 accounts for batch B-4471, 5 new parties, 300 panels forwarded" \
+    assert "accounts read: 5 accounts for batch B-4471, 5 new parties, 300 tins forwarded" \
         in feed_texts(db, "order_system_accounts")
     assert db.runs.find_one({"recall_id": RID})["planner_wake_reason"] == "parties_created"
     assert_balance(RID)
@@ -277,7 +277,7 @@ def test_read_accounts_opens_one_edge_per_account(north, db, assert_balance):
     assert_balance(RID)
 
 
-def test_read_inventory_records_order_system_in_stock_once_per_simulated_day(client, db, settings):
+def test_read_inventory_records_order_system_available_once_per_simulated_day(client, db, settings):
     # The demo clock (30 s per simulated hour): both reads fall on the same simulated day.
     _, order_system = make_order_system("north", speed=30.0)
     dist = start(client, db, speed=30.0)["north"]
@@ -289,7 +289,7 @@ def test_read_inventory_records_order_system_in_stock_once_per_simulated_day(cli
     op = ops.get(db, res["op_id"])
     assert op["idempotency_key"].startswith(f"{RID}:bloor-alarm:read_inventory:d")
     assert op["readback_value"] == {"account": "N-014", "qty_in_stock": 22, "qty_shipped": 60}
-    assert db.parties.find_one({"_id": bloor["_id"]})["order_system_in_stock"] == 22
+    assert db.parties.find_one({"_id": bloor["_id"]})["order_system_available"] == 22
     assert ops.read_inventory(ctx, bloor)["action"] == "duplicate"
 
 

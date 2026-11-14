@@ -3,13 +3,13 @@
     python -m levela api [--host 0.0.0.0 --port 8000]
     python -m levela worker [--name worker-1] [--workers 4] [--recall RCL-2026-017]
     python -m levela setup-db [--search-indexes]
-    python -m levela start recall_1 [--all-sim] [--sim-party corner-properties] [--mode demo|sim]
+    python -m levela start recall_1 [--all-sim] [--sim-party corner-mart] [--mode demo|sim]
                                     [--followups auto|manual] [--no-memory] [--recall-id ID]
     python -m levela reset                          (resets the mock order systems too)
     python -m levela close RECALL_ID
     python -m levela release RECALL_ID PARTY_ID
     python -m levela followups RECALL_ID
-    python -m levela arm after_dial_request [--party corner-properties] [--channel voice]
+    python -m levela arm after_dial_request [--party corner-mart] [--channel voice]
     python -m levela disarm
     python -m levela count-kill [--recall RCL-2026-020] [--exit-code 137]
     python -m levela status | metrics RECALL_ID | preflight

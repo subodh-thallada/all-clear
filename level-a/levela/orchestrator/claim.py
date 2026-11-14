@@ -17,6 +17,12 @@ make it safe:
 4. Recovery runs at claim time (the worker resolves what an earlier epoch
    left in doubt before anything new).
 5. Release and result are one transaction (timers.release).
+6. A paused run takes no new work (spec "Stop it mid-run", test 40). The
+   claim requires the recall's `runs.state` to be `running`: a party filter
+   cannot read the runs collection, so the state is read just before the
+   findOneAndUpdate (paused recalls are left out of the filter) and again
+   just after it; a claim that raced a pause hands its lease straight back,
+   under its fence, before anything is acted on.
 
 A real call also needs a slot. Slots in use are counted from live voice
 attempts, never kept in a counter, so a killed worker cannot leak one. The
@@ -29,8 +35,10 @@ from __future__ import annotations
 
 from pymongo import ASCENDING, DESCENDING, ReturnDocument
 
+from .. import runs
 from ..config import LIVE_ATTEMPT_STATES
 from ..db.client import run_txn
+from ..ledger.transfers import FREE_LEASE
 from .attempts import insert_intent
 from .timers import due_filter
 
@@ -58,14 +66,27 @@ def claim_next(db, *, worker_id: str, sim_now: float, recall_id: str | None = No
     due (`_id` only breaks exact ties), and a pipeline update that stamps the
     owner, a lease measured from `$$NOW` and the next epoch. Returns the
     party after the update, so `fence(party)` is this worker's token.
+
+    Only a running run's parties are claimed (rule 6): None while the
+    recall's run is paused.
     """
     flt = {**due_filter(sim_now, recall_id), "$expr": {"$lt": ["$lease_until", "$$NOW"]}}
+    paused = runs.paused_recall_ids(db, None if recall_id is None else [recall_id])
+    if recall_id is not None and paused:
+        return None
+    if paused:
+        flt["recall_id"] = {"$nin": paused}
     update = [{"$set": {
         "lease_owner": worker_id,
         "lease_until": {"$add": ["$$NOW", _ms(lease_s)]},
         "lease_epoch": {"$add": [{"$ifNull": ["$lease_epoch", 0]}, 1]},
     }}]
-    return db.parties.find_one_and_update(flt, update, sort=CLAIM_SORT, return_document=ReturnDocument.AFTER)
+    party = db.parties.find_one_and_update(flt, update, sort=CLAIM_SORT, return_document=ReturnDocument.AFTER)
+    if party is not None and not runs.is_running(db, party["recall_id"]):
+        # The pause landed between the check and the claim: give it back untouched.
+        db.parties.update_one(fence(party), {"$set": {"lease_until": FREE_LEASE, "lease_owner": None}})
+        return None
+    return party
 
 
 def fence(party: dict) -> dict:

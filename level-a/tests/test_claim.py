@@ -1,4 +1,4 @@
-"""Leases on parties: spec test 23 (claim race, database clock) and test 24
+"""Leases on parties: spec test 25 (claim race, database clock) and test 26
 (stale worker), plus the due filter, extend and release.
 
 Lease expiry is always arranged with a pipeline update relative to `$$NOW`,
@@ -43,10 +43,10 @@ def _party(db, party_id):
     return db.parties.find_one({"recall_id": RID, "party_id": party_id})
 
 
-# -- test 23: the claim race ---------------------------------------------------------
+# -- test 25: the claim race ---------------------------------------------------------
 
 def test_eight_workers_race_one_due_party_and_exactly_one_wins(db, recall):
-    _only_due(db, "lakeside-systems")
+    _only_due(db, "lakeside-foods")
     barrier = threading.Barrier(8, timeout=30)
     won, errors = {}, []
 
@@ -66,8 +66,8 @@ def test_eight_workers_race_one_due_party_and_exactly_one_wins(db, recall):
     winners = {i: s for i, s in won.items() if s is not None}
     assert len(winners) == 1, f"exactly one claim succeeds, got {sorted(winners)}"
     [(i, party)] = winners.items()
-    assert (party["party_id"], party["lease_owner"], party["lease_epoch"]) == ("lakeside-systems", f"w{i}", 1)
-    assert _party(db, "lakeside-systems")["lease_epoch"] == 1, "the epoch rose by exactly 1"
+    assert (party["party_id"], party["lease_owner"], party["lease_epoch"]) == ("lakeside-foods", f"w{i}", 1)
+    assert _party(db, "lakeside-foods")["lease_epoch"] == 1, "the epoch rose by exactly 1"
 
 
 class _Commands(monitoring.CommandListener):
@@ -96,7 +96,7 @@ def _datetimes(value):
 
 
 def test_a_lease_expires_by_the_database_clock(db, recall, test_uri):
-    _only_due(db, "lakeside-systems")
+    _only_due(db, "lakeside-foods")
     listener = _Commands()
     spy = MongoClient(test_uri, tz_aware=True, event_listeners=[listener])
     try:
@@ -109,15 +109,15 @@ def test_a_lease_expires_by_the_database_clock(db, recall, test_uri):
     assert not list(_datetimes(cmd["query"])) and not list(_datetimes(cmd["update"])), \
         "no worker clock is sent with the claim"
 
-    held = {"recall_id": RID, "party_id": "lakeside-systems",
+    held = {"recall_id": RID, "party_id": "lakeside-foods",
             "$expr": {"$and": [{"$gt": ["$lease_until", {"$add": ["$$NOW", 25_000]}]},
                                {"$lte": ["$lease_until", {"$add": ["$$NOW", 30_000]}]}]}}
     assert db.parties.count_documents(held) == 1, "lease_until = $$NOW + 30 s on the server"
     assert claim.claim_next(db, worker_id="w2", sim_now=SIM_NOW, recall_id=RID) is None
 
-    _set_lease_from_now(db, "lakeside-systems", 60_000)
+    _set_lease_from_now(db, "lakeside-foods", 60_000)
     assert claim.claim_next(db, worker_id="w2", sim_now=SIM_NOW, recall_id=RID) is None, "still in the future"
-    _set_lease_from_now(db, "lakeside-systems", -1)
+    _set_lease_from_now(db, "lakeside-foods", -1)
     second = claim.claim_next(db, worker_id="w2", sim_now=SIM_NOW, recall_id=RID)
     assert (second["lease_owner"], second["lease_epoch"]) == ("w2", first["lease_epoch"] + 1)
 
@@ -135,51 +135,51 @@ def test_the_due_query_and_its_order(db, recall):
         "no-timer": {"next_action_at": None},
         "leased": {"lease_owner": "w9", "lease_epoch": 3},
     }
-    db.parties.insert_many([{**stub_party(RID, sid, sid, None, "claim:queen-st-alarm", now,
+    db.parties.insert_many([{**stub_party(RID, sid, sid, None, "claim:queen-st-grocer", now,
                                          next_action_at=SIM_NOW - 5), **fields} for sid, fields in extra.items()])
     _set_lease_from_now(db, "leased", 60_000)
-    db.parties.update_one({"recall_id": RID, "party_id": "harbour-fire"}, {"$set": {"next_action_at": 9.5}})
+    db.parties.update_one({"recall_id": RID, "party_id": "harbour-market"}, {"$set": {"next_action_at": 9.5}})
     assert timers.due_count(db, RID, SIM_NOW) == 5, "3 direct + asked + leased"
     assert timers.next_due_at(db, RID) == SIM_NOW - 5
 
     order = []
     while (party := claim.claim_next(db, worker_id="w1", sim_now=SIM_NOW, recall_id=RID)) is not None:
         order.append(party["party_id"])
-    assert order == ["asked", "lakeside-systems", "queen-st-alarm", "harbour-fire"]
+    assert order == ["asked", "lakeside-foods", "queen-st-grocer", "harbour-market"]
     assert claim.claim_next(db, worker_id="w1", sim_now=SIM_NOW + 2, recall_id=RID)["party_id"] == "early"
 
 
 def test_extend_moves_only_the_holders_lease(db, recall):
-    _only_due(db, "lakeside-systems")
+    _only_due(db, "lakeside-foods")
     party = claim.claim_next(db, worker_id="w1", sim_now=SIM_NOW, recall_id=RID, lease_s=1)
     f = claim.fence(party)
-    assert f == {"_id": f"{RID}:lakeside-systems", "lease_owner": "w1", "lease_epoch": 1}
+    assert f == {"_id": f"{RID}:lakeside-foods", "lease_owner": "w1", "lease_epoch": 1}
     assert claim.extend(db, f["_id"], "w1", 1, lease_s=120)
     far = {"_id": f["_id"], "$expr": {"$gt": ["$lease_until", {"$add": ["$$NOW", 100_000]}]}}
     assert db.parties.count_documents(far) == 1
     assert not claim.extend(db, f["_id"], "w1", 2, lease_s=120), "wrong epoch"
     assert not claim.extend(db, f["_id"], "w2", 1, lease_s=120), "wrong owner"
     with pytest.raises(ValueError, match="party document's _id"):
-        claim.extend(db, "lakeside-systems", "w1", 1)
+        claim.extend(db, "lakeside-foods", "w1", 1)
 
 
-# -- test 24: the stale worker -------------------------------------------------------
+# -- test 26: the stale worker -------------------------------------------------------
 
 def test_a_worker_paused_past_its_lease_writes_nothing_and_the_second_result_stands(client, db, recall):
-    _only_due(db, "queen-st-alarm")
-    db.task_runs.insert_many([{"_id": run, "party_id": "queen-st-alarm", "status": "running"}
+    _only_due(db, "queen-st-grocer")
+    db.task_runs.insert_many([{"_id": run, "party_id": "queen-st-grocer", "status": "running"}
                               for run in ("tr-a", "tr-b")])
     a = claim.claim_next(db, worker_id="w1", sim_now=SIM_NOW, recall_id=RID)
     fence_a = claim.fence(a)
 
-    _set_lease_from_now(db, "queen-st-alarm", -1)          # w1 is paused past its lease
+    _set_lease_from_now(db, "queen-st-grocer", -1)          # w1 is paused past its lease
     b = claim.claim_next(db, worker_id="w2", sim_now=SIM_NOW, recall_id=RID)
     fence_b = claim.fence(b)
     assert (b["lease_owner"], b["lease_epoch"]) == ("w2", fence_a["lease_epoch"] + 1)
 
     # w1 resumes: every fenced write matches nothing.
     assert not claim.extend(db, fence_a["_id"], "w1", fence_a["lease_epoch"])
-    attempt = build_attempt(db, recall_id=RID, party_id="queen-st-alarm", channel="voice")
+    attempt = build_attempt(db, recall_id=RID, party_id="queen-st-grocer", channel="voice")
     with pytest.raises(claim.LeaseLost):
         claim.take_slot_and_intent(db, attempt, fence=fence_a)
     assert not timers.release(client, db, a, fence_a, next_action_at=99.0, ladder_step=3,
@@ -187,7 +187,7 @@ def test_a_worker_paused_past_its_lease_writes_nothing_and_the_second_result_sta
                               run_update={"_id": "tr-a", "status": "done"})
     assert db.attempts.count_documents({}) == 0
     assert db.task_runs.find_one({"_id": "tr-a"})["status"] == "running"
-    held = _party(db, "queen-st-alarm")
+    held = _party(db, "queen-st-grocer")
     assert (held["lease_owner"], held["next_action_at"], held["ladder_step"]) == ("w2", 9.0, 1)
 
     # w2's result stands, and w1 still cannot overwrite it.
@@ -195,7 +195,7 @@ def test_a_worker_paused_past_its_lease_writes_nothing_and_the_second_result_sta
                           extra={"memory_hour": 14},
                           run_update={"_id": "tr-b", "$set": {"status": "done"}, "$inc": {"used.tool_calls": 1}})
     assert not timers.release(client, db, a, fence_a, next_action_at=99.0, ladder_step=3, last_outcome="no_answer")
-    after = _party(db, "queen-st-alarm")
+    after = _party(db, "queen-st-grocer")
     assert (after["next_action_at"], after["ladder_step"], after["memory_hour"]) == (13.0, 2, 14)
     assert after["last_outcome"]["outcome"] == "no_answer" and after["last_outcome"]["at"] >= 9.0
     assert (after["lease_owner"], after["lease_until"]) == (None, FREE_LEASE)
@@ -204,7 +204,7 @@ def test_a_worker_paused_past_its_lease_writes_nothing_and_the_second_result_sta
 
 
 def test_a_released_party_is_claimed_again_only_when_its_timer_is_due(client, db, recall):
-    _only_due(db, "harbour-fire")
+    _only_due(db, "harbour-market")
     party = claim.claim_next(db, worker_id="w1", sim_now=SIM_NOW, recall_id=RID)
     f = claim.fence(party)
     assert timers.release(client, db, party, f, next_action_at=SIM_NOW + 4, ladder_step=2,
@@ -213,7 +213,7 @@ def test_a_released_party_is_claimed_again_only_when_its_timer_is_due(client, db
     assert not timers.release(client, db, party, f, next_action_at=None, ladder_step=1, last_outcome=None)
     assert claim.claim_next(db, worker_id="w2", sim_now=SIM_NOW + 3.9, recall_id=RID) is None
     again = claim.claim_next(db, worker_id="w2", sim_now=SIM_NOW + 4, recall_id=RID)
-    assert (again["party_id"], again["lease_epoch"], again["ladder_step"]) == ("harbour-fire", 2, 2)
+    assert (again["party_id"], again["lease_epoch"], again["ladder_step"]) == ("harbour-market", 2, 2)
     for bad, why in (({"status": "done"}, "_id"), ({"_id": "tr-x", "$set": {}, "status": "done"}, "mixes")):
         with pytest.raises(ValueError, match=why):
             timers.release(client, db, again, claim.fence(again), next_action_at=None, ladder_step=2,

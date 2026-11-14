@@ -1,14 +1,16 @@
 """Spec test 16: the long run.
 
-scenarios/recall_long.json, every party simulated, at 0.05 s per simulated
-hour, with the API (hosting the simulator and the invariant scheduler) and a
-pool of eight worker threads in this process and the two mock order systems as
+scenarios/recall_long.json (batch B-4471, 2,400 tins), every party
+simulated, at 0.05 s per simulated hour, with the API (hosting the simulator,
+which also plays Summit Foods' node, and the invariant scheduler) and a pool
+of eight worker threads in this process and the two mock order systems as
 processes. The workers run until ten simulated days have passed and nothing
-is due before day 10 or in flight. Pass: 40 parties (5 at the start),
-only the slice's 15 disputed panels open, the mass balance equal to the
-recall's units at every sample (a snapshot read about every 5 simulated
-hours) and at every hourly invariant check, and the whole run inside three
-minutes on CI's local MongoDB.
+is due before day 10 or in flight. Pass: 40 parties (5 at the start), only
+the slice's tins open (15 disputed between Queen St Grocer and Corner Mart,
+25 still on the shelf at Corner Mart), Summit Foods closed with nothing
+unresolved, the mass balance equal to the recall's units at every sample (a
+snapshot read about every 5 simulated hours) and at every hourly invariant
+check, and the whole run inside three minutes on CI's local MongoDB.
 
 The helpers here are shared with tests 22 and 31 (test_random_kills.py loads
 this file by path).
@@ -196,15 +198,24 @@ def last_check(db, recall_id) -> dict | None:
 
 
 def assert_ends_like_test_16(db, recall_id, samples, check: dict | None = None) -> None:
-    """The scenario's expected end (40 parties, 5 at the start, 15 open:
-    the slice's dispute), the balance at every sample and every check."""
+    """The scenario's expected end (40 parties, 5 at the start, 40 tins open:
+    the slice's 15 disputed and 25 on Corner Mart's shelf), the balance at
+    every sample and every check."""
     final = load_scenario("recall_long")["expected"]["final"]
     total = db.recalls.find_one({"_id": recall_id})["units_total"]
     n = db.parties.count_documents({"recall_id": recall_id})
     assert n == final["parties"], f"{n} parties, not {final['parties']}: {open_detail(db, recall_id)}"
     assert db.parties.count_documents({"recall_id": recall_id, "found_via": "shipment"}) == final["at_start"]
     m = metrics(db, recall_id)
-    assert (m["open_units"], m["disputed_units"]) == (final["open_units"], final["open_units"]),         f"only the slice's disputed panels stay open: {m}; still open: {open_detail(db, recall_id)}"
+    assert (m["open_units"], m["disputed_units"], m["on_shelf"], m["not_located"]) == (
+        final["open_units"], final["disputed_units"], final["on_shelf"], final["not_located"]), \
+        f"only the slice's tins stay open (15 disputed, 25 on the shelf at Corner Mart): {m}; " \
+        f"still open: {open_detail(db, recall_id)}"
+    corner = db.parties.find_one({"recall_id": recall_id, "party_id": "corner-mart"})
+    assert corner["on_shelf"] == final["on_shelf"]
+    summit = db.parties.find_one({"recall_id": recall_id, "party_id": "summit-foods"})
+    assert summit["unresolved"] == 0 and summit["on_shelf"] == 0, "Summit's reports moved its 120 tins out of unresolved"
+    assert (summit.get("sub") or {}).get("state") == "closed", "Summit reported closed on day 9"
     broken = [(round(h, 1), v) for h, v in samples if v != total]
     assert samples and not broken, f"mass balance broke at {broken[:5]}"
     run = db.runs.find_one({"_id": f"run:{recall_id}"})
@@ -235,7 +246,7 @@ def open_detail(db, recall_id) -> dict:
 
 def start_long_run(client, db, seconds_per_sim_hour: float) -> str:
     """recall_long, all simulated; the slice's follow-ups stay manual, so its
-    dispute of 15 is the one thing left open.
+    dispute of 15 and Corner Mart's 25 on the shelf are all that is left open.
 
     The scheduled order system switch is held (null = by hand, V2 §3). Until the API
     was pointed at this test's order systems (api_server) for invariant 2, its

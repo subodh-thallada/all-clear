@@ -4,13 +4,13 @@ names one disagreement on a transfer.
 The worker sends the variables with every call (ElevenLabs'
 conversation_initiation_client_data.dynamic_variables), always as strings,
 so the prompt never sees a missing or typed value. Never shipped_in and
-never the affected or fixed software versions: the agent learns of a
-mismatch only from the database's reply to submit_count.
+never the affected batches: the agent learns of a mismatch only from the
+database's reply to submit_count.
 """
 from __future__ import annotations
 
 # Who the agent says it calls for, when the recall names no supplier.
-DEFAULT_COMPANY = "Kestrel Life Safety"
+DEFAULT_COMPANY = "Maple Farm Foods"
 
 
 def dispute_key(edge: dict) -> str:
@@ -23,22 +23,26 @@ def dynamic_variables(recall: dict, party: dict, purpose: str, *, sender_name: s
                       followup_note: str = "", ask_delivery_note: bool = False, receipt: bool | None = None) -> dict:
     """The agent's dynamic variables (attempt_id and the question variables
     aside). `receipt` says whether to ask what the party received (default:
-    a party below tier 1, which received its panels from another party). A
-    building owner is asked the three checks."""
+    a party below tier 1, which received its tins from another party; never
+    the plant). A store is asked the three checks (batch code read from a
+    tin, sold count from the till, the till test)."""
     if receipt is None:
-        receipt = party.get("tier") != 1
+        receipt = party.get("tier") not in (0, 1)
     values = {
         "party_id": party["party_id"],
         "party_name": party["name"],
         "party_type": party.get("type"),
         "batch_code": recall["batch_code"],
         "batch_spoken": recall.get("batch_spoken") or recall["batch_code"],
-        "model": recall.get("model"),
         "product": recall.get("product"),
+        "barcode": recall.get("barcode"),
+        "defect": recall.get("defect"),
+        "action": recall.get("action"),
         "hazard": recall.get("hazard"),
-        "unit": recall.get("unit") or "panel",
+        "evidence": recall.get("evidence") if isinstance(recall.get("evidence"), str) else "",
+        "unit": recall.get("unit") or "tin",
         "receipt": "yes" if receipt else "no",
-        "ask_checks": "yes" if party.get("type") == "owner" else "no",
+        "ask_checks": "yes" if party.get("type") == "store" else "no",
         "purpose": purpose,
         "company": recall.get("supplier") or DEFAULT_COMPANY,
         "sender_name": sender_name,

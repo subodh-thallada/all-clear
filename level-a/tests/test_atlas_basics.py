@@ -1,15 +1,20 @@
 """Spec test 1 (Atlas basics) on the test cluster.
 
 A two-collection transaction commits and aborts; a validator rejects an
-insert and an update; a change stream receives an insert; the vector index
-becomes queryable (Atlas only: a plain mongod has no search process).
+insert and an update; a change stream receives an insert; `$$NOW` works
+inside `$expr` in a findOneAndUpdate filter (the lease claim relies on it);
+whether Atlas Search is available is noted; the vector index becomes
+queryable (Atlas only: a plain mongod has no search process).
 """
 from __future__ import annotations
 
 import time
 
 import pytest
-from pymongo.errors import WriteError
+from datetime import datetime, timedelta, timezone
+
+from pymongo import ReturnDocument
+from pymongo.errors import OperationFailure, WriteError
 
 from levela.db.client import run_txn
 from levela.ledger.reconciler import VALIDATION_FAILED
@@ -65,6 +70,33 @@ def test_change_stream_receives_an_insert(db):
             change = stream.try_next()
     assert change is not None and change["documentKey"] == {"_id": "f1"}
     assert change["fullDocument"]["text"] == "hello" and stream.resume_token
+
+
+def test_now_works_inside_expr_in_a_find_one_and_update_filter(db):
+    """Spec test 1: a lease that expired by the server's clock is taken, one
+    that has not is left alone."""
+    past = datetime.now(timezone.utc) - timedelta(minutes=5)
+    future = datetime.now(timezone.utc) + timedelta(minutes=5)
+    db.worker_state.insert_many([{"_id": "free", "lease_until": past}, {"_id": "held", "lease_until": future}])
+    taken = [db.worker_state.find_one_and_update(
+        {"_id": sid, "$expr": {"$lt": ["$lease_until", "$$NOW"]}},
+        [{"$set": {"lease_owner": "w1", "lease_until": {"$add": ["$$NOW", 8000]}}}],
+        return_document=ReturnDocument.AFTER) for sid in ("free", "held")]
+    assert taken[0]["lease_owner"] == "w1" and taken[0]["lease_until"] > past
+    assert taken[1] is None and db.worker_state.find_one({"_id": "held"}).get("lease_owner") is None
+
+
+def test_atlas_search_availability_is_noted(db, on_atlas, record_property):
+    """Spec test 1: note whether $search runs here. Names fall back to a
+    normalised exact match where it does not (levela.ledger.names)."""
+    try:
+        list(db.feed.aggregate([{"$search": {"index": "default", "text": {"query": "x", "path": "text"}}},
+                                {"$limit": 1}]))
+        available = True
+    except OperationFailure:
+        available = False
+    record_property("atlas_search_available", available)
+    print(f"Atlas Search available: {available} (on Atlas: {on_atlas})")
 
 
 @pytest.mark.atlas

@@ -23,13 +23,12 @@ WORKDIR /app
 COPY requirements.txt ./
 RUN pip install -r requirements.txt
 
-# What the API imports and serves: the package (with the wall), the seed kit
-# it builds on, the scenarios /admin/recalls starts, and the synthetic history
-# `python -m levela load-history` loads.
+# What the API imports and serves: the package (API, store page, simulator,
+# planner), the scenarios /admin/recalls starts, and the agent prompts the
+# planner and the order system repairer read. No seed kit: it is not used.
 COPY levela ./levela
-COPY seedkit ./seedkit
 COPY scenarios ./scenarios
-COPY data ./data
+COPY agent ./agent
 
 # Root owns the code; the server runs as an unprivileged user that can only read it.
 RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin levela

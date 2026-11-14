@@ -12,7 +12,7 @@ Source: https://elevenlabs.io/docs/eleven-agents/api-reference/integrations/twil
 
 ```json
 {"agent_id":"<agent>","agent_phone_number_id":"<phone_number_id>","to_number":"+14165550123",
- "conversation_initiation_client_data":{"dynamic_variables":{"attempt_id":"att_..","party_id":"harbour-fire"}},
+ "conversation_initiation_client_data":{"dynamic_variables":{"attempt_id":"att_..","party_id":"harbour-market"}},
  "telephony_call_config":{"ringing_timeout_secs":20}}
 → {"success":true,"message":"...","conversation_id":"conv_...","callSid":"CA..."}
 ```
@@ -34,7 +34,7 @@ Sources: https://elevenlabs.io/docs/eleven-agents/customization/tools/server-too
   "request_body_schema":{"type":"object","required":["attempt_id","party_id"],"properties":{
     "attempt_id":{"type":"string","dynamic_variable":"attempt_id"},
     "system__conversation_id":{"type":"string","dynamic_variable":"system__conversation_id"},
-    "on_hand":{"type":"integer","description":"Panels still on the shelf or in the back room"}}}}}}
+    "on_shelf":{"type":"integer","description":"Tins still on the shelf, for sale"}}}}}}
 ```
 UNCONFIRMED: the response contract — return HTTP 200 with a small JSON object; it is passed to the LLM.
 

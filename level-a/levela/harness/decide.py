@@ -25,7 +25,7 @@ from .models import AnthropicClient, ModelError, tool_definition
 log = logging.getLogger("levela.harness.decide")
 
 PLANNER_PRIORITY_CALLS = 5     # priorities per planner run; the last tool call is the report
-DECIDER_SYSTEM = ("You are the decider inside a panel recall harness. The user turn is a brief about one piece "
+DECIDER_SYSTEM = ("You are the decider inside a food recall harness. The user turn is a brief about one piece "
                   "of work. Follow its RULES and ASK. Call exactly one of the tools you are given, or answer "
                   "with one short sentence and no tool call when nothing is owed now.")
 PLANNER_PROMPT_FILE = AGENT_DIR / "planner_prompt.md"
@@ -102,7 +102,7 @@ def status_report(facts: dict) -> str:
     worst = ", ".join(t["name"] for t in (facts.get("top") or [])[:3]) or "none"
     fails = ", ".join(f"{k} {v}" for k, v in (facts.get("failures") or {}).items()) or "none"
     return (f"{facts.get('sim_label')}: {open_parties} parties still open; the ten largest hold {unresolved} "
-            f"unexplained panels (largest: {worst}). Failures in the last simulated day: {fails}.")
+            f"unexplained tins (largest: {worst}). Failures in the last simulated day: {fails}.")
 
 
 class ClaudeDecider:

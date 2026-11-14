@@ -73,7 +73,7 @@ def test_20_east_repairs_from_norths_episode_with_no_model_call(client, db, sett
                          "(canary 110 = 110). Retrying 1 operation"]
     (retried,) = second["retried"]
     assert (retried["action"], retried["adapter_version"]) == ("verified", 2)
-    assert db.parties.find_one({"_id": danforth["_id"]})["order_system_in_stock"] == 31
+    assert db.parties.find_one({"_id": danforth["_id"]})["order_system_available"] == 31
     assert db.episodes.count_documents({"kind": "adapter"}) == 1, "a reused repair is not saved twice"
     assert db.episodes.find_one({"_id": episode["_id"]})["reused"] == 1
     assert len(feed_texts(db, "order_system_contract_failed")) == 2

@@ -1,7 +1,9 @@
-# Level A: every push and pull request runs the seed kit's dry run, the fast
-# tests and the slow ones (the long run, random kills, eight workers) against a
+# All Clear (codename Level A): every push and pull request runs the fast tests
+# and the slow ones (the long run, random kills, eight workers) against a
 # MongoDB 8.0 replica set, the same server version as an Atlas free cluster.
-# Tests marked `atlas` (Vector Search) skip on a plain mongod.
+# Tests marked `atlas` (Vector Search) skip on a plain mongod. The seed kit
+# written on Nov 13 is not used and not in the repository (spec "First checks
+# on the sandbox"), so there is no dry run of it.
 name: ci
 
 on:
@@ -49,8 +51,8 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
 
-      - name: Seed kit dry run
-        run: python -m seedkit --uri "$LEVELA_TEST_URI" dryrun
+      - name: Shell scripts parse
+        run: for f in scripts/*.sh; do bash -n "$f"; done
 
       - name: Fast tests
         run: python -m pytest -q -m "not slow"
@@ -64,10 +66,3 @@ jobs:
           # 5 = nothing collected: no test is marked slow yet.
           if [ "$code" -eq 5 ]; then echo "No slow tests collected."; exit 0; fi
           exit "$code"
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Wall script parses
-        run: node --check levela/wall/wall.js

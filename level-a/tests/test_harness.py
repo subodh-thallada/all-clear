@@ -40,6 +40,7 @@ from levela.harness import brief as brief_
 from levela.harness.models import AnthropicClient
 from levela.harness.decide import ClaudeDecider, Decision, RuleDecider
 from levela.ledger.transfers import FREE_LEASE
+from levela.memory.govern import governed
 from levela.providers.base import PlacedCall
 
 RID = "RCL-2026-017"
@@ -145,7 +146,7 @@ class InstantVoice:
 
     def place_call(self, *, to_number, dynamic_variables, attempt_id):
         sid = dynamic_variables["party_id"]
-        plan = self.script.get(sid) or [{"in_stock": 0, "returned": 0}]
+        plan = self.script.get(sid) or [{"sold": 0, "returned": 0}]
         behaviour = plan[min(self.count(sid), len(plan) - 1)]
         conv, call_sid = f"conv_inst_{secrets.token_hex(6)}", f"CAinst{secrets.token_hex(8)}"
         self.calls.append({"party_id": sid, "attempt_id": attempt_id, "variables": dict(dynamic_variables)})
@@ -222,8 +223,8 @@ def run_doc(db, run_id):
 # ---------------------------------------------------------------- contacts
 
 def test_a_contact_run_books_the_claim_from_the_facts_and_ends_the_ladder(db, world):
-    world.voice.script["lakeside-systems"] = [{"in_stock": 0, "returned": 80}]
-    party, fence = lease(db, "lakeside-systems")
+    world.voice.script["lakeside-foods"] = [{"sold": 0, "returned": 80}]
+    party, fence = lease(db, "lakeside-foods")
     out = execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())
 
     assert out["status"] == "done" and out["result"]["outcome"] == "claim_accepted"
@@ -241,8 +242,8 @@ def test_a_contact_run_books_the_claim_from_the_facts_and_ends_the_ladder(db, wo
 
 
 def test_no_answer_moves_the_ladder_and_the_next_brief_remembers_it(db, world):
-    world.voice.script["queen-st-alarm"] = ["no_answer"]
-    party, fence = lease(db, "queen-st-alarm")
+    world.voice.script["queen-st-grocer"] = ["no_answer"]
+    party, fence = lease(db, "queen-st-grocer")
     out = execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())
 
     assert out["result"]["outcome"] == "no_answer" and out["failure_class"] == "no_answer"
@@ -252,7 +253,7 @@ def test_no_answer_moves_the_ladder_and_the_next_brief_remembers_it(db, world):
     assert after["next_action_at"] == pytest.approx(run_doc(db, out["run_id"])["ended_sim"] + 4.0, abs=1e-3)
     episode = db.episodes.find_one({"_id": f"ep_{out['run_id']}"})
     assert episode["kind"] == "failure" and episode["failure_class"] == "no_answer"
-    assert any("Queen St Alarm: no answer, attempt 1. Next action" in t for t in feed_texts(db, "run_ended"))
+    assert any("Queen St Grocer: no answer, attempt 1. Next action" in t for t in feed_texts(db, "run_ended"))
     facts = brief_.gather(world.ctx, after, world.ctx.sim_now())
     assert facts["memory"][0]["source"] == "failure"
     assert "[failure] no_answer" in brief_.render(facts, tools=["place_call"]).text
@@ -267,15 +268,15 @@ def test_ladder_step_3_sends_the_form_link_through_the_simulator(db, settings, c
         return httpx.Response(200, json={"delivered": True})
 
     ctx = make_ctx(settings, client, db, InstantVoice(client, db), http=httpx.Client(transport=httpx.MockTransport(order_system)))
-    set_party(db, "harbour-fire", ladder_step=3)
-    party, fence = lease(db, "harbour-fire")
+    set_party(db, "harbour-market", ladder_step=3)
+    party, fence = lease(db, "harbour-market")
     out = execute(ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())
 
     assert out["result"]["outcome"] == "form_sent"
     op = db.operations.find_one({"run_id": out["run_id"]})
     assert op["kind"] == "send_form_link" and op["state"] == "sent"
-    assert op["idempotency_key"] == f"{RID}:harbour-fire:form:3"
-    assert seen == [("/sim/form_link", {"recall_id": RID, "party_id": "harbour-fire", "token": party["form_token"],
+    assert op["idempotency_key"] == f"{RID}:harbour-market:form:3"
+    assert seen == [("/sim/form_link", {"recall_id": RID, "party_id": "harbour-market", "token": party["form_token"],
                                         "op_id": op["_id"], "form_url": op["request"]["form_url"],
                                         "ladder_step": 3}, settings.tool_secret)]
     after = db.parties.find_one({"_id": party["_id"]})
@@ -283,27 +284,27 @@ def test_ladder_step_3_sends_the_form_link_through_the_simulator(db, settings, c
 
 
 def test_ladder_step_5_hands_a_party_to_a_person_and_an_account_to_its_rep(db, world):
-    set_party(db, "harbour-fire", ladder_step=5)
-    party, fence = lease(db, "harbour-fire")
+    set_party(db, "harbour-market", ladder_step=5)
+    party, fence = lease(db, "harbour-market")
     out = execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())
     assert out["result"]["outcome"] == "escalated" and out["next_action_at"] is None
     after = db.parties.find_one({"_id": party["_id"]})
     assert after["escalation"] == "human" and after["escalated_run"] == out["run_id"]
-    assert any("Harbour Fire needs a person" in t for t in feed_texts(db, "needs_human"))
+    assert any("Harbour Market needs a person" in t for t in feed_texts(db, "needs_human"))
 
-    set_party(db, "lakeside-systems", ladder_step=5, distributor="queen-st-alarm", account="N-014")
-    party, fence = lease(db, "lakeside-systems")
+    set_party(db, "lakeside-foods", ladder_step=5, distributor="queen-st-grocer", account="N-014")
+    party, fence = lease(db, "lakeside-foods")
     out = execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())
     op = db.operations.find_one({"run_id": out["run_id"]})
     assert out["result"]["outcome"] == "escalated" and op["kind"] == "escalate_rep" and op["state"] == "sent"
-    assert op["idempotency_key"] == f"{RID}:lakeside-systems:escalate_rep"
+    assert op["idempotency_key"] == f"{RID}:lakeside-foods:escalate_rep"
     assert db.parties.find_one({"_id": party["_id"]})["escalation"] == "rep"
     assert world.voice.count() == 0
 
 
 def test_a_callback_request_becomes_the_timer_and_keeps_the_step(db, world):
-    world.voice.script["queen-st-alarm"] = [("callback", 33.0)]
-    party, fence = lease(db, "queen-st-alarm")
+    world.voice.script["queen-st-grocer"] = [("callback", 33.0)]
+    party, fence = lease(db, "queen-st-grocer")
     out = execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())
     assert out["result"]["outcome"] == "callback_requested"
     after = db.parties.find_one({"_id": party["_id"]})
@@ -314,18 +315,18 @@ def test_a_place_call_failpoint_kills_the_run_after_the_dial_and_leaves_the_atte
     from levela.orchestrator.failpoints import Failpoints, WorkerCrash, arm, raise_crash
 
     start(client, db)
-    voice = InstantVoice(client, db, {"queen-st-alarm": ["hang"]})
+    voice = InstantVoice(client, db, {"queen-st-grocer": ["hang"]})
     ctx = make_ctx(settings, client, db, voice, failpoints=Failpoints(db, crash=raise_crash, env={}))
-    arm(db, "after_dial_request", party_id="queen-st-alarm")
-    party, fence = lease(db, "queen-st-alarm")
+    arm(db, "after_dial_request", party_id="queen-st-grocer")
+    party, fence = lease(db, "queen-st-grocer")
     with pytest.raises(WorkerCrash):
         execute(ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())
-    attempt = db.attempts.find_one({"party_id": "queen-st-alarm"})
+    attempt = db.attempts.find_one({"party_id": "queen-st-grocer"})
     assert voice.count() == 1 and attempt["state"] == "intent" and attempt["dial_confirmed"] is False
 
 
 L4480 = "Did you also receive batch B-4480?"
-ASKED_L4480 = f"q-01: {L4480} (answer: yes or no, and how many panels)."
+ASKED_L4480 = f"q-01: {L4480} (answer: yes or no, and how many tins)."
 
 
 def insert_question(db, text=L4480, answer_type="yes_no_count", sim_now=9.0):
@@ -343,17 +344,17 @@ def test_a_reconciled_party_is_asked_only_its_open_question(db, world):
     no timer. The question is stored the way the API parties it."""
     q = insert_question(db)
     assert (q["_id"], q["question_id"]) == (f"{RID}:q-01", "q-01")
-    set_party(db, "lakeside-systems", open_questions=["q-01"])
-    world.voice.script["lakeside-systems"] = [{"in_stock": 0, "returned": 80},
+    set_party(db, "lakeside-foods", open_questions=["q-01"])
+    world.voice.script["lakeside-foods"] = [{"sold": 0, "returned": 80},
                                             ("answer", "no")]
-    party, fence = lease(db, "lakeside-systems")
+    party, fence = lease(db, "lakeside-foods")
     first = execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())
     assert first["result"]["outcome"] == "claim_accepted"
     assert first["next_action_at"] is not None and first["next_action_at"] <= world.ctx.sim_now()
     counted = world.voice.calls[-1]["variables"]
     assert (counted["purpose"], counted["ask_counts"], counted["questions"]) == ("initial", "yes", ASKED_L4480)
 
-    party, fence = lease(db, "lakeside-systems")
+    party, fence = lease(db, "lakeside-foods")
     assert brief_.open_questions(db, party) == [{"id": "q-01", "text": L4480, "answer_type": "yes_no_count"}]
     second = execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())
     assert second["kind"] == "ask_question" and second["result"]["outcome"] == "answer_recorded"
@@ -364,7 +365,7 @@ def test_a_reconciled_party_is_asked_only_its_open_question(db, world):
     assert attempt["purpose"] == "ask_question" and attempt["context"]["questions"] == ASKED_L4480
     after = db.parties.find_one({"_id": party["_id"]})
     assert after["answers"]["q-01"]["value"] == "no" and after["open_questions"] == []
-    assert after["next_action_at"] is None and db.claims.count_documents({"party_id": "lakeside-systems"}) == 1
+    assert after["next_action_at"] is None and db.claims.count_documents({"party_id": "lakeside-foods"}) == 1
 
 
 def test_a_call_asks_at_most_three_questions_and_the_brief_lists_the_same(db, world):
@@ -372,12 +373,12 @@ def test_a_call_asks_at_most_three_questions_and_the_brief_lists_the_same(db, wo
     call stays short); an id with no question document is never asked."""
     for i in range(4):
         insert_question(db, text=f"Did you also receive batch L-448{i}?", answer_type="yes_no")
-    set_party(db, "lakeside-systems", open_questions=["q-01", "q-09", "q-02", "q-03", "q-04"])
-    party = db.parties.find_one({"_id": f"{RID}:lakeside-systems"})
+    set_party(db, "lakeside-foods", open_questions=["q-01", "q-09", "q-02", "q-03", "q-04"])
+    party = db.parties.find_one({"_id": f"{RID}:lakeside-foods"})
     listed = brief_.open_questions(db, party)
     assert [q["id"] for q in listed] == ["q-01", "q-02", "q-03"], "q-09 has no document; q-04 waits"
-    world.voice.script["lakeside-systems"] = [{"in_stock": 0, "returned": 80}]
-    party, fence = lease(db, "lakeside-systems")
+    world.voice.script["lakeside-foods"] = [{"sold": 0, "returned": 80}]
+    party, fence = lease(db, "lakeside-foods")
     execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())
     variables = world.voice.calls[-1]["variables"]
     assert variables["question_ids"] == "q-01,q-02,q-03"
@@ -399,18 +400,18 @@ def test_the_planner_adds_a_question_the_way_the_api_does(db, world):
                                 "lease_until": datetime(2999, 1, 1, tzinfo=timezone.utc)})
     run = budget.open_run(db, worker="worker-test/planner", recall_id=RID, party_id=None,
                           lease={"coll": "worker_state", "_id": "planner"}, lease_epoch=1, kind="planner", sim_now=9.0,
-                          planner="rules")
+                          decider="rules")
     added = gate.call(world.ctx, run, "add_question", {"text": f"  {L4480} ", "answer_type": "yes_no_count",
-                                                       "applies_to": {"level": [1]}})
+                                                       "applies_to": {"tier": [1]}})
     assert added.allowed and not added.duplicate, added.reason
     [doc] = db.questions.find({"recall_id": RID})
     assert (doc["_id"], doc["question_id"], doc["text"], doc["applies_to"]) == (
-        f"{RID}:q-01", "q-01", L4480, {"level": [1]})
+        f"{RID}:q-01", "q-01", L4480, {"tier": [1]})
     assert get_question(db, RID, "q-01")["_id"] == doc["_id"]
     given = {s["party_id"]: s.get("open_questions") for s in db.parties.find({"recall_id": RID})}
-    assert given == {"harbour-fire": ["q-01"], "queen-st-alarm": ["q-01"], "lakeside-systems": ["q-01"],
+    assert given == {"harbour-market": ["q-01"], "queen-st-grocer": ["q-01"], "lakeside-foods": ["q-01"],
                      "dist-north": []}
-    lakeside = db.parties.find_one({"_id": f"{RID}:lakeside-systems"})
+    lakeside = db.parties.find_one({"_id": f"{RID}:lakeside-foods"})
     assert brief_.open_questions(db, lakeside) == [{"id": "q-01", "text": L4480, "answer_type": "yes_no_count"}]
     assert feed_texts(db, "question_added") == [f"Planner added question q-01: {L4480} (3 parties now due)"]
 
@@ -421,8 +422,8 @@ def test_the_planner_adds_a_question_the_way_the_api_does(db, world):
 
 
 def test_a_claimed_party_waiting_on_its_counterpart_is_released_without_a_run(db, world):
-    set_party(db, "lakeside-systems", state="claimed", ladder_step=2)
-    party, fence = lease(db, "lakeside-systems")
+    set_party(db, "lakeside-foods", state="claimed", ladder_step=2)
+    party, fence = lease(db, "lakeside-foods")
     out = execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())
     assert out["status"] == "deferred" and out["run_id"] is None and out["next_action_at"] is None
     after = db.parties.find_one({"_id": party["_id"]})
@@ -432,29 +433,29 @@ def test_a_claimed_party_waiting_on_its_counterpart_is_released_without_a_run(db
 
 @pytest.mark.slow
 def test_a_disputed_transfer_gets_one_followup_per_side(db, world):
-    """Queen St says 40 went to Corner Properties, Corner Properties says 25 arrived: each
+    """Queen St says 40 went to Corner Mart, Corner Mart says 25 arrived: each
     side is told the other's number once, and the dispute stays open."""
     world.voice.script.update({
-        "queen-st-alarm": [{"in_stock": 80, "returned": 0, "forwarded_qty": 40,
-                             "forwarded_to_name": "Corner Properties"}],
-        "corner-properties": [{"received_qty": 25, "in_stock": 25, "returned": 0}]})
-    for sid in ("queen-st-alarm", "corner-properties"):
+        "queen-st-grocer": [{"sold": 50, "sold_source": "till_report", "held": 30, "batch_seen": "B-4471", "block_test": True, "forwarded_qty": 40,
+                             "forwarded_to_name": "Corner Mart"}],
+        "corner-mart": [{"received_qty": 25, "held": 25, "batch_seen": "B-4471", "block_test": True}]})
+    for sid in ("queen-st-grocer", "corner-mart"):
         party, fence = lease(db, sid)
         assert execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())["result"]["outcome"] == \
             "claim_accepted"
     edge = db.edges.find_one({"recall_id": RID})
     assert edge["state"] == "disputed" and edge["disputed_qty"] == 15
-    # Corner Properties' own claim opened the dispute: it is due again for its follow-up.
-    corner = db.parties.find_one({"_id": f"{RID}:corner-properties"})
+    # Corner Mart's own claim opened the dispute: it is due again for its follow-up.
+    corner = db.parties.find_one({"_id": f"{RID}:corner-mart"})
     assert corner["next_action_at"] is not None and corner["next_action_at"] <= world.ctx.sim_now()
     outs = []
-    for sid in ("queen-st-alarm", "corner-properties"):
+    for sid in ("queen-st-grocer", "corner-mart"):
         party, fence = lease(db, sid)
         outs.append(execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider()))
     assert [o["kind"] for o in outs] == ["followup", "followup"]
     followups = list(db.attempts.find({"purpose": "dispute_followup"}).sort("party_id", 1))
-    assert [(a["party_id"], a["told"]) for a in followups] == [("corner-properties", 40), ("queen-st-alarm", 25)]
-    party, fence = lease(db, "queen-st-alarm")
+    assert [(a["party_id"], a["told"]) for a in followups] == [("corner-mart", 40), ("queen-st-grocer", 25)]
+    party, fence = lease(db, "queen-st-grocer")
     again = execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())
     assert again["status"] == "deferred" and db.attempts.count_documents({"purpose": "dispute_followup"}) == 2
 
@@ -475,7 +476,7 @@ def fake_operations(monkeypatch):
         sent.append((op["kind"], op["idempotency_key"]))
         ctx.db.operations.update_one({"_id": op["_id"]}, {"$set": {"state": "sent", "sent_at": 9.0}})
         if op["kind"] == "read_accounts":
-            ctx.db.parties.update_one({"_id": f"{RID}:lakeside-systems"},
+            ctx.db.parties.update_one({"_id": f"{RID}:lakeside-foods"},
                                      {"$set": {"distributor": op["party_id"], "account": "N-001"}})
         mark_verified(ctx.db, op["_id"], readback_value={"ok": op["kind"]}, readback_at=9.1)
 
@@ -491,7 +492,7 @@ def fake_operations(monkeypatch):
 
 
 def make_distributor(db, sid="dist-north", order_system="north", rid=RID):
-    db.parties.insert_one({**db.parties.find_one({"_id": f"{rid}:harbour-fire"}, {"_id": 0}),
+    db.parties.insert_one({**db.parties.find_one({"_id": f"{rid}:harbour-market"}, {"_id": 0}),
                           "_id": f"{rid}:{sid}", "party_id": sid, "name": "Distributor North", "channel": "order_system",
                           "phone": None, "order_system": order_system, "level": 1, "lease_epoch": 0, "lease_owner": None})
 
@@ -520,22 +521,22 @@ def test_order_system_sync_runs_its_operations_in_order_once_a_day(db, world, fa
 def test_the_brief_does_not_grow_with_the_run(db, world):
     """Same party shape at step 1 and at step 300: same text, same tokens,
     whatever the rest of the run has piled up."""
-    party = db.parties.find_one({"_id": f"{RID}:queen-st-alarm"})
+    party = db.parties.find_one({"_id": f"{RID}:queen-st-grocer"})
     first = brief_.render(brief_.gather(world.ctx, party, 9.0), tools=["place_call", "send_form_link"])
 
     db.runs.update_one({"_id": f"run:{RID}"}, {"$set": {"steps": 300}})
-    other = [{"_id": f"att_other{i:04d}", "recall_id": RID, "party_id": "lakeside-systems", "seq": i + 1,
+    other = [{"_id": f"att_other{i:04d}", "recall_id": RID, "party_id": "lakeside-foods", "seq": i + 1,
               "channel": "sim", "state": "no_answer", "purpose": "retry"} for i in range(300)]
     db.attempts.insert_many(other)
     db.traces.insert_many([{"_id": f"tr-old:{i:03d}", "run_id": "tr-old", "seq": i, "kind": "tool"} for i in range(300)])
-    db.episodes.insert_many([{"_id": f"ep_x{i}", "kind": "failure", "recall_id": RID, "party_id": "lakeside-systems",
-                              "failure_class": "no_answer", "summary": "x", "created_at": datetime.now(timezone.utc)}
-                             for i in range(50)])
+    db.episodes.insert_many([{"_id": f"ep_x{i}", **governed("failure", party_id="lakeside-foods"), "recall_id": RID,
+                              "party_id": "lakeside-foods", "failure_class": "no_answer", "summary": "x",
+                              "created_at": datetime.now(timezone.utc)} for i in range(50)])
     later = brief_.render(brief_.gather(world.ctx, party, 9.0), tools=["place_call", "send_form_link"])
     assert later.text == first.text and later.tokens == first.tokens
 
     # Its own history is capped too: 50 failures still make 3 memory lines.
-    db.episodes.update_many({}, {"$set": {"party_id": "queen-st-alarm"}})
+    db.episodes.update_many({}, {"$set": {"party_id": "queen-st-grocer", "scope": "queen-st-grocer"}})
     capped = brief_.gather(world.ctx, party, 9.0)
     assert len(capped["memory"]) == brief_.MAX_MEMORY
     for section in ("RULES", "PARTY", "EDGES", "MEMORY", "QUESTIONS", "ASK"):
@@ -564,8 +565,8 @@ def test_the_claude_decider_offers_the_allowlist_and_records_the_real_input_toke
 
     decider = ClaudeDecider(AnthropicClient("test-key", http=httpx.Client(transport=httpx.MockTransport(handler))),
                             "claude-haiku-5-5")
-    world.voice.script["lakeside-systems"] = [{"in_stock": 80, "returned": 0}]
-    party, fence = lease(db, "lakeside-systems")
+    world.voice.script["lakeside-foods"] = [{"sold": 20, "sold_source": "till_report", "held": 60, "batch_seen": "B-4471", "block_test": True}]
+    party, fence = lease(db, "lakeside-foods")
     out = execute(world.ctx, party, worker_id=W2, fence=fence, decider=decider)
 
     assert out["result"]["outcome"] == "claim_accepted" and len(requests) == 1
@@ -583,7 +584,7 @@ def test_the_claude_decider_offers_the_allowlist_and_records_the_real_input_toke
 def test_a_model_that_finds_nothing_owed_leaves_the_step_and_looks_again_shortly(db, world):
     reply = anthropic_reply(text="Nothing is owed now.", input_tokens=900)
     client = AnthropicClient("k", http=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json=reply))))
-    party, fence = lease(db, "harbour-fire")
+    party, fence = lease(db, "harbour-market")
     out = execute(world.ctx, party, worker_id=W2, fence=fence, decider=ClaudeDecider(client, "claude-haiku-5-5"))
     assert out["status"] == "done" and out["failure_class"] is None and out["ladder_step"] == 1
     assert out["next_action_at"] == pytest.approx(run_doc(db, out["run_id"])["ended_sim"] + 0.25, abs=1e-3)
@@ -598,7 +599,7 @@ def test_the_claude_decider_falls_back_to_the_rules_when_the_model_is_unavailabl
         return httpx.Response(529, json={"type": "error", "error": {"type": "overloaded_error", "message": "busy"}})
 
     client = AnthropicClient("k", http=httpx.Client(transport=httpx.MockTransport(handler)), max_retries=0)
-    party = db.parties.find_one({"_id": f"{RID}:harbour-fire"})
+    party = db.parties.find_one({"_id": f"{RID}:harbour-market"})
     facts = brief_.gather(world.ctx, party, 9.0)
     decision = ClaudeDecider(client, "claude-haiku-5-5").decide(brief_.render(facts, tools=["place_call"]))
     assert decision.tool == "place_call" and "model unavailable" in decision.note and len(calls) == 1
@@ -607,7 +608,7 @@ def test_the_claude_decider_falls_back_to_the_rules_when_the_model_is_unavailabl
 # -------------------------------------------------------------- trace/replay
 
 def test_a_recorded_run_replays_to_the_same_decisions_with_tools_stubbed(db, world):
-    party, fence = lease(db, "harbour-fire")
+    party, fence = lease(db, "harbour-market")
     out = execute(world.ctx, party, worker_id=W2, fence=fence, decider=RuleDecider())
     db.attempts.delete_many({})          # replay must not need the effects, only the traces
 
@@ -631,13 +632,13 @@ def test_the_planner_ranks_through_the_gate_and_writes_its_report(db, world):
     db.worker_state.insert_one({"_id": "planner", "lease_owner": "worker-test/planner", "lease_epoch": 3,
                                 "lease_until": datetime(2999, 1, 1, tzinfo=timezone.utc)})
     insert_question(db, text="Any other batches?", answer_type="yes_no")
-    set_party(db, "lakeside-systems", open_questions=["q-01"])
+    set_party(db, "lakeside-foods", open_questions=["q-01"])
     out = run_planner(world.ctx, worker_id="worker-test/planner",
                    fence={"_id": "planner", "lease_owner": "worker-test/planner", "lease_epoch": 3}, decider=RuleDecider())
 
     assert out["status"] == "done"
     priorities = {s["party_id"]: s["priority"] for s in db.parties.find({"recall_id": RID})}
-    assert priorities == {"harbour-fire": 40, "queen-st-alarm": 120, "lakeside-systems": 130}
+    assert priorities == {"harbour-market": 40, "queen-st-grocer": 120, "lakeside-foods": 130}
     assert [a["tool"] for a in out["result"]["actions"]] == ["set_priority"] * 3 + ["draft_report"]
     assert "parties still open" in runs.get_run(db, RID)["report"]["text"]
 
@@ -649,7 +650,7 @@ def test_the_planner_may_not_call_a_contact_tool(db, world):
                                 "lease_until": datetime(2999, 1, 1, tzinfo=timezone.utc)})
     run = budget.open_run(db, worker="worker-test/planner", recall_id=RID, party_id=None,
                           lease={"coll": "worker_state", "_id": "planner"}, lease_epoch=1, kind="planner", sim_now=9.0,
-                          planner="rules")
+                          decider="rules")
     decision = gate.call(world.ctx, run, "place_call", {})
     assert not decision.allowed and decision.rule == "allowlist"
 
@@ -659,13 +660,13 @@ def test_the_planner_may_not_call_a_contact_tool(db, world):
 def test_a_run_whose_lease_is_taken_writes_nothing_to_the_party(db, world):
     """Another worker claims the party while this run is deciding: the gate
     refuses on lease, and the release (with the old fence) writes nothing."""
-    party, fence = lease(db, "harbour-fire")
+    party, fence = lease(db, "harbour-market")
 
     class Overtaken:
         name, is_model, continues_after_effect = "overtaken", False, False
 
         def decide(self, brief):
-            lease(db, "harbour-fire", worker="worker-test/w7")
+            lease(db, "harbour-market", worker="worker-test/w7")
             return Decision("place_call")
 
     out = execute(world.ctx, party, worker_id=W2, fence=fence, decider=Overtaken())
@@ -681,14 +682,14 @@ def test_waiting_on_a_live_call_keeps_the_lease_and_gives_up_at_the_floor(db, se
     governs. The 2 s lease outlives the wait only because it is extended
     with the fence; the release at the end then succeeds."""
     start(client, db, seconds_per_sim_hour=0.5)
-    voice = InstantVoice(client, db, {"queen-st-alarm": ["hang"]})
+    voice = InstantVoice(client, db, {"queen-st-grocer": ["hang"]})
     ctx = make_ctx(settings, client, db, voice)
-    party, fence = lease(db, "queen-st-alarm", seconds=2)
+    party, fence = lease(db, "queen-st-grocer", seconds=2)
     started = time.monotonic()
     out = execute(ctx, party, worker_id=W2, fence=fence, decider=RuleDecider(), wait_floor_s=2.5, extend_every_s=0.5)
     assert time.monotonic() - started >= 2.5
     assert out["status"] == "stopped" and out["failure_class"] == "budget_exceeded" and out["released"]
-    assert db.attempts.find_one({"party_id": "queen-st-alarm"})["state"] == "dialed"
+    assert db.attempts.find_one({"party_id": "queen-st-grocer"})["state"] == "dialed"
     assert any("budget_exceeded after 2 simulated hours" in t for t in feed_texts(db, "gate_stopped"))
 
 
@@ -699,7 +700,7 @@ def test_a_decider_exception_is_raised_to_the_worker(db, world):
         def decide(self, brief):
             raise RuntimeError("decider bug")
 
-    party, fence = lease(db, "harbour-fire")
+    party, fence = lease(db, "harbour-market")
     with pytest.raises(RuntimeError, match="decider bug"):
         execute(world.ctx, party, worker_id=W2, fence=fence, decider=Broken())
 
@@ -712,6 +713,6 @@ def test_decisions_run_off_the_calling_thread(db, world):
             seen.append(threading.current_thread().name)
             return super().decide(brief)
 
-    party, fence = lease(db, "harbour-fire")
+    party, fence = lease(db, "harbour-market")
     execute(world.ctx, party, worker_id=W2, fence=fence, decider=Recorder())
     assert seen == ["decider"]

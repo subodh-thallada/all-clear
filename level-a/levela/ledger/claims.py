@@ -1,20 +1,22 @@
-"""submit_claim(): the one path every claim takes (voice, simulator, form,
-order system, rep).
+"""submit_claim() (also post_claim()): the one path every claim takes (voice,
+simulator, form, a connected store's records, another node's agent, order
+system, rep).
 
 The party update, the edges, the stub parties, the claim and the recall's
 open_units commit together in one transaction or not at all. Atlas decides:
-the party validator refuses any count that breaks conservation, any `fixed`
-the evidence does not allow (see levela.db.schema), and a model that is not
-the recalled one; the transaction aborts, and the claim is then recorded as
-rejected with the two values that disagree and the raw validation error.
+the party validator refuses any count that breaks conservation, any `held`
+or `sold` the evidence does not allow, and any `on_shelf` below what the
+store's own stock record shows (see levela.db.schema); the transaction
+aborts, and the claim is then recorded as rejected with the two values that
+disagree and the raw validation error.
 
-A claim carries the six buckets' counts (in_stock, installed, fixed,
-returned; forwarded and unresolved are derived) and, from a building owner,
-the three checks: `model_seen` (the model printed on the front),
-`version_seen` (the software version on the display) and `sounder_test`
-(did the sounder ring when the test button was pressed). A check the claim
+A claim carries the buckets' counts (sold, on_shelf, held, returned;
+forwarded and unresolved are derived) and the three checks: `batch_seen`
+(the batch code read from under one tin), `sold_source` ("till_report" when
+the sold count was read from the till's item sales report) and `block_test`
+(did the till refuse the sale when one tin was scanned). A check the claim
 does not carry keeps its earlier answer, so a later count cannot erase the
-evidence a fixed count rests on.
+evidence a held count rests on.
 
 A claim may forward to several parties (V2 §9): `forwards: [{to_name |
 to_party_id, qty}]`, or the single `forwarded_qty` + `forwarded_to_name` pair,
@@ -34,10 +36,10 @@ party id); without it the receipt is refused (`receipt_sender_ambiguous`)
 rather than booked against an arbitrary edge. The recipient's shipped_in is
 its own shipment plus every inbound edge's corroborated quantity.
 
-A claim that leaves panels installed and not fixed sets the party's fix
-check, `fix_check_at`, FIX_CHECK_H simulated hours later: the three checks
-are asked again then (levela.harness.brief). A claim with nothing installed
-clears it.
+A claim that leaves tins on the shelf sets the party's removal check,
+`removal_check_at` and `next_action_at`, REMOVAL_CHECK_H simulated hours
+later: the three checks are asked again then. A claim with nothing on the
+shelf clears `removal_check_at`.
 
 When a claim changes an edge the other party must hear about (a receipt, a
 dispute, a corroboration, a new transfer into a party that already exists),
@@ -46,18 +48,19 @@ same transaction, so the engine's due query wakes it with no event to deliver.
 
 Every accepted claim has an evidence event in tool_events (invariant 3).
 Calls (voice, sim) are logged by POST /tools/submit_count before it books;
-the form, order system and rep channels are logged here, first, the same way.
+the form, store system, agent, order system and rep channels are logged
+here, first, the same way.
 
 A repeated delivery carries the same dedupe_key (attempt id plus a hash of
 the numbers, the sorted destinations and the named sender), so it cannot post
 twice. Going back on one call to numbers already booked (A, then B, then A)
 is a correction, not a repeat, and is booked again (_booking_key).
 
-A count is a whole number of panels no larger than MAX_COUNT; anything bigger
+A count is a whole number of tins no larger than MAX_COUNT; anything bigger
 is refused as bad_number, and the raw body is made storable first (storable),
 so an absurd number is a rejection, not a crash.
 
-Names a claim speaks (the party panels went to, the sender of a receipt) are
+Names a claim speaks (the party tins went to, the sender of a receipt) are
 matched before the transaction opens (levela.ledger.names.match_party):
 Atlas Search cannot run inside one.
 """
@@ -83,35 +86,41 @@ from .transfers import (_SUM, _norm, open_edges, product_fields, rebook_recipien
 
 # The buckets a claim states; forwarded is the sum of its transfers and
 # unresolved is what is left of shipped_in.
-BUCKETS = ("in_stock", "installed", "fixed", "returned")
+BUCKETS = ("sold", "on_shelf", "held", "returned")
 NUMBER_FIELDS = (*BUCKETS, "forwarded_qty", "received_qty")
-# A claim that leaves panels installed is checked again this much later.
-FIX_CHECK_H = 48.0
-# The three checks a building owner answers (spec "Checks").
-CHECK_FIELDS = ("model_seen", "version_seen", "sounder_test")
-_VERSION = re.compile(r"^\d+(\.\d+)*$")
+# A claim that leaves tins on the shelf is checked again this much later.
+REMOVAL_CHECK_H = 4.0
+# The three checks a store answers (spec "Checks, stored on the recall").
+CHECK_FIELDS = ("batch_seen", "sold_source", "block_test")
+TILL_REPORT = "till_report"
+# Ways a sold count read from the till is said or typed.
+_TILL_WORDS = {"till", "till report", "till_report", "tillreport", "item sales report", "sales report",
+               "till sales report", "pos", "pos report", "register", "register report"}
 _YES = {"yes", "y", "true", "1"}
 _NO = {"no", "n", "false", "0"}
-# The largest count a claim may carry, in panels. A batch is thousands of panels;
+# The largest count a claim may carry, in tins. A batch is thousands of tins;
 # a bigger number is a mishearing or a typo. It also keeps every count far
 # inside BSON's 64-bit integers: a 20-digit count made the encoder raise
 # OverflowError inside the claim transaction, a 500 instead of a rejection.
 MAX_COUNT = 10**9
 INT64_MIN, INT64_MAX = -(2**63), 2**63 - 1
-SOURCES = ("voice", "sim", "form", "order_system", "rep")
+SOURCES = ("voice", "sim", "form", "store_system", "agent", "order_system", "rep")
 # The tool_events kind that is a claim's evidence, by source (V2 §9).
-EVIDENCE_KIND = {"voice": "tool_call", "sim": "tool_call", "form": "form", "order_system": "order_system", "rep": "rep"}
-EVIDENCE_KINDS = tuple(sorted(set(EVIDENCE_KIND.values())))
+EVIDENCE_KIND = {"voice": "tool_call", "sim": "tool_call", "form": "form", "store_system": "store_system",
+                 "agent": "agent_report", "order_system": "order_system", "rep": "rep"}
+# The node's own booking (levela/node/book.py, handoff.py) logs its evidence
+# as kind "agent"; it counts the same as an agent_report for invariant 3.
+EVIDENCE_KINDS = tuple(sorted(set(EVIDENCE_KIND.values()) | {"agent"}))
 # Channels with no webhook of their own: the claim path logs their evidence.
-LOGGED_HERE = ("form", "order_system", "rep")
+LOGGED_HERE = ("form", "store_system", "agent", "order_system", "rep")
 # How a party named by a claim entered the run (parties.discovered_by prefix).
 DISCOVERED_VIA = {"order_system": "order_system", "rep": "rep"}
 
 # Rejection codes. A challenge is a rejection the agent should read back to
 # the party and ask again; it counts toward the per-attempt challenge cap.
 CHALLENGE_CODES = {"over_count", "negative", "not_integer", "delivery_note_mismatch",
-                   "recipient_overdocumented", "model_mismatch", "fixed_needs_evidence", "version_affected",
-                   "sounder_not_confirmed", "panel_not_fixed"}
+                   "recipient_overdocumented", "batch_mismatch", "held_needs_evidence", "block_not_confirmed",
+                   "sold_needs_till", "still_on_shelf"}
 
 
 class ClaimError(Exception):
@@ -235,7 +244,7 @@ def forwards(raw: dict) -> list[dict]:
         dest = _destination(item.get("to_party_id"), item.get("to_name"))
         if qty is None:
             who = dest.get("to_name") or dest.get("to_party_id") or "a party"
-            raise ClaimError("bad_number", f"no count was given for the panels sent to {who}")
+            raise ClaimError("bad_number", f"no count was given for the tins sent to {who}")
         if qty != 0:
             out.append({"qty": qty, **dest})
     total = sum(f["qty"] for f in out)
@@ -254,24 +263,22 @@ def counts(raw: dict) -> dict:
     return out
 
 
-def _model(v) -> str:
-    if not _text(v):
-        raise ClaimError("bad_answer", f"{v!r} is not a model name")
-    return " ".join(v.split()).upper()
+def _batch(v) -> str:
+    """A batch code as read from a tin: upper case, inner spaces dropped
+    ("b 4471" -> "B4471"; matched to the party's batch code by letters and
+    digits when booked)."""
+    if isinstance(v, bool) or not _text(str(v) if v is not None else None):
+        raise ClaimError("bad_answer", f"{v!r} is not a batch code")
+    return "".join(str(v).split()).upper()
 
 
-def _version(v) -> str:
-    """Version digits as spoken or typed: 2.4, "2.4", "v2.4", "version 2 . 4"."""
-    if isinstance(v, bool):
-        raise ClaimError("bad_answer", f"{v!r} is not a software version")
-    text = str(v).strip().lower()
-    for prefix in ("version", "v"):
-        if text.startswith(prefix):
-            text = text[len(prefix):]
-    text = re.sub(r"\s+", "", text)
-    if not _VERSION.match(text):
-        raise ClaimError("bad_answer", f"{v!r} is not a software version")
-    return text
+def _sold_source(v) -> str:
+    """Where the sold count came from: "till_report" for the till's item
+    sales report, else the word given (lower case)."""
+    if isinstance(v, bool) or not _text(str(v) if v is not None else None):
+        raise ClaimError("bad_answer", f"{v!r} is not where the sold count came from")
+    word = " ".join(str(v).replace("_", " ").split()).lower()
+    return TILL_REPORT if word in _TILL_WORDS or word.replace(" ", "_") == TILL_REPORT else word
 
 
 def _yes_no(v) -> bool:
@@ -286,18 +293,24 @@ def _yes_no(v) -> bool:
 
 
 def checks(raw: dict) -> dict:
-    """The check answers the claim carries, normalised: model_seen upper
-    case, version_seen as digits ("2.4"), sounder_test a bool. A check the
-    claim does not carry is absent (it keeps its earlier answer). Raises
-    ClaimError (bad_answer) for an answer that is not one of the closed forms."""
+    """The check answers the claim carries, normalised: batch_seen upper
+    case without spaces, sold_source "till_report" for a till count,
+    block_test a bool. A check the claim does not carry is absent (it keeps
+    its earlier answer). Raises ClaimError (bad_answer) for an answer that is
+    not one of the closed forms."""
     out = {}
-    if raw.get("model_seen") is not None:
-        out["model_seen"] = _model(raw["model_seen"])
-    if raw.get("version_seen") is not None:
-        out["version_seen"] = _version(raw["version_seen"])
-    if raw.get("sounder_test") is not None:
-        out["sounder_test"] = _yes_no(raw["sounder_test"])
+    if _given(raw.get("batch_seen")):
+        out["batch_seen"] = _batch(raw["batch_seen"])
+    if _given(raw.get("sold_source")):
+        out["sold_source"] = _sold_source(raw["sold_source"])
+    if _given(raw.get("block_test")):
+        out["block_test"] = _yes_no(raw["block_test"])
     return out
+
+
+def _given(v) -> bool:
+    """An answer was given: not None and not a blank form field."""
+    return v is not None and not (isinstance(v, str) and not v.strip())
 
 
 def _alnum(text: str) -> str:
@@ -333,47 +346,49 @@ def dedupe_key(attempt_id: str, raw: dict) -> str:
 
 
 def speakable(result: dict) -> str:
-    """The sentence the voice agent should base its next turn on."""
+    """The sentence the voice agent should base its next turn on. It never
+    carries health advice: the agent reads the recall's instruction only."""
     if result.get("accepted"):
         if result.get("duplicate"):
             return "Already recorded. Do not ask again."
         return "Recorded. Thank them and move on."
     code = result.get("code")
     if code == "over_count":
-        return (f"Rejected by the database: those counts add up to {result['reported_total']} panels, "
-                f"but our shipment record shows {result['shipped_in']} panels were delivered to this party. "
+        return (f"Rejected by the database: those counts add up to {result['reported_total']} tins, "
+                f"but our shipment record shows {result['shipped_in']} tins were delivered to this store. "
                 "Say both numbers and ask them to check again.")
-    if code == "model_mismatch":
-        return (f"Rejected by the database: {result.get('reason')}. Ask them to read the model printed on the "
-                "front of the panel again.")
-    if code in ("fixed_needs_evidence", "version_affected", "sounder_not_confirmed"):
-        return (f"Rejected by the database: {result.get('reason')}. Panels count as fixed only when the display "
-                "shows a version that is not affected and the sounder rang on the test. Ask them to read the "
-                "version on the display and to press the test button again; if it is not fixed, the panels are "
-                "installed, not fixed. Never explain how to update a panel: the installer will arrange it.")
-    if code == "panel_not_fixed":
-        return (f"Rejected by the database: {result.get('reason')}. A connected panel at this site has not passed "
-                "its own test, so it cannot be counted as fixed. Ask them to count it as installed.")
+    if code in ("batch_mismatch", "held_needs_evidence"):
+        return (f"Rejected by the database: {result.get('reason')}. Ask them to read the batch code printed "
+                "under one tin, character by character.")
+    if code == "block_not_confirmed":
+        return (f"Rejected by the database: {result.get('reason')}. Tins count as held only when the till "
+                "refuses the sale. Ask them to scan one tin at the till and say whether the sale was refused; "
+                "if it was not, the tins are still on the shelf.")
+    if code == "sold_needs_till":
+        return (f"Rejected by the database: {result.get('reason')}. Ask them to open the item sales report on "
+                "the till and read how many have sold since the delivery.")
+    if code == "still_on_shelf":
+        return (f"Rejected by the database: {result.get('reason')}. The store's own stock record still shows "
+                "tins on the shelf, so they cannot be counted as pulled. Ask them to count those as on the shelf.")
     if code == "delivery_note_required":
         return "Before taking counts, ask for the delivery note number on their paperwork, then submit again with it."
     if code == "delivery_note_mismatch":
         return "That delivery note does not match our shipment record. Ask them to read it again, digit by digit."
     if code == "no_inbound_edge":
-        return ("No sender has reported a transfer to this party yet, so the receipt cannot be booked. "
+        return ("No sender has reported a transfer to this store yet, so the receipt cannot be booked. "
                 "Thank them, say we will call back shortly, and end the call.")
     if code == "forward_missing_name":
-        return ("Ask the name of the building owner or installer the panels went to, then submit again with "
-                "that name.")
+        return "Ask the name of the store the tins went to, then submit again with that name."
     if code == "bad_answer":
         return f"Not recorded: {result.get('reason')}. Read the question back and ask again."
     if code in ("forward_changed", "forward_restate"):
-        # A stop code (api/tools.py): the receiving party has already counted
-        # those panels, so asking again cannot settle it on this call.
-        return (f"Rejected: {result.get('reason')}. The party that received them has already counted them, so "
-                "the recall team will sort it out with both parties. Thank them, say a person will follow up, "
+        # A stop code (api/tools.py): the receiving store has already counted
+        # those tins, so asking again cannot settle it on this call.
+        return (f"Rejected: {result.get('reason')}. The store that received them has already counted them, so "
+                "the recall team will sort it out with both stores. Thank them, say a person will follow up, "
                 "and end the call.")
     if code == "receipt_sender_ambiguous":
-        return (f"Rejected: {result.get('reason')}. The recall team will confirm with each party that sent panels. "
+        return (f"Rejected: {result.get('reason')}. The recall team will confirm with each party that sent tins. "
                 "Thank them, say a person will follow up, and end the call.")
     if code == "recall_closed":
         return "This recall is already closed. Thank them and end the call."
@@ -432,7 +447,7 @@ def submit_claim(client, db, *, recall_id, party_id, attempt_id, source, raw, no
         b = holder["b"] = _Booking()
         if db.claims.find_one({"dedupe_key": key}, {"_id": 1}, session=session) is not None:
             raise _Duplicate()
-        _open_recall(db, recall_id, session)
+        recall = _open_recall(db, recall_id, session)
         party = db.parties.find_one({"recall_id": recall_id, "party_id": party_id}, session=session)
         if party is None:
             raise ClaimError("unknown_party", f"unknown party {party_id} in {recall_id}")
@@ -444,8 +459,8 @@ def submit_claim(client, db, *, recall_id, party_id, attempt_id, source, raw, no
         if c["received_qty"] is not None:
             shipped_in = _book_receipt(db, b, recall_id, party_id, c["received_qty"], sender, names, now, session)
         b.stage, b.shipped_in = "party", shipped_in
-        _book_counts(db, party, c, ck, shipped_in, now, session,
-                     fix_check_at=round(sim_now() + FIX_CHECK_H, 4) if c["installed"] > 0 else None)
+        _book_counts(db, party, c, ck, shipped_in, now, session, batch_code=recall["batch_code"],
+                     removal_check_at=round(sim_now() + REMOVAL_CHECK_H, 4) if c["on_shelf"] > 0 else None)
         if fail_after_party_update:
             raise RuntimeError("failpoint: after party update")
         _book_forwards(db, b, party, entries, names, dirs, source=source, sim_now=sim_now, now=now, session=session)
@@ -480,6 +495,15 @@ def submit_claim(client, db, *, recall_id, party_id, attempt_id, source, raw, no
     except ClaimError as exc:
         return _reject(db, doc, key, recall_id, party_id, exc.code, exc.reason, runs=counter.get("runs"))
     return _accepted(holder["b"], counter.get("runs", 1))
+
+
+def post_claim(client, db, **kwargs) -> dict:
+    """submit_claim under the name the spec's flows use. Every source books
+    through here: voice, sim, form, store_system (a connected store's own
+    records), agent (another node's signed report; WS5 passes the link plus
+    the sequence number as the attempt id, so the dedupe key is the link plus
+    the sequence number), order_system and rep."""
+    return submit_claim(client, db, **kwargs)
 
 
 def _booking_key(db, base: str, attempt_id: str) -> tuple[dict | None, str]:
@@ -553,10 +577,10 @@ def _book_receipt(db, b: _Booking, recall_id, party_id, received_qty, sender, na
     inbound transfer, read after this one is settled.
 
     A party with one inbound edge confirms that edge. A party that several
-    senders shipped to must name the one these panels came from: settling
+    senders shipped to must name the one these tins came from: settling
     whichever edge sorted first put the count on the wrong transfer (a false
     dispute, or a true count refused), and counting only that edge dropped
-    the other senders' corroborated panels from the party's books, so the mass
+    the other senders' corroborated tins from the party's books, so the mass
     balance came up short and the close gate could pass."""
     inbound = list(db.edges.find({"recall_id": recall_id, "to_party": party_id}, session=session).sort("_id", 1))
     if not inbound:
@@ -586,23 +610,33 @@ def _sender_edge(db, recall_id, inbound: list, sender: str | None, matched: dict
     listed = " and ".join(names.get(e["from_party"], e["from_party"]) for e in inbound)
     if sender:
         raise ClaimError("receipt_sender_ambiguous",
-                         f"{sender} has not reported sending panels to this party; {listed} have")
+                         f"{sender} has not reported sending tins to this party; {listed} have")
     raise ClaimError("receipt_sender_ambiguous",
-                     f"{listed} each sent panels to this party; the receipt must say which party sent these")
+                     f"{listed} each sent tins to this party; the receipt must say which party sent these")
 
 
-def _book_counts(db, party, c, ck, shipped_in, now, session, *, fix_check_at: float | None) -> None:
+def _book_counts(db, party, c, ck, shipped_in, now, session, *, batch_code: str,
+                 removal_check_at: float | None) -> None:
     """unresolved is derived inside the update, so a party that reports more
     than it was shipped needs a negative unresolved and Atlas refuses. The
     check answers the claim carries are set in the same update, so the party
-    validator judges `fixed` against them. A model read that is the recalled
-    model spelled differently ("demo 7") is stored as the recalled model."""
+    validator judges `held` and `sold` against them. A batch code read that is
+    the recalled batch spelled differently ("b 4471") is stored as the
+    party's batch code. A party with no batch code yet gets the recall's.
+
+    A claim that leaves tins on the shelf sets the removal check:
+    `removal_check_at` and `next_action_at`, both REMOVAL_CHECK_H simulated
+    hours on."""
+    code = party.get("batch_code") or batch_code
     answers = dict(ck)
-    if "model_seen" in answers and _alnum(answers["model_seen"]) == _alnum(party["model"]):
-        answers["model_seen"] = party["model"]
+    if "batch_seen" in answers and _alnum(answers["batch_seen"]) == _alnum(code):
+        answers["batch_seen"] = code
+    timers = {"removal_check_at": removal_check_at}
+    if removal_check_at is not None:
+        timers["next_action_at"] = removal_check_at
     db.parties.update_one({"_id": party["_id"]}, [
         {"$set": {"shipped_in": shipped_in, **{k: c[k] for k in BUCKETS}, "forwarded": c["forwarded_qty"],
-                  **answers, "fix_check_at": fix_check_at}},
+                  "batch_code": code, **answers, **timers}},
         {"$set": {"unresolved": {"$subtract": ["$shipped_in", _SUM]}, "state": "claimed", "last_claim_at": now}},
     ], session=session)
 
@@ -621,9 +655,9 @@ def _book_forwards(db, b: _Booking, party, entries, names, dirs, *, source, sim_
     if counted:
         names = _names(db, recall_id, counted, session)
         if not dests:
-            raise ClaimError("forward_restate", f"{names} counted the panels this party sent; a count must still "
+            raise ClaimError("forward_restate", f"{names} counted the tins this party sent; a count must still "
                                                 "say how many were sent there")
-        raise ClaimError("forward_changed", f"an earlier claim reported panels sent to {names}, which this claim "
+        raise ClaimError("forward_changed", f"an earlier claim reported tins sent to {names}, which this claim "
                                             "leaves out, and the receiving party has already counted them")
     for to_id in dropped:
         _withdraw_transfer(db, b, party, outbound[to_id], session)
@@ -645,7 +679,7 @@ def _book_forwards(db, b: _Booking, party, entries, names, dirs, *, source, sim_
 
 def _withdraw_transfer(db, b: _Booking, party, edge, session) -> None:
     """Delete a transfer its recipient never counted (nothing was booked
-    against it, so the mass balance loses its open panels with the sender's
+    against it, so the mass balance loses its open tins with the sender's
     forwarded), and the stub party this sender's claim created for it when
     nothing else refers to it: no other edge and no accepted claim of its
     own. The conditions read only ledger documents, so a rebuild from the
@@ -679,11 +713,11 @@ def _orphan_stub(db, recipient: dict, recall_id, sender, to_id, session) -> bool
 
 def _destinations(entries, party_id, names, dirs) -> dict:
     """{to_party_id: {"qty", "name", "entry"}}: each entry resolved to a party,
-    entries naming the same party merged, parties left with no panels dropped."""
+    entries naming the same party merged, parties left with no tins dropped."""
     out: dict = {}
     for f in entries:
         if "to_party_id" not in f and "to_name" not in f:
-            raise ClaimError("forward_missing_name", "forwarded panels need the receiving party's name")
+            raise ClaimError("forward_missing_name", "forwarded tins need the receiving party's name")
         if "to_party_id" in f:
             to_id = f["to_party_id"]
             entry = next((e for e in dirs if e.get("party_id") == to_id), None)
@@ -708,11 +742,11 @@ def _open_transfers(db, b: _Booking, party, new: dict, *, source, sim_now, now, 
     transfer into it is news it has to confirm."""
     recall_id, party_id = party["recall_id"], party["party_id"]
     via = f"{DISCOVERED_VIA.get(source, 'claim')}:{party_id}"
-    # A distributor's order system claim names its accounts (tier 2 installers); a
-    # party named by anyone else is tier 3, a building owner unless the
-    # directory says otherwise. The directory entry, when there is one, wins.
-    tier, type_, extra = (2, "installer", {"distributor": party_id}) if source == "order_system" \
-        else (3, "owner", None)
+    # A distributor's order system claim names its accounts (tier 2 stores); a
+    # party named by anyone else is tier 3, a store unless the directory says
+    # otherwise. The directory entry, when there is one, wins.
+    tier, type_, extra = (2, "store", {"distributor": party_id}) if source == "order_system" \
+        else (3, "store", None)
     at = sim_now()
     stubs = [stub_party(recall_id, to, d["name"], d["entry"], via, now, extra, product=product_fields(party),
                         tier=tier, type_=type_, next_action_at=at) for to, d in new.items()]
@@ -749,18 +783,18 @@ def _changed(before: dict, after: dict) -> bool:
 
 
 def _refresh_states(db, recall_id, party_ids, session) -> set:
-    """claimed -> reconciled once unresolved and installed are 0 (every panel
-    is in stock, fixed, returned or passed on) and every edge touching the
-    party is corroborated; back to claimed when a later claim reopens a
-    dispute or reports panels installed and not fixed. Two reads and at most one write however many parties a claim
-    touched: a distributor's claim touches every account.
+    """claimed -> reconciled once unresolved and on_shelf are 0 (every tin
+    is sold, held, returned or passed on) and every edge touching the party is
+    corroborated; back to claimed when a later claim reopens a dispute or
+    reports tins on the shelf. Two reads and at most one write however many
+    parties a claim touched: a distributor's claim touches every account.
 
     Returns the parties left with nothing to do (reconciled, no open
     question): the ones a wake must not disturb."""
     ids = sorted(party_ids)
     parties = list(db.parties.find({"recall_id": recall_id, "party_id": {"$in": ids},
                                   "state": {"$in": ["claimed", "reconciled"]}},
-                                 {"party_id": 1, "state": 1, "unresolved": 1, "installed": 1, "open_questions": 1},
+                                 {"party_id": 1, "state": 1, "unresolved": 1, "on_shelf": 1, "open_questions": 1},
                                  session=session))
     if not parties:
         return set()
@@ -771,7 +805,7 @@ def _refresh_states(db, recall_id, party_ids, session) -> set:
         open_ends.update((e["from_party"], e["to_party"]))
     ops, idle = [], set()
     for s in parties:
-        settled = s["unresolved"] == 0 and s.get("installed", 0) == 0
+        settled = s["unresolved"] == 0 and s.get("on_shelf", 0) == 0
         state = "reconciled" if settled and s["party_id"] not in open_ends else "claimed"
         if state != s["state"]:
             ops.append(UpdateOne({"_id": s["_id"]}, {"$set": {"state": state}}))
@@ -795,16 +829,22 @@ def _yes_no_word(value) -> str:
     return {True: "yes", False: "no"}.get(value, "missing")
 
 
+def _two(a_name: str, a, b_name: str, b) -> dict:
+    """The two values that disagree: `values` by field, `pair` as [a, b]."""
+    return {"values": {a_name: a, b_name: b}, "pair": [a, b]}
+
+
 def _refusal(c: dict, ck: dict, entries: list, b: _Booking) -> tuple[str, str, dict | None]:
     """(code, reason, numbers) for a write the validators refused. The reason
     names the two values that disagree; `numbers` carries them as `values`
-    (and over_count's reported_total / shipped_in)."""
+    (by field) and `pair` ([a, b]), and over_count's reported_total /
+    shipped_in."""
     values = [*(c[k] for k in BUCKETS), c["received_qty"], *(f["qty"] for f in entries)]
     values = [v for v in values if v is not None]
     if any(v < 0 for v in values):
         return "negative", "counts cannot be negative", None
     if any(isinstance(v, float) for v in values):
-        return "not_integer", "counts must be whole panels", None
+        return "not_integer", "counts must be whole tins", None
     if b.stage == "recipient":
         return ("recipient_overdocumented", "the receiving party has already documented more than this transfer",
                 None)
@@ -812,28 +852,31 @@ def _refusal(c: dict, ck: dict, entries: list, b: _Booking) -> tuple[str, str, d
     if reported > b.shipped_in:
         return ("over_count", f"reported {reported}, shipped_in {b.shipped_in}",
                 {"reported_total": reported, "shipped_in": b.shipped_in,
-                 "values": {"reported": reported, "shipped_in": b.shipped_in}})
+                 **_two("reported", reported, "shipped_in", b.shipped_in)})
     party = b.party
     answers = {k: ck.get(k, party.get(k)) for k in CHECK_FIELDS}
-    model = answers["model_seen"]
-    if model is not None and _alnum(model) != _alnum(party["model"]):
-        return ("model_mismatch", f"model_seen {model}, recalled model {party['model']}",
-                {"values": {"model_seen": model, "model": party["model"]}})
-    if c["fixed"] > party["fixed_by_panel"]:
-        version, sounder = answers["version_seen"], answers["sounder_test"]
-        if version is None:
-            return ("fixed_needs_evidence", f"fixed {c['fixed']}, version_seen missing",
-                    {"values": {"fixed": c["fixed"], "version_seen": None}})
-        if version in party["affected_versions"]:
-            return ("version_affected", f"fixed {c['fixed']}, version_seen {version} is affected",
-                    {"values": {"fixed": c["fixed"], "version_seen": version}})
-        if sounder is not True:
-            return ("sounder_not_confirmed", f"fixed {c['fixed']}, sounder_test {_yes_no_word(sounder)}",
-                    {"values": {"fixed": c["fixed"], "sounder_test": sounder}})
-    if c["installed"] < party["connected_unfixed"]:
-        return ("panel_not_fixed", f"installed {c['installed']}, connected panels without a passing test "
-                f"{party['connected_unfixed']}",
-                {"values": {"installed": c["installed"], "connected_unfixed": party["connected_unfixed"]}})
+    code = party.get("batch_code")
+    if c["on_shelf"] < party.get("system_on_shelf", 0):
+        return ("still_on_shelf", f"on_shelf {c['on_shelf']}, the store's stock record shows "
+                f"{party['system_on_shelf']} on the shelf",
+                _two("on_shelf", c["on_shelf"], "system_on_shelf", party["system_on_shelf"]))
+    if c["held"] > party.get("held_by_system", 0):
+        seen, block = answers["batch_seen"], answers["block_test"]
+        if seen is None:
+            return ("held_needs_evidence", f"held {c['held']}, batch_seen missing",
+                    _two("held", c["held"], "batch_seen", None))
+        if code is None or _alnum(seen) != _alnum(code):
+            return ("batch_mismatch", f"batch_seen {seen}, recalled batch {code}",
+                    _two("batch_seen", seen, "batch_code", code))
+        if block is not True:
+            return ("block_not_confirmed", f"held {c['held']}, block_test {_yes_no_word(block)}",
+                    _two("held", c["held"], "block_test", block))
+    if c["sold"] > party.get("sold_by_till", 0) and answers["sold_source"] != TILL_REPORT:
+        return ("sold_needs_till", f"sold {c['sold']}, sold_by_till {party.get('sold_by_till', 0)} and no till "
+                "report", _two("sold", c["sold"], "sold_by_till", party.get("sold_by_till", 0)))
+    if (party.get("sub") or {}).get("state") == "closed":
+        return ("sub_closed", "the sub-recall is closed: on_shelf and unresolved must be 0",
+                _two("on_shelf", c["on_shelf"], "unresolved", max(b.shipped_in - reported, 0)))
     return "refused", "Atlas refused the counts", None
 
 
@@ -861,7 +904,7 @@ def _reply(claim: dict, duplicate=False) -> dict:
     if not out["accepted"]:
         out["reason"] = claim.get("reject_reason")
         out["code"] = claim.get("code")
-        for k in ("reported_total", "shipped_in", "values", "atlas_error"):
+        for k in ("reported_total", "shipped_in", "values", "pair", "atlas_error"):
             if claim.get(k) is not None:
                 out[k] = claim[k]
     if duplicate:

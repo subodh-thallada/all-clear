@@ -1,18 +1,55 @@
 {
   "scenario_id": "recall_long_mini",
   "synthetic": true,
-  "about": "Test fixture with the shape of recall_long.json at a small scale: two slice installers and an order system distributor on the shipment records (tier 1), order system accounts (tier 2) and a building owner named by a claim (tier 3) in the directory, a long-run schedule. All phone numbers are fictional 555-01xx numbers.",
+  "about": "Test fixture with the shape of recall_long.json at a small scale: two slice stores and an order system distributor on the shipment records (tier 1), order system accounts (tier 2) and a store named by a claim (tier 3) in the directory, a long-run schedule. Maple Farm milk powder 800 g, batch B-4471 (invented). All phone numbers are fictional 555-01xx numbers.",
   "recall": {
     "_id": "RCL-LONG-MINI",
     "batch_code": "B-4471",
     "batch_spoken": "B, four four seven one",
-    "model": "DEMO-7",
-    "product": "DEMO-7 fire alarm control panel",
-    "supplier": "Kestrel Life Safety",
-    "hazard": "The sounder circuit may fail to activate in an alarm",
-    "affected_versions": ["2.3", "2.4"],
-    "fixed_version": "2.5",
-    "unit": "panel",
+    "product": "Maple Farm milk powder 800 g",
+    "company": "Maple Farm Foods",
+    "barcode": "0 62345 18803 5",
+    "affected_batches": [
+      "B-4471"
+    ],
+    "action": "return",
+    "barcode_verified": false,
+    "defect": "seal_fault",
+    "defect_label": "faulty lid seal",
+    "instruction": "Stop selling Maple Farm milk powder 800 g from batch B-4471. Take every tin of that batch off the shelf, keep the tins apart from stock for sale, and return them to Maple Farm Foods. Customers who bought a tin can bring it back to the store for a refund.",
+    "plant": {
+      "party_id": "maple-farm-plant",
+      "name": "Maple Farm plant, Guelph",
+      "type": "plant",
+      "tier": 0
+    },
+    "checks": [
+      {
+        "id": "batch",
+        "label": "Affected unit",
+        "question": "Read me the batch code printed under one tin.",
+        "answer": "batch code",
+        "field": "batch_seen",
+        "rule": "Must be the recalled batch"
+      },
+      {
+        "id": "sold",
+        "label": "Sales are counted",
+        "question": "Open the item sales report on the till. How many have sold since the delivery?",
+        "answer": "a number",
+        "field": "sold_source",
+        "rule": "sold needs a count read from the till"
+      },
+      {
+        "id": "block",
+        "label": "Removal took effect",
+        "question": "Scan one tin at the till. Did the till refuse the sale?",
+        "answer": "yes or no",
+        "field": "block_test",
+        "rule": "held needs yes"
+      }
+    ],
+    "unit": "tin",
     "units_total": 400
   },
   "schedule": {
@@ -26,28 +63,28 @@
   },
   "parties": [
     {
-      "party_id": "harbour-fire",
-      "name": "Harbour Fire",
-      "type": "installer",
+      "party_id": "harbour-market",
+      "name": "Harbour Market",
+      "type": "store",
       "tier": 1,
       "channel": "voice",
       "phone_env": "PHONE_HARBOUR",
       "sim_phone": "+14165550141",
       "shipped_in": 40,
       "delivery_note": "DN-48213",
-      "profile": "Fire alarm contractor on Queens Quay. The office manager answers the phone.",
+      "profile": "Independent grocery on Queens Quay. The manager answers the phone.",
       "slice": true
     },
     {
-      "party_id": "queen-st-alarm",
-      "name": "Queen St Alarm",
-      "type": "installer",
+      "party_id": "queen-st-grocer",
+      "name": "Queen St Grocer",
+      "type": "store",
       "tier": 1,
       "channel": "sim",
       "phone": "+14165550142",
       "shipped_in": 60,
       "delivery_note": "DN-48214",
-      "profile": "Fire alarm installer on Queen St W with a large stock room.",
+      "profile": "Grocer on Queen St W with a large back room.",
       "slice": true
     },
     {
@@ -62,50 +99,51 @@
   ],
   "directory": [
     {
-      "party_id": "corner-properties",
-      "name": "Corner Properties",
+      "party_id": "corner-mart",
+      "name": "Corner Mart",
       "aliases": [
-        "the corner properties",
-        "corner property"
+        "the corner mart",
+        "korner mart"
       ],
-      "type": "owner",
+      "type": "store",
       "tier": 3,
       "channel": "voice",
       "phone_env": "PHONE_CORNER",
       "sim_phone": "+14165550144",
-      "profile": "Property manager of mid-rise buildings in Parkdale.",
+      "connected": true,
+      "profile": "Small convenience store in Parkdale that buys from Queen St Grocer.",
       "slice": true
     },
     {
-      "party_id": "bloor-alarm",
-      "name": "Bloor Alarm",
-      "type": "installer",
+      "party_id": "bloor-foods",
+      "name": "Bloor Foods",
+      "type": "store",
       "tier": 2,
       "channel": "sim",
       "phone": "+14165550127",
       "account": "N-014",
       "distributor": "dist-north",
-      "profile": "Fire alarm contractor on Bloor St W, an account of Distributor North."
+      "profile": "Grocery on Bloor St W, an account of Distributor North."
     },
     {
-      "party_id": "annex-fire",
-      "name": "Annex Fire",
-      "type": "installer",
+      "party_id": "annex-grocer",
+      "name": "Annex Grocer",
+      "type": "store",
       "tier": 2,
       "channel": "sim",
       "phone": "+14165550128",
       "account": "N-009",
       "distributor": "dist-north",
-      "profile": "Fire alarm installer in the Annex, an account of Distributor North."
+      "profile": "Grocer in the Annex, an account of Distributor North."
     },
     {
-      "party_id": "dundas-lofts",
-      "name": "Dundas Lofts",
-      "type": "owner",
+      "party_id": "dundas-mini-mart",
+      "name": "Dundas Mini Mart",
+      "type": "store",
       "tier": 3,
       "channel": "sim",
       "phone": "+14165550129",
-      "profile": "Loft building whose panels the Annex Fire installed."
+      "profile": "Mini mart on Dundas St W that buys from Annex Grocer."
     }
   ]
 }

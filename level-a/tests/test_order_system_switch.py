@@ -211,7 +211,8 @@ def reconcile(client, db, ctx, distributor: dict) -> None:
         sid = db.parties.find_one({"recall_id": RID, "distributor": distributor["party_id"],
                                   "account": row["account"]})["party_id"]
         res = submit_claim(client, db, recall_id=RID, party_id=sid, attempt_id=f"form-{sid}", source="form",
-                           raw={"received_qty": row["qty_shipped"], "in_stock": row["qty_in_stock"],
+                           raw={"received_qty": row["qty_shipped"], "held": row["qty_in_stock"],
+                                "batch_seen": BATCH, "block_test": True,
                                 "returned": row["qty_shipped"] - row["qty_in_stock"]})
         assert res["accepted"], res
 

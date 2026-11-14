@@ -32,7 +32,7 @@ adds **questions**; it cannot touch the ledger. The four-party slice (recall_1) 
 | ops | `agent/*` except the two prompts above, `scripts/*` except supervisor/replay_run, `deploy/*`, `Makefile`, `.github/workflows/ci.yml`, `.gitattributes`, `README.md` files, `docs/RUNBOOK.md` |
 
 Foundation already written for this wave (read, do not rewrite): `levela/clock.py`, `levela/runs.py`,
-`levela/db/setup.py` (schema v2), `seedkit/schema.py` (party channel adds `order system`).
+`levela/db/setup.py` (schema v2), `levela/db/schema.py` (party channel adds `order system`).
 
 ## 2. Simulated time (`levela/clock.py`, written)
 
@@ -68,7 +68,7 @@ recall options for slice parties, `auto` otherwise), `lease_owner` (str|null), `
 ({qid: {value, at, attempt_id}}), `order system` (`north|east` on distributors), `distributor` (party_id of the
 distributor on accounts), `account` (order system account id), `last_outcome` ({outcome, at}), `memory_hour`
 (int hour of day learned from episodes, or null). Distributors have `channel: "order system"`.
-Validator change (seedkit/schema.py): `channel` enum adds `order system`. Everything else is unchanged.
+Validator change (levela/db/schema.py): `channel` enum adds `order system`. Everything else is unchanged.
 
 ## 5. Leases, timers, ladder, slots (engine)
 
@@ -148,7 +148,7 @@ allowlist; 4 budget (`$inc used` guarded by `$lt` the limit); 5 intent (insert t
 its idempotency key; a duplicate key returns the stored outcome and does not act); 6 act (provider);
 7 record (outcome and provider ids; the gate never writes `verified`). Checks 2, 4, 5 are one
 transaction. Every refusal writes a `traces` doc with the rule and a feed line (kind `gate_refused`,
-level bad): `REFUSED w5 (saboteur): place_call on queen-st-alarm. Rule: lease. Holder is w2, epoch 9`.
+level bad): `REFUSED w5 (saboteur): place_call on queen-st-grocer. Rule: lease. Holder is w2, epoch 9`.
 Idempotency keys: place_call `"<run_id>:place_call"`; order system ops `"<recall>:<party>:<kind>"`
 (`read_inventory` adds `:d<day>`); form link `"<recall>:<party>:form:<ladder_step>"`.
 
@@ -222,15 +222,15 @@ filters `kind: "contact"` (history episodes are tagged `kind: contact` at load).
 ## 8. Scenario and profiles (sim)
 
 `scenarios/generate.py --seed 20261114` writes `scenarios/recall_long.json` (asserts conservation first).
-Batch `B-4471`, 2,400 panels: slice 240 (Harbour Fire 40, Queen St Alarm 120, Lakeside Systems 80 — the
-recall_1 parties with their recall_1 scripts, Corner Properties in the directory), Distributor North 1,300,
+Batch `B-4471`, 2,400 tins: slice 240 (Harbour Market 40, Queen St Grocer 120, Lakeside Foods 80 — the
+recall_1 parties with their recall_1 scripts, Corner Mart in the directory), Distributor North 1,300,
 Distributor East 860 (all forwarded to their accounts). 21 accounts (level 2) in the order systems, 14 level-3
-parties (Corner Properties + 13) named by forwarders' claims, one chain three hops deep. 36 simulated parties
+parties (Corner Mart + 13) named by forwarders' claims, one chain three hops deep. 36 simulated parties
 with profiles: straight 14, no_answer 5, callback 3, over_reporter 3, reviser 2, forwarder 6, short_receiver 2,
-unreachable 1 (Queen St Alarm is a forwarder and Lakeside Systems straight, by their scripts). Every simulated
-party has a ground truth (`on_hand, sold, returned, destroyed, forwards[{to, qty}]`) that conserves.
+unreachable 1 (Queen St Grocer is a forwarder and Lakeside Foods straight, by their scripts). Every simulated
+party has a ground truth (`sold, on_shelf, held, returned, forwards[{to, qty}]`) that conserves.
 `schedule`: `order_system_change_at: {north: 81.5, east: 82.0}` (day 3, by hand in demo mode), rep report day 8.
-`expected.final`: only the slice's 15 disputed panels open.
+`expected.final`: only the slice's 15 disputed tins open.
 
 `providers/profiles.py`: `respond(profile, truth, context) -> Reply` where context = purpose, attempt number,
 ladder step, sim time, told_qty, open questions; Reply = `{kind: answer|no_answer|callback|busy, claims:[tool bodies],

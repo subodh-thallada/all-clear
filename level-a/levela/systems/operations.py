@@ -198,15 +198,15 @@ def _order_system_of(db, party: dict) -> tuple[str, dict]:
 
 
 def account_party_doc(recall: dict, distributor: dict, row: dict, *, now: datetime, sim: float) -> dict:
-    """A tier 2 installer for one order system account, due at once. The id
+    """A tier 2 store for one order system account, due at once. The id
     follows the directory (or the name's slug), so a party named earlier by a
     claim or by memory is the same party; the phone is the order system's, and
-    the model and affected versions are the distributor's (the recall's)."""
+    the batch code is the distributor's (the recall's)."""
     party_id, entry = resolve_party(row["name"], recall.get("directory"))
     entry = {**(entry or {}), "name": row["name"], "channel": "sim", "phone": row["phone"], "tier": 2,
-             "type": "installer"}
+             "type": "store"}
     return stub_party(recall["_id"], party_id, row["name"], entry, "order_system", now,
-                      product=product_fields(distributor), tier=2, type_="installer", next_action_at=sim)
+                      product=product_fields(distributor), tier=2, type_="store", next_action_at=sim)
 
 
 def upsert_accounts(db, recall: dict, distributor: dict, rows: list[dict], *, now: datetime,
@@ -218,10 +218,14 @@ def upsert_accounts(db, recall: dict, distributor: dict, rows: list[dict], *, no
     for row in rows:
         doc = account_party_doc(recall, distributor, row, now=now, sim=sim)
         ids.append(doc["party_id"])
-        ops.append(UpdateOne({"_id": doc["_id"]},
-                             {"$setOnInsert": doc,
-                              "$set": {"distributor": distributor["party_id"], "account": row["account"]}},
-                             upsert=True))
+        sets = {"distributor": distributor["party_id"], "account": row["account"]}
+        # WS5's hook: an account that runs its own copy of the agent (a link
+        # matches it, e.g. Summit Foods) is answered by that agent, not by phone.
+        agent = _agent_fields(db, distributor.get("order_system"), row["account"])
+        if agent:
+            sets.update(agent)
+            doc = {k: v for k, v in doc.items() if k not in sets}
+        ops.append(UpdateOne({"_id": doc["_id"]}, {"$setOnInsert": doc, "$set": sets}, upsert=True))
     if not ops:
         return [], []
     res = db.parties.bulk_write(ops, ordered=False)
@@ -229,11 +233,22 @@ def upsert_accounts(db, recall: dict, distributor: dict, rows: list[dict], *, no
     return ids, created
 
 
+def _agent_fields(db, order_system: str | None, account: str) -> dict | None:
+    """levela.node.links.agent_party_fields, when the sub-recall package is present."""
+    if not order_system:
+        return None
+    try:
+        from ..node.links import agent_party_fields
+    except ImportError:
+        return None
+    return agent_party_fields(db, order_system, account)
+
+
 # ------------------------------------------------------------ the ledger
 
 def book_forwards_claim(client, db, *, recall_id: str, party_id: str, evidence_id: str, forwards: list[dict],
                         now: datetime) -> dict:
-    """The distributor's claim from its order system: every panel it shipped went to
+    """The distributor's claim from its order system: every tin it shipped went to
     the listed accounts (V2 §9 forwards; one edge per destination, booked in
     the ledger's one transaction). This is the one place the order system books
     through the ledger, so a change to the ledger's claim interface is fixed
@@ -259,7 +274,7 @@ def _client(ctx, order_system: str):
     try:
         return ctx.order_systems[order_system]
     except (KeyError, TypeError):
-        raise LookupError(f"no client configured for order system {order_system!r} (ctx.order systems)") from None
+        raise LookupError(f"no client configured for order system {order_system!r} (ctx.order_systems)") from None
 
 
 def _hit(ctx, name: str, op: dict) -> None:
@@ -301,7 +316,7 @@ def execute(ctx, op: dict, *, fresh: bool = False) -> dict:
         return _outcome(current, "skipped", note="not an order system operation")
     distributor = distributor_party(db, current["recall_id"], current["order_system"])
     if distributor is None:
-        raise LookupError(f"recall {current['recall_id']} has no distributor on order system {current['order_system']}")
+        raise LookupError(f"recall {current['recall_id']} has no distributor on {feed.orders_label(current['order_system'])}")
     adapter = adapters.active(db, current["order_system"])
     if distributor.get("order_system_paused") or adapter is None:
         # Work asked for while the order system is paused waits with the flagged ops.
@@ -563,8 +578,8 @@ def _read(ctx, op: dict, adapter: dict, order_system) -> tuple[list[dict] | None
 
 
 def _read_accounts(ctx, op: dict, *, adapter: dict, order_system, distributor: dict, fresh: bool) -> dict:
-    """Accounts become tier 2 installers, and the distributor's claim books every
-    panel it shipped to them. The ledger is written before the op is verified,
+    """Accounts become tier 2 stores, and the distributor's claim books every
+    tin it shipped to them. The ledger is written before the op is verified,
     so a kill in between repeats idempotent writes instead of losing them."""
     rows, early = _read(ctx, op, adapter, order_system)
     if early is not None:
@@ -591,7 +606,7 @@ def _read_accounts(ctx, op: dict, *, adapter: dict, order_system, distributor: d
     accepted = bool(claim and claim.get("accepted"))
     _emit(ctx, done, "order_system_accounts",
           f"accounts read: {len(rows)} accounts for batch {op['request']['batch']}, {len(created)} new parties, "
-          f"{shipped:,} panels forwarded" + ("" if accepted or not forwards else
+          f"{shipped:,} tins forwarded" + ("" if accepted or not forwards else
                                            f" (claim refused: {(claim or {}).get('reason')})"),
           level="good" if accepted or not forwards else "bad", sim=sim,
           detail={"created": created, "claim": claim})
@@ -599,7 +614,7 @@ def _read_accounts(ctx, op: dict, *, adapter: dict, order_system, distributor: d
 
 
 def _read_inventory(ctx, op: dict, *, adapter: dict, order_system, distributor: dict, fresh: bool) -> dict:
-    """What the order system says the account still has: recorded as order_system_in_stock.
+    """What the order system says the account still has: recorded as order_system_available.
     An op on the distributor itself records it for every listed account."""
     db = ctx.db
     rows, early = _read(ctx, op, adapter, order_system)
@@ -613,8 +628,8 @@ def _read_inventory(ctx, op: dict, *, adapter: dict, order_system, distributor: 
     if row is None:
         failed = fail(db, op, f"account {account.get('account')} is not in the order system's list") or op
         return _outcome(failed, "failed", note="account not listed")
-    db.parties.update_one({"_id": account["_id"]}, {"$set": {"order_system_in_stock": row["qty_in_stock"],
-                                                            "order_system_in_stock_at": sim}})
+    db.parties.update_one({"_id": account["_id"]}, {"$set": {"order_system_available": row["qty_in_stock"],
+                                                            "order_system_available_at": sim}})
     value = {"account": row["account"], "qty_in_stock": row["qty_in_stock"], "qty_shipped": row["qty_shipped"]}
     done = verify(db, op, readback_at=sim, readback_value=value, adapter_version=adapter["version"], sent_at=sim)
     if done is None:
@@ -627,12 +642,12 @@ def _read_all_inventory(ctx, op: dict, rows: list[dict], adapter: dict, distribu
     by_account = {r["account"]: r for r in rows}
     accounts = list(db.parties.find({"recall_id": op["recall_id"], "distributor": distributor["party_id"]},
                                    {"account": 1}))
-    writes = [UpdateOne({"_id": a["_id"]}, {"$set": {"order_system_in_stock": by_account[a["account"]]["qty_in_stock"],
-                                                     "order_system_in_stock_at": sim}})
+    writes = [UpdateOne({"_id": a["_id"]}, {"$set": {"order_system_available": by_account[a["account"]]["qty_in_stock"],
+                                                     "order_system_available_at": sim}})
               for a in accounts if a.get("account") in by_account]
     if writes:
         db.parties.bulk_write(writes, ordered=False)
-    value = {"accounts": len(writes), "in_stock": {a: r["qty_in_stock"] for a, r in sorted(by_account.items())}}
+    value = {"accounts": len(writes), "available": {a: r["qty_in_stock"] for a, r in sorted(by_account.items())}}
     done = verify(db, op, readback_at=sim, readback_value=value, adapter_version=adapter["version"], sent_at=sim)
     if done is None:
         return _outcome(get(db, op["_id"]), "moved", note="the operation changed during the read")

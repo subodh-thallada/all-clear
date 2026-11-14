@@ -16,6 +16,7 @@ from levela.db.seed import load_scenario, start_recall
 from levela.ledger.claims import submit_claim
 from levela.ledger.rebuild import BADGE_ID, RebuildError, rebuild
 from levela.ledger.transfers import stub_party
+from support import HELD_EVIDENCE as HELD
 from support import PRODUCT
 
 LONG = Path(__file__).parent / "fixtures" / "recall_long_mini.json"
@@ -25,20 +26,20 @@ RID = "RCL-LONG-MINI"
 @pytest.fixture
 def run(client, db, assert_balance):
     start_recall(client, db, load_scenario(LONG), all_sim=True, emit=False)
-    db.parties.insert_one(stub_party(RID, "parkdale-court", "Parkdale Court", None, "memory", server_now(client),
+    db.parties.insert_one(stub_party(RID, "parkdale-pantry", "Parkdale Pantry", None, "memory", server_now(client),
                                      product=PRODUCT))
     steps = [
-        ("harbour-fire", "sim", {"in_stock": 60}),                                    # refused by Atlas
-        ("harbour-fire", "sim", {"in_stock": 35, "returned": 5}),
-        ("queen-st-alarm", "sim", {"in_stock": 20, "forwarded_qty": 40,
-                                    "forwarded_to_name": "Corner Properties"}),
-        ("corner-properties", "form", {"received_qty": 25, "in_stock": 25}),                  # disputed
-        ("queen-st-alarm", "sim", {"in_stock": 35, "forwards": [
-            {"to_name": "Corner Properties", "qty": 25}]}),                                  # corrected
-        ("dist-north", "order_system", {"forwards": [{"to_party_id": "bloor-alarm", "qty": 120},
-                                               {"to_party_id": "annex-fire", "qty": 180}]}),
-        ("annex-fire", "sim", {"received_qty": 180, "in_stock": 100, "forwards": [
-            {"to_name": "Dundas Lofts", "qty": 50}, {"to_name": "Parkdale Court", "qty": 30}]}),
+        ("harbour-market", "sim", {"on_shelf": 60}),                                    # refused by Atlas
+        ("harbour-market", "sim", {"held": 35, **HELD, "returned": 5}),
+        ("queen-st-grocer", "sim", {"held": 20, **HELD, "forwarded_qty": 40,
+                                    "forwarded_to_name": "Corner Mart"}),
+        ("corner-mart", "form", {"received_qty": 25, "held": 25, **HELD}),                  # disputed
+        ("queen-st-grocer", "sim", {"held": 35, **HELD, "forwards": [
+            {"to_name": "Corner Mart", "qty": 25}]}),                                  # corrected
+        ("dist-north", "order_system", {"forwards": [{"to_party_id": "bloor-foods", "qty": 120},
+                                               {"to_party_id": "annex-grocer", "qty": 180}]}),
+        ("annex-grocer", "sim", {"received_qty": 180, "held": 100, **HELD, "forwards": [
+            {"to_name": "Dundas Mini Mart", "qty": 50}, {"to_name": "Parkdale Pantry", "qty": 30}]}),
     ]
     for i, (party_id, source, raw) in enumerate(steps):
         submit_claim(client, db, recall_id=RID, party_id=party_id, attempt_id=f"att_r{i}", source=source, raw=raw)
@@ -59,12 +60,12 @@ def test_rebuild_from_the_claims_log_is_identical_until_someone_writes_around_it
     assert db.client[f"{db.name}_rebuild"].list_collection_names() == []      # the scratch is gone
 
     # A write that bypasses submit_claim (it conserves, so no validator objects).
-    db.parties.update_one({"recall_id": RID, "party_id": "bloor-alarm"},
-                         {"$set": {"shipped_in": 5, "in_stock": 5}})
+    db.parties.update_one({"recall_id": RID, "party_id": "bloor-foods"},
+                         {"$set": {"shipped_in": 5, "returned": 5}})
     second = rebuild(client, db, RID)
     assert not second["identical"]
     assert {(d["id"], d["field"], d["ledger"], d["rebuilt"]) for d in second["diffs"]} == {
-        ("bloor-alarm", "shipped_in", 5, 0), ("bloor-alarm", "in_stock", 5, 0)}
+        ("bloor-foods", "shipped_in", 5, 0), ("bloor-foods", "returned", 5, 0)}
     assert db.worker_state.find_one({"_id": BADGE_ID}) is None
     assert db.feed.find_one({"kind": "error", "recall_id": RID})["detail"]["diffs"] == second["diffs"]
 

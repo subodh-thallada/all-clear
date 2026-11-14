@@ -2,7 +2,7 @@
 
     contract      canonical fields, dot paths, ContractError (detection is code)
     order_client OrderClient: adapter-driven calls, OrderSystemTimeout / OrderSystemError,
-                  order_url(), build_order_systems() for ctx.order systems
+                  order_url(), build_order_systems() for ctx.order_systems
     adapters      builtin v1, candidates, activate() in one transaction
     operations    intent -> sent -> verified by read-back; place_hold,
                   confirm_hold, read_accounts, read_inventory; resolve_in_doubt,

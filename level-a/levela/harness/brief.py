@@ -27,6 +27,7 @@ from .. import feed
 from ..api import questions as questions_
 from ..clock import day, fmt
 from ..ledger.transfers import resolve_party, stub_party
+from ..memory.govern import admissible
 from ..orchestrator import ladder
 from .variables import dispute_key
 
@@ -39,7 +40,7 @@ LINE_MAX = 220
 LIVE = ("intent", "dialed", "connected")
 NOT_YET_CLAIMED = ("pending", "contacting", "reached")
 
-RULES = ("You decide the next action for one party of a panel recall. Counts count only when the party "
+RULES = ("You decide the next action for one party of a food recall (tins of one batch). Counts count only when the party "
          "itself gives them and the database accepts them, so never report an outcome yourself. Use only the "
          "tools listed. Make exactly one tool call, or none when nothing is owed now.")
 PLANNER_RULES = ("You rank the recall's work. You may set priorities, add a question, escalate a party, propose a "
@@ -96,7 +97,7 @@ def gather(ctx, party: dict, sim_now: float) -> dict:
         "questions": open_questions(ctx.db, party),
         "attempts": len(attempts),
         "live_attempt": next((a["_id"] for a in attempts if a["state"] in LIVE), None),
-        "dispute": None, "order_system": None, "fix_check": False, "fix_check_at": None,
+        "dispute": None, "order_system": None, "removal_check": False, "removal_check_at": None,
     }
     kind, reason = _kind(ctx, party, facts, attempts, edges, names)
     facts.update(kind=kind, reason=reason)
@@ -112,7 +113,8 @@ def _names(db, recall_id: str, party_ids: set) -> dict:
 
 def _party_view(party: dict) -> dict:
     last = party.get("last_outcome") or {}
-    keys = ("party_id", "name", "type", "tier", "found_via", "state", "channel", "shipped_in", "unresolved", "escalation",
+    keys = ("party_id", "name", "type", "tier", "found_via", "state", "channel", "shipped_in", "unresolved", "on_shelf",
+            "escalation",
             "order_system", "distributor", "account", "priority", "followups")
     view = {k: party.get(k) for k in keys}
     view.update(ladder_step=ladder.clamp(party.get("ladder_step")), dialable=_dialable(party),
@@ -138,7 +140,8 @@ def _memory_lines(db, party: dict) -> list[dict]:
     """This party's own failures first (the spec: "the next brief for that
     party includes it"), then what retrieval found before its first contact."""
     lines = [{"source": "failure", "text": f"{ep.get('failure_class')}: {ep.get('summary', '')}"}
-             for ep in db.episodes.find({"kind": "failure", "recall_id": party["recall_id"], "party_id": party["party_id"]},
+             for ep in db.episodes.find({**admissible("failure", scope=party["party_id"]),
+                                         "recall_id": party["recall_id"], "party_id": party["party_id"]},
                                         {"failure_class": 1, "summary": 1}).sort("created_at", -1).limit(MAX_MEMORY)]
     for hit in ((party.get("memory") or {}).get("hits") or []):
         if len(lines) >= MAX_MEMORY:
@@ -187,13 +190,13 @@ def _kind(ctx, party: dict, facts: dict, attempts: list, edges: list, names: dic
         return "ask_question", "open questions"
     if dispute is not None:
         return None, "disputed, follow-ups wait for the operator"
-    check_at = party.get("fix_check_at")
-    if party.get("installed") and check_at is not None:
+    check_at = party.get("removal_check_at")
+    if party.get("on_shelf") and check_at is not None:
         if facts["sim_now"] >= check_at:
-            facts["fix_check"] = True
-            return "contact_party", f"fix check: {party['installed']} panels installed and not yet fixed"
-        facts["fix_check_at"] = check_at
-        return None, f"fix check due {fmt(check_at)}"
+            facts["removal_check"] = True
+            return "contact_party", f"removal check: {party['on_shelf']} tins still on the shelf"
+        facts["removal_check_at"] = check_at
+        return None, f"removal check due {fmt(check_at)}"
     return None, "counts on the books; waiting on a counterpart" if state == "claimed" else "reconciled"
 
 
@@ -341,7 +344,7 @@ def _probe(db, party: dict, reads: list[dict]) -> dict | None:
 
 def gather_planner(ctx, sim_now: float) -> dict:
     """The planner's one view (V2 §5): parties by state and tier, the ten with
-    the most unexplained panels (with the priority the rule wants), the oldest
+    the most unexplained tins (with the priority the rule wants), the oldest
     due time and the failure classes of the last simulated day."""
     rid = ctx.recall["_id"]
     disputed = {row["_id"]: row["n"] for row in ctx.db.edges.aggregate([
@@ -353,7 +356,7 @@ def gather_planner(ctx, sim_now: float) -> dict:
         {"$facet": {
             "by_state": [{"$group": {"_id": {"state": "$state", "tier": "$tier"}, "n": {"$sum": 1}}}],
             "top": [{"$match": {"state": {"$ne": "reconciled"}}}, {"$sort": {"unresolved": -1, "party_id": 1}},
-                    {"$limit": 10}, {"$project": {"party_id": 1, "name": 1, "unresolved": 1, "priority": 1,
+                    {"$limit": 10}, {"$project": {"party_id": 1, "name": 1, "unresolved": 1, "on_shelf": 1, "priority": 1,
                                                   "questions": {"$size": {"$ifNull": ["$open_questions", []]}}}}],
             "oldest_due": [{"$match": {"next_action_at": {"$ne": None}}}, {"$sort": {"next_action_at": 1}},
                            {"$limit": 1}, {"$project": {"next_action_at": 1}}],
@@ -365,6 +368,7 @@ def gather_planner(ctx, sim_now: float) -> dict:
     for s in facet.get("top", []):
         wanted = int(s.get("unresolved") or 0) + 2 * int(disputed.get(s["party_id"], 0)) + (50 if s["questions"] else 0)
         top.append({"party_id": s["party_id"], "name": s["name"], "unresolved": s.get("unresolved", 0),
+                    "on_shelf": s.get("on_shelf", 0),
                     "disputed": disputed.get(s["party_id"], 0), "priority": int(s.get("priority") or 0), "wanted": wanted})
     oldest = (facet.get("oldest_due") or [{}])[0].get("next_action_at")
     return {"kind": "planner", "reason": "scheduled review", "sim_now": round(float(sim_now), 4), "sim_label": fmt(sim_now),
@@ -397,7 +401,8 @@ def _party_sections(facts: dict) -> list[tuple[str, str]]:
     s = facts["party"]
     last = (f"{s['last_outcome']} at {fmt(s['last_at'])}" if s.get("last_outcome") else "none yet")
     party_line = (f"{s['name']} ({s['party_id']}), {s.get('type')}, tier {s.get('tier')}, via {s.get('found_via')}, state {s.get('state')}, "
-                  f"shipped_in {s.get('shipped_in')}, unresolved {s.get('unresolved')}, ladder step {s['ladder_step']}, "
+                  f"shipped_in {s.get('shipped_in')}, unresolved {s.get('unresolved')}, on the shelf {s.get('on_shelf') or 0}, "
+                  f"ladder step {s['ladder_step']}, "
                   f"last result: {last}" + ("" if s["dialable"] else ", no phone (form only)"))
     memory = "; ".join(f"[{m['source']}] {_cut(m['text'], 70)}" for m in facts["memory"]) or "none"
     questions = "; ".join(f"{q['id']} ({q['answer_type']}): {_cut(q['text'], 60)}" for q in facts["questions"]) or "none"
@@ -431,7 +436,8 @@ def _ask(facts: dict) -> str:
 
 
 def _planner_sections(facts: dict) -> list[tuple[str, str]]:
-    top = "; ".join(f"{t['party_id']} unresolved {t['unresolved']} disputed {t['disputed']} "
+    top = "; ".join(f"{t['party_id']} unresolved {t['unresolved']} on shelf {t.get('on_shelf', 0)} "
+                    f"disputed {t['disputed']} "
                     f"priority {t['priority']} -> {t['wanted']}" for t in facts["top"][:10])
     states = ", ".join(f"{st}/L{lv}: {n}" for st, lv, n in facts["by_state"][:12])
     fails = ", ".join(f"{k} {v}" for k, v in facts["failures"].items()) or "none"

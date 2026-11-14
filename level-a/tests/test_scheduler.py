@@ -62,8 +62,8 @@ def pin(db, recall_id, hour):
 def rid(client, db):
     """recall_1 with Queen St on North orders and Lakeside on East orders, at d3 09:15."""
     recall_id = start_recall(client, db, load_scenario("recall_1"), all_sim=True)["recall_id"]
-    db.parties.update_one({"recall_id": recall_id, "party_id": "queen-st-alarm"}, {"$set": {"order_system": "north"}})
-    db.parties.update_one({"recall_id": recall_id, "party_id": "lakeside-systems"}, {"$set": {"order_system": "east"}})
+    db.parties.update_one({"recall_id": recall_id, "party_id": "queen-st-grocer"}, {"$set": {"order_system": "north"}})
+    db.parties.update_one({"recall_id": recall_id, "party_id": "lakeside-foods"}, {"$set": {"order_system": "east"}})
     pin(db, recall_id, 81.25)
     return recall_id
 
@@ -156,16 +156,16 @@ def test_a_scheduled_switch_makes_the_distributor_due_now_with_a_contract_probe_
     """The change is detected by the agent's next order system call: without the
     probe that call waits for the next morning's read, or never comes once
     every account is reconciled."""
-    for sid in ("queen-st-alarm", "lakeside-systems"):
+    for sid in ("queen-st-grocer", "lakeside-foods"):
         db.parties.update_one({"recall_id": rid, "party_id": sid}, {"$set": {"channel": "order_system", "next_action_at": None}})
     db.runs.update_one({"_id": runs.run_id(rid)}, {"$set": {"events.order_system_change_at": {"north": 81.0, "east": 81.5}}})
     sched = Scheduler(settings, client, db, http=order_client([], set()), invariants=FakeInvariants([True] * 4))
 
     assert sched.tick()[0]["fired"] == ["north"]
-    queen = db.parties.find_one({"recall_id": rid, "party_id": "queen-st-alarm"})
+    queen = db.parties.find_one({"recall_id": rid, "party_id": "queen-st-grocer"})
     assert (queen["next_action_at"], queen["order_system_probe_due"], queen["order_system_probes"]) == (81.25, True, 1)
     assert lines(db, "order_system_switched")[0]["detail"]["probes_owed"] == 1
-    lakeside = db.parties.find_one({"recall_id": rid, "party_id": "lakeside-systems"})
+    lakeside = db.parties.find_one({"recall_id": rid, "party_id": "lakeside-foods"})
     assert lakeside["next_action_at"] is None and "order_system_probes" not in lakeside, "east is not switched yet"
 
 

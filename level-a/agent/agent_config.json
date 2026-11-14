@@ -7,25 +7,25 @@
       "dynamic_variables": {
         "dynamic_variable_placeholders": {
           "attempt_id": "att_5e0c2a7b91d4f3",
-          "party_id": "maple-court",
-          "party_name": "Maple Court",
-          "party_type": "owner",
-          "batch_code": "B-9902",
-          "batch_spoken": "B, nine nine zero two",
-          "model": "DEMO-9",
-          "product": "DEMO-9 fire alarm control panel",
-          "hazard": "The sounder circuit may fail to activate in an alarm",
-          "unit": "panel",
+          "party_id": "corner-mart",
+          "party_name": "Corner Mart",
+          "party_type": "store",
+          "batch_code": "B-4471",
+          "batch_spoken": "B, four four seven one",
+          "product": "Maple Farm milk powder 800 g",
+          "hazard": "a faulty lid seal",
+          "evidence": "three customer complaints, from three different stores",
+          "unit": "tin",
           "receipt": "yes",
           "ask_checks": "yes",
           "purpose": "initial",
-          "company": "Kestrel Life Safety",
-          "sender_name": "Annex Fire",
+          "company": "Maple Farm Foods",
+          "sender_name": "Queen St Grocer",
           "told_qty": "16",
           "ask_delivery_note": "no",
-          "followup_note": "Annex Fire told us they installed 16 panels at your buildings, but you told us you received 14.",
+          "followup_note": "Queen St Grocer told us they passed 16 tins to your store, but you told us you received 14.",
           "ask_counts": "yes",
-          "questions": "q-07: Did you also receive batch ZX-5521? (answer: yes or no, and how many panels).",
+          "questions": "q-07: Did you also receive batch B-9902? (answer: yes or no, and how many tins).",
           "question_ids": "q-07"
         }
       },
@@ -42,7 +42,7 @@
           "end_call": {
             "type": "system",
             "name": "end_call",
-            "description": "End the call: after thanking the person once the counts and answers are recorded, after a call back is booked, on voicemail or an automated menu, when they refuse, or when a tool reply says stop.",
+            "description": "End the call: after thanking the person once the counts and answers are recorded, after the recall's instruction is read to a buyer, after a call back is booked, on voicemail or an automated menu, when they refuse, or when a tool reply says stop.",
             "params": {
               "system_tool_type": "end_call"
             }
@@ -51,7 +51,7 @@
       }
     },
     "tts": {
-      "model_id": "eleven_flash_v2_5"
+      "model_id": "eleven_flash_v2"
     },
     "conversation": {
       "max_duration_seconds": 180
@@ -64,19 +64,24 @@
       "keywords": [
         "recall",
         "batch",
-        "panels",
-        "fire alarm",
-        "in stock",
-        "installed",
-        "updated",
+        "tins",
+        "tin",
+        "milk powder",
+        "Maple Farm",
+        "lid seal",
+        "sold",
+        "on the shelf",
+        "held",
         "returned",
-        "installer",
-        "building",
-        "display",
-        "version",
-        "sounder",
-        "test button",
-        "DEMO-7",
+        "passed",
+        "store",
+        "till",
+        "item sales report",
+        "scan",
+        "refuse",
+        "refused",
+        "batch code",
+        "B-4471",
         "delivery note",
         "none",
         "zero",
@@ -84,11 +89,12 @@
         "tomorrow",
         "morning",
         "afternoon",
-        "Corner Properties",
-        "Harbour Fire",
-        "Queen St Alarm",
-        "Lakeside Systems",
-        "Kestrel"
+        "Harbour Market",
+        "Queen St Grocer",
+        "Lakeside Foods",
+        "Corner Mart",
+        "return",
+        "destroy"
       ]
     }
   },

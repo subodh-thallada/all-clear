@@ -12,9 +12,9 @@ simulated hours.
 `parties.ladder_step` is the step whose action runs when `next_action_at`
 comes due. A reply can set the timer instead: "call back tomorrow at 9"
 keeps the step and makes the callback hour the timer. Accepted counts end
-the ladder: no timer, unless the claim left panels installed and not fixed,
-when the timer is the party's fix check (`fix_check_at`, set by the claim,
-48 simulated hours on). If the party still waits on a transfer, the
+the ladder: no timer, unless the claim left tins on the shelf, when the
+timer is the party's removal check (`removal_check_at`, set by the claim, 4
+simulated hours on; spec "Contact ladder"). If the party still waits on a transfer, the
 counterpart's claim wakes it (the claim transaction sets next_action_at).
 
 `memory_hour` is an hour of day the party is known to answer at, learned
@@ -88,8 +88,8 @@ def after(party: dict, outcome: str, sim_now: float, *, callback_at=None,
     with `outcome` at simulated hour `sim_now`.
 
     callback_requested  same step, timer at the requested hour (never in the past)
-    claim_accepted      same step, no timer (the ladder is done), or the fix
-                        check when panels are still installed and not fixed
+    claim_accepted      same step, no timer (the ladder is done), or the
+                        removal check when tins are still on the shelf
     escalated           step 5, no timer
     answer_recorded     no timer once the counts are on the books; otherwise
                         the party still owes its counts and moves on like an
@@ -109,8 +109,8 @@ def after(party: dict, outcome: str, sim_now: float, *, callback_at=None,
         return step, None, None
     if outcome == "callback_requested" and callback_at is not None:
         return step, max(float(callback_at), sim_now), action_for(step)
-    if outcome == "claim_accepted" and party.get("installed") and party.get("fix_check_at") is not None:
-        return step, max(float(party["fix_check_at"]), sim_now), CALL
+    if outcome == "claim_accepted" and party.get("on_shelf") and party.get("removal_check_at") is not None:
+        return step, max(float(party["removal_check_at"]), sim_now), CALL
     if outcome in SETTLED:
         return (LAST_STEP if outcome == "escalated" else step), None, None
     if outcome == "answer_recorded" and party.get("state") in COUNTS_ON_BOOKS:

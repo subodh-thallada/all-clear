@@ -5,7 +5,7 @@ database with it (describe()).
 The spec's rules enforced by Atlas:
 
   1  party conservation          validator on parties
-  2  fixed needs evidence        validator on parties
+  2  removal needs evidence      validator on parties
   3  edge sanity                 validator on edges
   4  close gate                  validator on recalls
   5  one live attempt per party  partial unique index on attempts
@@ -30,7 +30,12 @@ SPEC_COLLECTIONS = ["recalls", "shipments", "parties", "edges", "claims",
                     "attempts", "tool_events", "episodes", "worker_state"]
 EXTRA_COLLECTIONS = ["feed", "sim_calls"]
 V2_COLLECTIONS = ["operations", "adapters", "runs", "task_runs", "traces", "questions", "capacity"]
-COLLECTIONS = SPEC_COLLECTIONS + EXTRA_COLLECTIONS + V2_COLLECTIONS
+# Store records and the sub-recall keep their collections, validators and
+# indexes in their own modules (one owner each); they are merged here.
+from .schema_node import NODE_COLLECTIONS, NODE_INDEXES, NODE_VALIDATORS  # noqa: E402
+from .schema_store import STORE_COLLECTIONS, STORE_INDEXES, STORE_VALIDATORS  # noqa: E402
+
+COLLECTIONS = SPEC_COLLECTIONS + EXTRA_COLLECTIONS + V2_COLLECTIONS + STORE_COLLECTIONS + NODE_COLLECTIONS
 # What the claim path reads and writes: enough for a ledger rebuild's scratch
 # database, at a third of the cost of a full setup on a free cluster.
 LEDGER_COLLECTIONS = ["recalls", "shipments", "parties", "edges", "claims", "tool_events", "worker_state"]
@@ -44,52 +49,79 @@ PARTY_NAME_INDEX_DEFINITION = {"mappings": {"dynamic": False, "fields": {
 _QTY = {"bsonType": ["int", "long"], "minimum": 0}
 _QTY_OR_NULL = {"bsonType": ["int", "long", "null"], "minimum": 0}
 
-# The six buckets a party's panels fall into. `installed` means installed and
-# not yet confirmed fixed.
-BUCKETS = ("in_stock", "installed", "fixed", "returned", "forwarded", "unresolved")
-PARTY_TYPES = ["distributor", "installer", "owner"]
+# The six buckets a party's tins fall into. `on_shelf` is the open bucket
+# (still for sale); `held` is pulled from sale and kept apart, and needs
+# evidence; `sold` reached shoppers and is bounded by the till.
+BUCKETS = ("sold", "on_shelf", "held", "returned", "forwarded", "unresolved")
+# What a party's own records show (ints >= 0, default 0 when absent).
+EVIDENCE_FIELDS = ("held_by_system", "sold_by_till", "system_on_shelf")
+# The three check answers a store gives on a call (spec "Checks").
+CHECK_FIELDS = ("batch_seen", "sold_source", "block_test")
+# A sold count read from the till's item sales report.
+TILL_REPORT = "till_report"
+PARTY_TYPES = ["plant", "distributor", "store", "self"]
+PARTY_TIERS = [0, 1, 2, 3]
+PARTY_CHANNELS = ["voice", "sim", "form", "order_system", "agent"]
 _STRING_OR_NULL = {"bsonType": ["string", "null"]}
 
+
+def _evidence(name: str) -> dict:
+    """An evidence count, 0 when the party has none recorded."""
+    return {"$ifNull": [f"${name}", 0]}
+
+
 # Rule 1. Party conservation: every quantity is a non-negative integer and
-#   shipped_in = in_stock + installed + fixed + returned + forwarded + unresolved.
-# Rule 2. Fixed needs evidence: `fixed` is at most `fixed_by_panel` (connected
-# panels that passed their own test), unless the party read a version outside
-# its affected_versions off the display AND the sounder rang; `installed` is
-# never below `connected_unfixed` (a connected panel outranks the phone); and
-# a model read off the panel must be the recalled model.
-_FIXED_BY_PHONE = {"$and": [
-    {"$eq": [{"$type": "$version_seen"}, "string"]},
-    {"$not": [{"$in": ["$version_seen", {"$ifNull": ["$affected_versions", []]}]}]},
-    {"$eq": ["$sounder_test", True]},
+#   shipped_in = sold + on_shelf + held + returned + forwarded + unresolved.
+# Rule 2. Removal needs evidence:
+#   held <= held_by_system, unless the party read the recalled batch code
+#     (batch_seen == batch_code, both strings) off a tin AND the till refused
+#     the sale (block_test true);
+#   sold <= sold_by_till, unless the count was read from the till report
+#     (sold_source == "till_report");
+#   on_shelf >= system_on_shelf (the store's stock record outranks the phone);
+#   sub.state "closed" (a sub-recall) needs on_shelf == 0 and unresolved == 0.
+_HELD_BY_PHONE = {"$and": [
+    {"$eq": [{"$type": "$batch_seen"}, "string"]},
+    {"$eq": [{"$type": "$batch_code"}, "string"]},
+    {"$eq": ["$batch_seen", "$batch_code"]},
+    {"$eq": ["$block_test", True]},
+]}
+_SOLD_FROM_TILL = {"$eq": ["$sold_source", TILL_REPORT]}
+_SUB_CLOSED_IS_EMPTY = {"$or": [
+    {"$ne": [{"$ifNull": ["$sub.state", None]}, "closed"]},
+    {"$and": [{"$eq": ["$on_shelf", 0]}, {"$eq": ["$unresolved", 0]}]},
 ]}
 PARTY_VALIDATOR = {
     "$jsonSchema": {
         "bsonType": "object",
-        "required": [
-            "recall_id", "party_id", "name", "type", "tier", "channel", "state", "shipped_in", *BUCKETS,
-            "model", "affected_versions", "fixed_by_panel", "connected_unfixed",
-        ],
+        "required": ["recall_id", "party_id", "name", "type", "tier", "channel", "state", "shipped_in", *BUCKETS],
         "properties": {
             "recall_id": {"bsonType": "string"},
             "party_id": {"bsonType": "string"},
             "type": {"enum": PARTY_TYPES},
-            "tier": {"bsonType": "int", "enum": [1, 2, 3]},
+            "tier": {"bsonType": "int", "enum": PARTY_TIERS},
             "shipped_in": _QTY, **{b: _QTY for b in BUCKETS},
-            "fixed_by_panel": _QTY, "connected_unfixed": _QTY,
+            **{e: _QTY for e in EVIDENCE_FIELDS},
             "state": {"enum": ["pending", "contacting", "reached", "claimed", "reconciled"]},
-            "channel": {"enum": ["voice", "sim", "form", "order_system"]},
-            "model": {"bsonType": "string"},
-            "affected_versions": {"bsonType": "array", "items": {"bsonType": "string"}},
-            "model_seen": _STRING_OR_NULL,
-            "version_seen": _STRING_OR_NULL,
-            "sounder_test": {"bsonType": ["bool", "null"]},
+            "channel": {"enum": PARTY_CHANNELS},
+            "batch_code": {"bsonType": "string"},
+            "batch_seen": _STRING_OR_NULL,
+            "sold_source": _STRING_OR_NULL,
+            "block_test": {"bsonType": ["bool", "null"]},
+            "link_id": _STRING_OR_NULL,
+            "sub": {"bsonType": ["object", "null"], "properties": {
+                "seq": {"bsonType": ["int", "long"], "minimum": 0},
+                "parties_total": _QTY, "parties_open": _QTY,
+                "state": _STRING_OR_NULL,
+            }},
         },
     },
     "$expr": {"$and": [
         {"$eq": ["$shipped_in", {"$add": [f"${b}" for b in BUCKETS]}]},
-        {"$or": [{"$lte": ["$fixed", "$fixed_by_panel"]}, _FIXED_BY_PHONE]},
-        {"$gte": ["$installed", "$connected_unfixed"]},
-        {"$or": [{"$eq": [{"$ifNull": ["$model_seen", None]}, None]}, {"$eq": ["$model_seen", "$model"]}]},
+        {"$or": [{"$lte": ["$held", _evidence("held_by_system")]}, _HELD_BY_PHONE]},
+        {"$or": [{"$lte": ["$sold", _evidence("sold_by_till")]}, _SOLD_FROM_TILL]},
+        {"$gte": ["$on_shelf", _evidence("system_on_shelf")]},
+        _SUB_CLOSED_IS_EMPTY,
     ]},
 }
 
@@ -109,21 +141,28 @@ EDGE_VALIDATOR = {
 }
 
 # Rule 4. Close gate: status may be "closed" only when open_units is 0. The
-# recall also carries what the checks compare against (model, affected and
-# fixed versions), copied onto each party, and where it came from: a recall
-# whose source is a signal names it.
+# recall also carries what the checks compare against (product, barcode,
+# affected batches, the action stores must take, the defect); its batch code
+# is copied onto each party. A recall whose source is a signal names it; a
+# child node's recall names its parent (link and recall id).
+RECALL_ACTIONS = ["return", "destroy", None]
 RECALL_VALIDATOR = {
     "$jsonSchema": {
         "bsonType": "object",
-        "required": ["batch_code", "model", "affected_versions", "fixed_version", "source", "units_total",
-                     "open_units", "status"],
+        "required": ["batch_code", "product", "affected_batches", "source", "units_total", "open_units", "status"],
         "properties": {
             "batch_code": {"bsonType": "string"},
-            "model": {"bsonType": "string"},
-            "affected_versions": {"bsonType": "array", "items": {"bsonType": "string"}},
-            "fixed_version": {"bsonType": "string"},
+            "product": {"bsonType": "string"},
+            "barcode": _STRING_OR_NULL,
+            "affected_batches": {"bsonType": "array", "items": {"bsonType": "string"}},
+            "action": {"enum": RECALL_ACTIONS},
+            "barcode_verified": {"bsonType": "bool"},
+            "defect": _STRING_OR_NULL,
+            "checks": {"bsonType": ["array", "null"]},
             "source": {"enum": ["signal", "manual"]},
             "source_signal": _STRING_OR_NULL,
+            "parent": {"bsonType": ["object", "null"], "properties": {
+                "link_id": {"bsonType": "string"}, "recall_id": {"bsonType": "string"}}},
             "units_total": _QTY, "open_units": _QTY,
             "status": {"enum": ["open", "closed"]},
         },
@@ -151,9 +190,26 @@ OPERATION_VALIDATOR = {
     ],
 }
 
+# Claims: what said it (spec "Data model"; `agent` is another node's signed
+# report, `store_system` a connected store's own records; `order_system` and
+# `rep` are the long run's) and whether it was booked.
+CLAIM_SOURCES = ["voice", "sim", "form", "store_system", "agent", "order_system", "rep"]
+CLAIM_VALIDATOR = {
+    "$jsonSchema": {
+        "bsonType": "object",
+        "required": ["recall_id", "party_id", "source", "status", "dedupe_key"],
+        "properties": {
+            "source": {"enum": CLAIM_SOURCES},
+            "status": {"enum": ["accepted", "rejected"]},
+            "dedupe_key": {"bsonType": "string"},
+        },
+    },
+}
+
 # The ledger's validators (the spec's rules 1 to 4), then every validator setup installs.
 VALIDATORS = {"parties": PARTY_VALIDATOR, "edges": EDGE_VALIDATOR, "recalls": RECALL_VALIDATOR}
-ALL_VALIDATORS = {**VALIDATORS, "operations": OPERATION_VALIDATOR}
+ALL_VALIDATORS = {**VALIDATORS, "claims": CLAIM_VALIDATOR, "operations": OPERATION_VALIDATOR, **STORE_VALIDATORS,
+                  **NODE_VALIDATORS}
 
 # (collection, keys, options). Rule 5 is the partial unique index on attempts.
 SPEC_INDEXES = [
@@ -200,18 +256,25 @@ EXTRA_INDEXES = [
     ("traces", [("run_id", ASCENDING), ("seq", ASCENDING)], {"unique": True, "name": "uniq_run_seq"}),
     ("questions", [("recall_id", ASCENDING)], {"name": "by_recall"}),
     ("feed", [("recall_id", ASCENDING), ("system", ASCENDING), ("at", DESCENDING)], {"name": "by_recall_system_time"}),
+    # WS6 (governed memory): the episodes TTL index on expires_at goes here.
+    ("episodes", [("expires_at", ASCENDING)], {"name": "episodes_ttl_expires_at", "expireAfterSeconds": 0}),
 ]
-INDEXES = SPEC_INDEXES + EXTRA_INDEXES
+INDEXES = SPEC_INDEXES + EXTRA_INDEXES + STORE_INDEXES + NODE_INDEXES
 
 
 def vector_index_definition(dims: int) -> dict:
     """The episodes vector index: cosine over `embedding`, filterable on
     `valid` and `kind` (contact episodes and adapter repairs share the
-    collection)."""
+    collection).
+
+    WS6 (governed memory) owns the filter list: add `scope`, `expires_at`
+    and any other filter field here."""
     return {"fields": [
         {"type": "vector", "path": "embedding", "numDimensions": int(dims), "similarity": "cosine"},
         {"type": "filter", "path": "valid"},
         {"type": "filter", "path": "kind"},
+        {"type": "filter", "path": "scope"},
+        {"type": "filter", "path": "expires_at"},
     ]}
 
 
@@ -289,7 +352,7 @@ def ensure_party_name_index(db, wait_s: int = 180) -> dict:
 
 
 def describe(db) -> dict:
-    """What is actually installed: validators and index names per collection
+    """What is actually in place: validators and index names per collection
     (None for a collection that does not exist)."""
     out = {}
     infos = {c["name"]: c for c in db.list_collections()}

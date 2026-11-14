@@ -14,7 +14,7 @@ from levela.orchestrator import recovery
 from levela.orchestrator.attempts import utcnow
 from levela.providers.base import ProbedCall
 
-RID, SID, PHONE = "RCL-2026-017", "queen-st-alarm", "+14165550142"
+RID, SID, PHONE = "RCL-2026-017", "queen-st-grocer", "+14165550142"
 ME = {"worker": "worker-test", "boot": "boot-now"}
 DEAD = {"worker": "worker-gone", "boot": "boot-gone"}
 
@@ -82,7 +82,7 @@ def test_tool_events_adopt_the_call_without_asking_the_probe(db, settings, recal
     assert row["dial_confirmed"] is True and row["adopted"]["evidence"] == "tool_events"
     assert row["adopted"]["by"] == ME
     [line] = _feed(db, "attempt_adopted")
-    assert line["text"] == (f"Attempt {att['_id']} for Queen St Alarm adopted from tool_events: call CA7 "
+    assert line["text"] == (f"Attempt {att['_id']} for Queen St Grocer adopted from tool_events: call CA7 "
                             "happened while the worker was down. No redial.")
     assert (line["level"], line["attempt_id"], line["source"]) == ("good", att["_id"], "worker")
 
@@ -94,7 +94,7 @@ def test_tool_events_beat_the_grace_period(db, settings, recall):
     res = _resolve(db, replace(settings, indoubt_grace_s=60), att, ScriptedProbe(), t0)
     assert res["action"] == "adopted" and res["call_sid"] is None
     [line] = _feed(db, "attempt_adopted")
-    assert line["text"] == (f"Attempt {att['_id']} for Queen St Alarm adopted from tool_events: the call "
+    assert line["text"] == (f"Attempt {att['_id']} for Queen St Grocer adopted from tool_events: the call "
                             "happened while the worker was down. No redial.")
 
 
@@ -149,7 +149,7 @@ def test_the_probe_finds_the_call_and_it_is_adopted(db, settings, recall, name, 
     row = A.get(db, att["_id"])
     assert (row["state"], row["call_sid"], row["conversation_id"]) == ("dialed", "CA5", "conv_5")
     assert _feed(db, "attempt_adopted")[0]["text"] == (
-        f"Attempt {att['_id']} for Queen St Alarm adopted from {evidence}: call CA5 happened while the worker "
+        f"Attempt {att['_id']} for Queen St Grocer adopted from {evidence}: call CA5 happened while the worker "
         "was down. No redial.")
 
 
@@ -169,7 +169,7 @@ def test_start_times_are_compared_with_the_allowed_skew(db, settings, recall):
     res = _resolve(db, settings, att, ScriptedProbe([inside]), t0 + timedelta(seconds=5))
     assert res["call_sid"] == "CA_in"
 
-    att2 = _open(db, t0, party_id="lakeside-systems", attempt_id="att_lakeside_1")
+    att2 = _open(db, t0, party_id="lakeside-foods", attempt_id="att_lakeside_1")
     outside = _call("CA_old", t0 - timedelta(seconds=settings.probe_skew_s * 3))
     res = _resolve(db, settings, att2, ScriptedProbe([outside]), t0 + timedelta(seconds=5))
     assert res["action"] == "abandoned"
@@ -181,7 +181,7 @@ def test_a_call_not_started_yet_counts_only_while_live(db, settings, recall):
     res = _resolve(db, settings, att, ScriptedProbe([_call("CA_q", None, status="queued")]), t0)
     assert res["action"] == "adopted" and res["call_sid"] == "CA_q"
 
-    att2 = _open(db, t0, party_id="lakeside-systems")
+    att2 = _open(db, t0, party_id="lakeside-foods")
     res = _resolve(db, settings, att2, ScriptedProbe([_call("CA_x", None, status="canceled")]), t0)
     assert res["action"] == "abandoned"
 
@@ -199,7 +199,7 @@ def test_a_call_already_on_another_attempt_is_never_adopted(db, settings, recall
 
 def test_the_newest_free_call_is_adopted(db, settings, recall):
     t0 = utcnow()
-    other = _open(db, t0, party_id="lakeside-systems")
+    other = _open(db, t0, party_id="lakeside-foods")
     A.mark_dialed(db, other["_id"], call_sid="CA_taken")
     att = _open(db, t0)
     calls = [_call("CA_taken", t0 + timedelta(seconds=3)), _call("CA_new", t0 + timedelta(seconds=2)),
@@ -216,7 +216,7 @@ def test_no_evidence_abandons_so_the_decider_may_dial_again(db, settings, recall
     row = A.get(db, att["_id"])
     assert (row["state"], row["outcome_reason"], row["abandoned_by"]) == ("abandoned", "no evidence of a call", ME)
     [line] = _feed(db, "attempt_abandoned")
-    assert line["text"] == (f"Attempt {att['_id']} for Queen St Alarm abandoned: no evidence of a call. "
+    assert line["text"] == (f"Attempt {att['_id']} for Queen St Grocer abandoned: no evidence of a call. "
                             "Dialling again is safe.")
     assert line["level"] == "warn"
 
@@ -253,7 +253,7 @@ def test_settled_attempts_are_not_in_doubt(db, settings, recall):
 def test_in_doubt_filter_matches_in_doubt(db, settings, recall):
     t0 = utcnow()
     ids = {name: _open(db, t0, party_id=sid)["_id"] for name, sid in
-           (("intent", "harbour-fire"), ("closed_unconfirmed", "lakeside-systems"), ("confirmed", SID))}
+           (("intent", "harbour-market"), ("closed_unconfirmed", "lakeside-foods"), ("confirmed", SID))}
     A.complete(db, ids["closed_unconfirmed"], "completed")
     A.mark_dialed(db, ids["confirmed"], call_sid="CA1")
     found = {a["_id"] for a in db.attempts.find(recovery.in_doubt_filter([RID]))}
@@ -317,7 +317,7 @@ def test_a_stale_call_is_closed_to_match_the_probe(db, settings, recall):
     row = A.get(db, att["_id"])
     assert row["state"] == "completed" and row["outcome_reason"] == "stale: sim probe reports completed"
     [line] = _feed(db, "attempt_stale")
-    assert line["text"] == (f"Attempt {att['_id']} for Queen St Alarm had no post-call after "
+    assert line["text"] == (f"Attempt {att['_id']} for Queen St Grocer had no post-call after "
                             f"{int(settings.stale_call_s + 1)} s; sim probe reports the call completed. "
                             "Closed as completed.")
 

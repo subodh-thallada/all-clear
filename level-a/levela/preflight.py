@@ -90,7 +90,7 @@ def preflight(client, db, rep: Report, env, embedder=None) -> None:
               db.recalls.count_documents({"_id": {"$in": DEMO_RECALL_IDS}}) == 0, "run reset")
     left = db.episodes.count_documents({})
     rep.check("no episode left over from a rehearsal", left == 0,
-              f"{left} found; run reset or run 1 will reach Corner Properties at second zero")
+              f"{left} found; run reset or run 1 will reach Corner Mart at second zero")
     rep.check("no live attempt anywhere",
               db.attempts.count_documents({"state": {"$in": list(LIVE_ATTEMPT_STATES)}}) == 0)
     _vector_index(db, rep, embedder)

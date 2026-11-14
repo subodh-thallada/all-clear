@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "levela"
 version = "0.1.0"
-description = "All Clear: a panel recall agent that phones every party and will not close until every panel is explained."
+description = "All Clear: a food recall agent that finds every tin of a recalled batch and will not say all clear until the database shows every tin off every shelf."
 requires-python = ">=3.11"
 dependencies = [
   "pymongo[srv]>=4.7",
@@ -21,7 +21,7 @@ dependencies = [
 test = ["pytest>=8", "pytest-timeout>=2.3"]
 
 [tool.setuptools.packages.find]
-include = ["levela*", "seedkit*"]
+include = ["levela*"]
 
 [tool.setuptools.package-data]
 levela = ["wall/*", "api/templates/*"]

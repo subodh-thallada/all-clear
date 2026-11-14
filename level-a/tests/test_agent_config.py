@@ -1,4 +1,8 @@
-"""The voice agent as code (agent/*) and its two scripts.
+"""The voice agent as code (agent/*) and its two scripts, for the food recall
+(Maple Farm milk powder 800 g, batch B-4471): three call scripts chosen by
+`party_type` (store, plant, buyer), the store's counts in tins and its three
+checks, and provisioning that updates the existing agent and never makes a
+duplicate.
 
 The agent files must never carry a delivered count, every dynamic variable they
 use must be one the worker sends, each tool must bind exactly the ids the API
@@ -23,20 +27,21 @@ from levela.providers.base import PlacedCall, ProbedCall, ProviderError, Provide
 # DESIGN.md section 5: what the worker sends on every call, plus the question
 # variables of V2 (spec "Questions as data"): ask_counts "yes"/"no", the open
 # questions as text, and their ids.
-PROMPT_VARIABLES = {"party_name", "batch_code", "batch_spoken", "product", "brand", "hazard", "unit",
-                    "tier", "purpose", "company", "sender_name", "told_qty",
+PROMPT_VARIABLES = {"party_name", "party_type", "batch_code", "batch_spoken", "product", "hazard", "evidence",
+                    "unit", "receipt", "ask_checks", "purpose", "company", "sender_name", "told_qty",
                     "ask_delivery_note", "followup_note", "ask_counts", "questions"}
 WORKER_VARIABLES = PROMPT_VARIABLES | {"attempt_id", "party_id", "question_ids"}
 TOOL_BINDINGS = {"attempt_id", "party_id", "system__conversation_id", "system__call_sid"}
-INTEGER_FIELDS = {"on_hand", "sold", "returned", "destroyed", "forwarded_qty", "received_qty"}
-STRING_FIELDS = {"forwarded_to_name", "delivery_note", "received_from"}
+INTEGER_FIELDS = {"sold", "on_shelf", "held", "returned", "forwarded_qty", "received_qty"}
+STRING_FIELDS = {"forwarded_to_name", "delivery_note", "received_from", "batch_seen", "sold_source"}
+BOOLEAN_FIELDS = {"block_test"}
 ARRAY_FIELDS = {"forwards"}
 # Each tool: its file, the endpoint, the fields the model fills with their
 # types, and the required fields (V2 section 10 for the two new ones).
 TOOLS = {
     "submit_count": ("tool_submit_count.json", "/tools/submit_count",
                      {**dict.fromkeys(INTEGER_FIELDS, "integer"), **dict.fromkeys(STRING_FIELDS, "string"),
-                      **dict.fromkeys(ARRAY_FIELDS, "array")},
+                      **dict.fromkeys(BOOLEAN_FIELDS, "boolean"), **dict.fromkeys(ARRAY_FIELDS, "array")},
                      ["attempt_id", "party_id"]),
     "submit_answer": ("tool_submit_answer.json", "/tools/submit_answer",
                       {"question_id": "string", "value": "string"},
@@ -93,7 +98,9 @@ def _scenario_secrets():
     """Every delivered count and delivery note in the demo scenarios."""
     counts, notes = set(), set()
     for path in SCENARIO_DIR.glob("*.json"):
-        for party in json.loads(path.read_text(encoding="utf-8"))["parties"]:
+        for party in json.loads(path.read_text(encoding="utf-8")).get("parties") or []:
+            if "shipped_in" not in party:
+                continue
             counts.add(party["shipped_in"])
             if party.get("delivery_note"):
                 notes.add(party["delivery_note"])
@@ -127,11 +134,11 @@ def test_agent_config_has_the_vendor_shape():
     assert prompt["tool_ids"] == [f"{{{{{provision.tool_id_placeholder(n)}}}}}" for n in TOOLS]
     assert prompt["built_in_tools"]["end_call"]["params"] == {"system_tool_type": "end_call"}
     assert "call back" in prompt["built_in_tools"]["end_call"]["description"]
-    assert conv["tts"]["model_id"] == "eleven_flash_v2_5"
+    assert conv["tts"]["model_id"] in ("eleven_flash_v2", "eleven_turbo_v2")      # English agent
     assert conv["conversation"]["max_duration_seconds"] == 180
     assert conv["turn"] == {"turn_timeout": 7, "silence_end_call_timeout": 20}
-    assert {"recall", "batch", "panels", "on hand", "delivery note", "Corner Properties",
-            "call back", "tomorrow"} <= set(conv["asr"]["keywords"])
+    assert {"recall", "batch", "tins", "on the shelf", "held", "till", "delivery note", "Corner Mart",
+            "Harbour Market", "call back", "tomorrow"} <= set(conv["asr"]["keywords"])
     hooks = agent["platform_settings"]["workspace_overrides"]["webhooks"]
     assert hooks["events"] == ["transcript", "call_initiation_failure"]
 
@@ -189,7 +196,7 @@ def test_answer_value_matches_the_answer_types():
 
 def test_count_fields_say_when_to_send_zero():
     props = _tool_properties()
-    for name in ("on_hand", "sold", "returned", "destroyed", "forwarded_qty"):
+    for name in ("sold", "on_shelf", "held", "returned", "forwarded_qty"):
         assert "0" in props[name]["description"], f"{name} must say when to send 0"
     assert "leave it out" in props["received_qty"]["description"].lower()
 
@@ -214,7 +221,7 @@ def test_the_worker_writes_the_question_variables_the_way_the_agent_reads_them(d
         doc = questions.insert_question(db, recall_id=rid, text=text if n == number else f"Question {n}?",
                                         answer_type=answer_type, applies_to={}, sim_now=9.0, by="admin")
     assert doc["question_id"] == qid
-    party = {"recall_id": rid, "party_id": "harbour-fire", "state": "contacting", "unresolved": 40,
+    party = {"recall_id": rid, "party_id": "harbour-market", "type": "store", "state": "contacting", "unresolved": 7,
              "open_questions": [qid]}
     sent = questions.call_variables(db, party)
     assert sent == {k: example[k] for k in ("questions", "question_ids", "ask_counts")}
@@ -230,6 +237,49 @@ def test_prompt_covers_questions_and_callbacks():
                    "Tomorrow at nine in the morning. Is that right?"):
         assert phrase in prompt, phrase
     assert prompt.index("Take counts on this call") < prompt.index("Open questions")
+
+
+def test_spec_8_three_scripts_chosen_by_party_type():
+    """Store: automated recall line, a simulation, product and batch named,
+    counts one at a time, the three checks in the spec's words, digit-by-digit
+    read-back, the two values from the tool reply, two challenges at most.
+    Plant: the evidence, then its questions recorded with submit_answer.
+    Buyer: the recall's instruction. Never a health answer."""
+    prompt = _text("prompt.md")
+    first = _text("first_message.txt")
+    assert "automated recall line" in first and "simulation" in first
+    assert "- store, or distributor, or self: follow \"The store script\"" in prompt
+    for kind in ("plant", "buyer"):
+        assert f"- {kind}: follow" in prompt, kind
+    store = prompt[prompt.index("# The store script"):prompt.index("# The plant script")]
+    order = [store.index(w) for w in ("how many have sold", "still on the shelf", "how many are held",
+                                      "returned to", "passed to another store")]
+    assert order == sorted(order)
+    for check in ("Read me the batch code printed under one tin.",
+                  "Open the item sales report on the till. How many have sold since the delivery?",
+                  "Scan one tin at the till. Did the till refuse the sale?"):
+        assert check in store, check
+    assert "{{product}}" in store and "{{batch_spoken}}" in store and "store's name" in store
+    assert "digit by digit" in prompt and "two values that disagree" in prompt
+    assert "Never challenge their answers more than twice in one call." in prompt
+    plant = prompt[prompt.index("# The plant script"):prompt.index("# The buyer script")]
+    assert "{{evidence}}" in plant and "three customer complaints, from three different stores" in plant
+    assert "submit_answer" in plant and "one at a time" in plant and "never call submit_count" in plant
+    buyer = prompt[prompt.index("# The buyer script"):prompt.index("# Reading numbers back")]
+    for phrase in ("{{product}}", "{{batch_spoken}}", "do not use it", "for a full refund"):
+        assert phrase in buyer, phrase
+    assert "never answer it and never give health advice" in prompt
+    assert "Never answer a health question and never give health or medical advice." in prompt
+
+
+def test_old_vocabulary_is_gone_from_the_agent_files():
+    words = re.compile(r"panel|installer|sounder|firmware|in_stock|installed|model_seen|version_seen|"
+                       r"Kestrel|DEMO-7|on_hand|portal|Harbour Fire|Queen St Alarm|Corner Properties|"
+                       r"Lakeside Systems", re.IGNORECASE)
+    for path in AGENT_DIR.iterdir():
+        if path.name in ("planner_prompt.md", "repair_prompt.md") or path.suffix not in (".md", ".json", ".txt"):
+            continue
+        assert not words.search(path.read_text(encoding="utf-8")), path.name
 
 
 AGENT_FACING = ("prompt.md", "first_message.txt", "agent_config.json",
@@ -399,7 +449,8 @@ def _run(ws, env, argv=()):
 
 
 def _first_run(ws):
-    code, out = _run(ws, ENV)
+    """A brand-new workspace: the one case where the agent is created."""
+    code, out = _run(ws, ENV, argv=["--create-agent"])
     assert code == 0, out
     return out
 
@@ -433,6 +484,41 @@ def test_first_run_creates_everything_on_a_fresh_workspace():
         assert line in out.splitlines()
     assert out.count(f"wsec_{webhook_id}_shown_once") == 1
     assert TOOL_SECRET not in out
+
+
+def test_without_an_agent_id_nothing_is_created():
+    """The agent and the imported number already exist: with no
+    ELEVEN_AGENT_ID and no agent of that name, the script refuses instead of
+    creating a second agent."""
+    ws = FakeWorkspace()
+    code, out = _run(ws, ENV)
+    assert code == 1
+    assert ("POST", "/v1/convai/agents/create") not in ws.writes() and ws.agents == {}
+
+
+def test_an_existing_agent_in_env_is_patched_never_created():
+    ws = FakeWorkspace()
+    ws.agents["agent_live"] = {"name": "All Clear recall line"}
+    env = {**ENV, "ELEVEN_AGENT_ID": "agent_live", "ELEVEN_PHONE_ID": "phnum_1",
+           "ELEVEN_WEBHOOK_SECRET": "wsec_already_in_env"}
+    code, out = _run(ws, env)
+    assert code == 0, out
+    assert ("PATCH", "/v1/convai/agents/agent_live") in ws.writes()
+    assert ("POST", "/v1/convai/agents/create") not in ws.writes() and list(ws.agents) == ["agent_live"]
+    tts = ws.agents["agent_live"]["conversation_config"]["tts"]["model_id"]
+    assert tts in provision.ENGLISH_TTS_MODELS
+    assert "ELEVEN_PHONE_ID=phnum_1" in out.splitlines()
+
+
+def test_an_english_agent_with_another_tts_model_is_refused(monkeypatch):
+    real = provision.load_agent_file
+
+    def patched(name):
+        text = real(name)
+        return text.replace('"eleven_flash_v2"', '"eleven_flash_v2_5"') if name == "agent_config.json" else text
+    monkeypatch.setattr(provision, "load_agent_file", patched)
+    with pytest.raises(provision.ProvisionError, match="eleven_flash_v2 or eleven_turbo_v2"):
+        provision.agent_body(TOOL_IDS, "wh_1")
 
 
 @pytest.mark.parametrize("ids_from_env", [False, True], ids=["found-by-lookup", "ids-in-env"])
@@ -509,7 +595,7 @@ def test_dry_run_makes_no_requests_and_prints_every_body():
     assert code == 0, out
     assert ws.calls == []
     for line in ("POST /v1/convai/secrets", "POST /v1/convai/tools", "POST /v1/workspace/webhooks",
-                 "POST /v1/convai/agents/create", "GET /v1/convai/phone-numbers"):
+                 f"PATCH /v1/convai/agents/{provision.DRY_RUN_AGENT_ID}", "GET /v1/convai/phone-numbers"):
         assert line in out
     assert out.count("POST /v1/convai/tools") == len(TOOLS)
     for _, path, _, _ in TOOLS.values():
@@ -622,7 +708,8 @@ def test_call_once_sends_exactly_the_worker_variables():
     assert set(sent) == WORKER_VARIABLES
     assert all(isinstance(v, str) for v in sent.values())
     assert re.fullmatch(r"att_smoke_[0-9a-f]+", call["attempt_id"]) and sent["attempt_id"] == call["attempt_id"]
-    assert sent["tier"] == "direct" and sent["purpose"] == "initial" and sent["ask_counts"] == "yes"
+    assert sent["party_type"] == "store" and sent["ask_checks"] == "yes"
+    assert sent["purpose"] == "initial" and sent["ask_counts"] == "yes" and sent["receipt"] == "no"
     assert sent["sender_name"] == sent["told_qty"] == sent["followup_note"] == ""
     assert sent["questions"] == sent["question_ids"] == ""
     assert "shipped" not in json.dumps(sent).lower()
@@ -632,14 +719,14 @@ def test_call_once_sends_exactly_the_worker_variables():
 
 def test_call_once_attempt_and_overrides():
     voice = FakeVoice()
-    code, out = _call(["--attempt", "att_0123456789abcd", "--var", "tier=downstream",
-                       "--var", "sender_name=Queen St Alarm"],
+    code, out = _call(["--attempt", "att_0123456789abcd", "--var", "party_type=plant",
+                       "--var", "sender_name=Queen St Grocer"],
                       voice=voice, env={"PHONE_HARBOUR": TO})
     assert code == 0, out
     (call,) = voice.calls
     assert call["to_number"] == TO and call["attempt_id"] == "att_0123456789abcd"
-    assert call["dynamic_variables"]["tier"] == "downstream"
-    assert call["dynamic_variables"]["sender_name"] == "Queen St Alarm"
+    assert call["dynamic_variables"]["party_type"] == "plant"
+    assert call["dynamic_variables"]["sender_name"] == "Queen St Grocer"
     assert "call not recognised" not in out
 
 
