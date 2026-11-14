@@ -8,10 +8,12 @@ export default function Toolbar({ s, actions }) {
   const [more, setMore] = useState(false);
   const live = s.source === 'live';
   const locked = live && !s.admin;
-  const released = live
-    ? !s.parties.some((p) => p.holdForDemo && /^(harbour|lakeside)/.test(p.id))
-    : !s.parties.some((p) => p.holdForDemo);
+  const harbour = s.parties.find((p) => p.id === 'harbour-market');
+  const released = live ? !!harbour && !harbour.holdForDemo : !s.parties.some((p) => p.holdForDemo);
   const northDone = s.systems.north.version !== 1 || s.systems.north.status !== 'active';
+  const startOver = () => {
+    if (window.confirm('Start a new run? This run\'s clock is paused and Harbour Market can be called again.')) actions.startOver();
+  };
   const pick = (fn) => () => {
     setMore(false);
     fn();
@@ -31,10 +33,17 @@ export default function Toolbar({ s, actions }) {
         </button>
       )}
       <span className="sep" />
-      <button type="button" className="tb" onClick={actions.releaseStores} disabled={released}
-        title={live ? "The judge's call: pauses random kills and releases Harbour and Lakeside (1)" : 'Release the slice stores (1)'}>
-        <Icon.Send size={16} /> {live ? 'Call Harbour' : `Release ${s.words.parties}`}
-      </button>
+      {live && released ? (
+        <button type="button" className="tb" onClick={startOver}
+          title="Pause this run's clock and start a new run, so Harbour can be called again">
+          <Icon.Play size={16} /> Start over
+        </button>
+      ) : (
+        <button type="button" className="tb" onClick={actions.releaseStores} disabled={released}
+          title={live ? 'Pauses random kills and calls Harbour Market. If Harbour names another store, that store is called next (1)' : 'Release the slice stores (1)'}>
+          <Icon.Send size={16} /> {live ? 'Call Harbour' : `Release ${s.words.parties}`}
+        </button>
+      )}
       <button type="button" className="tb danger" onClick={() => actions.killWorker()} title={live ? 'The kill beat: arms the failpoint for Corner Mart, then releases Corner Mart and Queen St Grocer. The worker that dials Corner Mart dies before it saves the call (3)' : 'Kill a worker (3)'}>
         <Icon.Skull size={16} /> {live ? 'Arm the kill' : 'Kill a worker'}
       </button>
@@ -47,6 +56,7 @@ export default function Toolbar({ s, actions }) {
         </button>
         {more && (
           <div className="menu">
+            {live && <button type="button" onClick={pick(startOver)}>Start a new run</button>}
             <button type="button" onClick={pick(actions.armFailpoint)}>{s.failpointArmed ? 'Disarm failpoint' : 'Arm failpoint'} <kbd>2</kbd></button>
             <button type="button" onClick={pick(actions.saboteur)} disabled={!!s.saboteur}>Start the saboteur <kbd>5</kbd></button>
             {!live && <button type="button" onClick={pick(actions.storeEvent)}>Quarantine a tin at a store <kbd>6</kbd></button>}

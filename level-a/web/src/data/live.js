@@ -164,6 +164,12 @@ export function createLive(api) {
     }
   }
 
+  function freshId() {
+    const d = new Date();
+    const two = (n) => String(n).padStart(2, '0');
+    return `RCL-${d.getFullYear()}-${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
+  }
+
   function readStore(name) {
     try {
       return window.localStorage.getItem(name);
@@ -470,8 +476,9 @@ export function createLive(api) {
     const real = new Set(parties.filter((p) => p.channel === 'voice' && !p.simulated).map((p) => p.party_id));
     const held = new Set(parties.filter((p) => p.hold_for_demo).map((p) => p.party_id));
     for (const e of d.edges || []) {
-      if (!real.has(e.from_party) || !held.has(e.to_party) || followed.has(e.to_party)) continue;
-      followed.add(e.to_party);
+      const once = `${rid}:${e.to_party}`;
+      if (!real.has(e.from_party) || !held.has(e.to_party) || followed.has(once)) continue;
+      followed.add(once);
       send('/admin/release', { recall_id: rid, party_id: e.to_party }).then((problem) => {
         if (problem) link = { ...link, note: problem === KEY_REFUSED ? 'Buttons locked: the admin key was refused' : problem };
       });
@@ -495,7 +502,7 @@ export function createLive(api) {
   // not have (404 from /admin/release) is skipped; any other failure stops the
   // action and its words go to the top bar. Without a working admin key the
   // screen asks for one, then runs the action.
-  const act = (steps) => {
+  const act = (steps, after) => {
     const run = async () => {
       if (!key) {
         keyAsk = 'missing';
@@ -519,6 +526,7 @@ export function createLive(api) {
         }
       }
       link = { ...link, note };
+      if (!note && after) after();
       poll();
     };
     return run;
@@ -589,6 +597,20 @@ export function createLive(api) {
           ['/admin/supervisor', { recall_id, paused: true, reason: 'the live call: random kills wait' }],
           ['/admin/release', { recall_id, party_id: HARBOUR }, true],
         ];
+      }),
+      // Start over: pause the clock of every open run (so no old timer rings a phone again)
+      // and open a fresh run of the long scenario under a new recall id. Nothing is deleted:
+      // the calls of earlier runs stay in memory, for Vector Search to find.
+      startOver: act(() => {
+        const open = (last?.recalls || []).filter((r) => r.status !== 'closed').map((r) => r._id);
+        return [
+          ...open.map((recall_id) => ['/admin/clock', { recall_id, action: 'pause' }, true]),
+          ['/admin/recalls', { scenario: 'recall_long', mode: 'demo', recall_id: freshId() }],
+        ];
+      }, () => {
+        follow = null;
+        pin = null;
+        focus = null;
       }),
       armFailpoint: () => post('/admin/failpoint', () => ({ name: snapshot.failpointArmed ? null : 'after_dial_request' }))(),
       // The kill beat (scripts/demo.py kill-arm). The API cannot kill a process: it arms the failpoint for

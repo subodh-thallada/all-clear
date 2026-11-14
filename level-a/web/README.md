@@ -67,6 +67,7 @@ wall and the terminal can be used interchangeably.
 
 | Button | Beat | Requests, in order |
 | --- | --- | --- |
+| Start over (replaces Call Harbour once Harbour has been called; also in the ⋯ menu) | `demo.py --recall-id <new> start` | Asks first. `POST /admin/clock { action: "pause" }` for every open run, so no old timer rings a phone again, then `POST /admin/recalls { scenario: "recall_long", mode: "demo", recall_id: "RCL-<date>-<time>" }`. Nothing is deleted, so Vector Search finds the earlier runs' calls |
 | Call Harbour | the small live demo | `POST /admin/supervisor { recall_id, paused: true }`, then `POST /admin/release` for `harbour-market` only. While this browser is open, when a real call's claim names a store held for the demo (an edge from Harbour to Corner Mart), the screen releases that store too, so Corner Mart is called on `PHONE_CORNER` right after Harbour says where the tins went. The call panel shows what Vector Search found about the store before it was dialled (`parties.memory`), and the activity log shows the real calls only |
 | Arm the kill | `demo.py kill-arm` | `POST /admin/failpoint { name: "after_dial_request", party_id: "corner-mart" }`, then `POST /admin/release` for `corner-mart` and `queen-st-grocer`. The API cannot kill a process: the worker that dials Corner Mart dies at the failpoint. For the version where the room watches the worker die and come back, stop the supervisor and run `scripts\kill_demo.ps1` instead |
 | Change order system | `POST /admin/order-system { order_system: "north", action: "switch_v2" }` |
