@@ -236,7 +236,7 @@ def test_19_a_wrong_mapping_fails_the_canary_so_nothing_is_activated_and_work_st
 
 def _broken_north(client, db, settings, failpoints=None):
     """North after its switch to v2, contained: (ctx, order system, account parties by account id).
-    Bloor Alarm's read met the 410 and Dundas Pantry's read waited with it."""
+    Bloor Foods's read met the 410 and Dundas Pantry's read waited with it."""
     _, order_system = make_order_system("north")
     dist = start(client, db)["north"]
     ctx = make_ctx(settings, client, db, {"north": order_system}, failpoints=failpoints)

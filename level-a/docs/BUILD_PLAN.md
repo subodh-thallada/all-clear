@@ -84,6 +84,19 @@ change: every fire-alarm word, bucket and field below goes to the food version.
 - Never print or copy secrets from `level-a/.env`. Never place a real phone call. Never run git.
 - Keep the spec's test numbers in test names/docstrings (tests 1–49).
 
+## The screen now in `web/` (merged from the team, Nov 14)
+
+`web/` was replaced by the team's workflow screen (plain React + Vite, `npm run build` → `web/dist`,
+served by the API at `GET /wall`). It reads `GET /wall/state` once a second through
+`web/src/data/live.js` (`normalizeParty`, `createLive`) and posts the operator buttons to
+`/admin/release`, `/admin/failpoint`, `/admin/order-system`, `/admin/saboteur`, `/admin/close`,
+`/admin/clock` with the admin key. **Do not edit `web/`.** The backend must make `/wall/state`
+and those admin endpoints satisfy that reader: read `live.js` and make the JSON it expects
+(parties with food buckets, lease, live attempt, workers, systems incl. stores, feed, run,
+refusals, recall). Verify by building `web/` (`npm install` once, `npm run build`), serving it
+from the API and loading `/wall?source=live` in headless Edge (playwright-core) with zero page
+errors and the real numbers on screen.
+
 ## Deviations and status, by workstream
 
 Each workstream appends here under its own heading only. One line per deviation from the spec.
@@ -171,5 +184,5 @@ Each workstream appends here under its own heading only. One line per deviation 
 - `levela/ledger/claims.py` EVIDENCE_KINDS also accepts kind `agent` (WS5's node/book.py and handoff.py), so invariant 3 holds for Summit's handoff and reports (test 16).
 - Complaint episodes (`monitoring/classify.py`) and item episodes (`node/match.py`) were written with `expires_at: null` (items also with scope `node:<id>`), which WS6's governed filter never admits: on Atlas the `$vectorSearch` path would return nothing and every complaint would go to the quality lead. Both now carry the governed TTL (365 days) and scope `fleet`; `seed_history` repairs null expiries. Regression: `tests/test_memory_integration.py`.
 - Demo config: set `AGENT_LINK_SECRET` in `.env`. Without it the node worker raises "no link secret configured" for Summit (an error feed line) in single-node runs; a missing secret is not treated as a quiet agent, so the simulated long run is unchanged.
-- Not done: `level-a/web/` (React screen) still types the fire-alarm shape (out of scope; `/wall/state` added new fields beside the old). Spec tests 8, 9, 14 need a real phone and 12, 15 are checked by hand.
+- Merged with the team's main at 15:35: `web/` is now the team's workflow screen (section above). On the 89 files both sides changed, the tested version of this build was kept; the team's commits stay in history. Spec tests 8, 9, 14 need a real phone and 12, 15 are checked by hand.
 - Result on a local MongoDB 8.0 replica set: fast suite 884 passed, 7 skipped (Atlas-only or no PowerShell); slow suite 10 passed, 1 skipped.
