@@ -22,8 +22,12 @@ npm install
 npm run build      # writes web/dist/index.html; the API serves it at GET /wall
 ```
 
-Open `http://127.0.0.1:8000/wall?key=<ADMIN_TOKEN>` once. The key moves to this
-browser's localStorage and leaves the address bar; the buttons then work.
+Open `http://127.0.0.1:8000/wall?key=<ADMIN_TOKEN>` once, or press any button and
+paste `ADMIN_TOKEN` from `level-a/.env` when the screen asks. The key is checked
+against `GET /admin/status`, kept in this browser's localStorage and taken out of
+the address bar, and the button you pressed then runs. With the key, `/wall/state`
+also returns `real_calls`: each real phone call's last four digits and, once the
+post-call webhook has saved it, what was said. The public body never carries them.
 
 For development:
 
@@ -47,12 +51,12 @@ and the food names (`on_shelf`, `held`, `sold`); the nouns on screen (tins and
 stores, or panels and parties) follow the data.
 
 **Checked against a state shaped like `wall.py`'s output, not against a running
-API.** Three things the API does not send yet, and what the screen does without
+API.** Things the API does not send yet, and what the screen does without
 them:
 
 | Missing from `/wall/state` | On screen |
 | --- | --- |
-| The words of a call | The call panel shows Atlas's verdicts for that party, and says the words are not sent. To show a transcript, add `turns: [{ role, message }]` to a party's `live_attempt` |
+| The words of a call while it is live | With the admin key, `real_calls[].transcript` of a live call is read from ElevenLabs (`GET /v1/convai/conversations/{id}`, at most every 1.5 s); after the call it is the transcript the post-call webhook saved |
 | `lease_until` or a `lease` object per party | The lease bar is full while held; a dead worker's card says the lease is running out, without seconds |
 | A heartbeat per worker | A worker is shown dead from the `worker_heartbeat_lost` feed line until it starts again |
 
@@ -63,7 +67,8 @@ wall and the terminal can be used interchangeably.
 
 | Button | Beat | Requests, in order |
 | --- | --- | --- |
-| Call Harbour | `demo.py judge` | `POST /admin/supervisor { recall_id, paused: true }`, then `POST /admin/release` for `harbour-market` and `lakeside-foods`. Only those two: releasing the whole slice would let Queen St Grocer's reply go and Corner Mart would be dialled before the failpoint is armed |
+| Start over (replaces Call Harbour once Harbour has been called; also in the ⋯ menu) | `demo.py --recall-id <new> start` | Asks first. `POST /admin/clock { action: "pause" }` for every open run, so no old timer rings a phone again, then `POST /admin/recalls { scenario: "recall_1", mode: "demo", hold_slice: true, recall_id: "RCL-<date>-<time>" }`: the small run, every store held, so only Harbour's call moves on screen. Nothing is deleted, so Vector Search finds the earlier runs' calls |
+| Call Harbour | the small live demo | `POST /admin/supervisor { recall_id, paused: true }`, then `POST /admin/release` for `harbour-market` only. While this browser is open, when a real call's claim names a store held for the demo (an edge from Harbour to Corner Mart), the screen releases that store too, so Corner Mart is called on `PHONE_CORNER` right after Harbour says where the tins went. The call panel shows what Vector Search found about the store before it was dialled (`parties.memory`), and the activity log shows the real calls only |
 | Arm the kill | `demo.py kill-arm` | `POST /admin/failpoint { name: "after_dial_request", party_id: "corner-mart" }`, then `POST /admin/release` for `corner-mart` and `queen-st-grocer`. The API cannot kill a process: the worker that dials Corner Mart dies at the failpoint. For the version where the room watches the worker die and come back, stop the supervisor and run `scripts\kill_demo.ps1` instead |
 | Change order system | `POST /admin/order-system { order_system: "north", action: "switch_v2" }` |
 | Close recall | `POST /admin/close { recall_id }` |

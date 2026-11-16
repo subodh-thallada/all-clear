@@ -43,7 +43,7 @@ export default function StoreList({ s, actions }) {
           const st = workerStatus(w.alive && w.party?.id === p.id ? w : { ...w, alive: false });
           const focused = s.call && s.call.partyId === p.id;
           return (
-            <button type="button" key={p.id} className={`store ${focused ? 'focused' : ''}`} onClick={() => p.inFlight && actions.focus(p.inFlight)}>
+            <button type="button" key={p.id} className={`store ${focused ? 'focused' : ''}`} onClick={() => (p.inFlight || p.lastCall) && actions.focus(p.inFlight || p.lastCall)}>
               <span className="avatar">{w.label}</span>
               <span className="who"><b>{p.name}</b><small>{p.shippedIn ? `${num(p.shippedIn)} ${W.units}` : 'On no shipment record'}</small></span>
               <span className={`pill ${st.tone}`}>{st.text}</span>

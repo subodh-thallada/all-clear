@@ -135,8 +135,8 @@ def test_agent_config_has_the_vendor_shape():
     assert prompt["built_in_tools"]["end_call"]["params"] == {"system_tool_type": "end_call"}
     assert "call back" in prompt["built_in_tools"]["end_call"]["description"]
     assert conv["tts"]["model_id"] in ("eleven_flash_v2", "eleven_turbo_v2")      # English agent
-    assert conv["conversation"]["max_duration_seconds"] == 180
-    assert conv["turn"] == {"turn_timeout": 7, "silence_end_call_timeout": 20}
+    assert conv["conversation"]["max_duration_seconds"] == 600      # ten minutes: room to talk on stage
+    assert conv["turn"] == {"turn_timeout": 7, "silence_end_call_timeout": 61}     # about a minute of quiet before hanging up (60 is a delivered count, which this file must not hold)
     assert {"recall", "batch", "tins", "on the shelf", "held", "till", "delivery note", "Corner Mart",
             "Harbour Market", "call back", "tomorrow"} <= set(conv["asr"]["keywords"])
     hooks = agent["platform_settings"]["workspace_overrides"]["webhooks"]

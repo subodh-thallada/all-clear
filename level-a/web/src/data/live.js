@@ -14,19 +14,22 @@
 // particular the API does not send the words of a call yet, so in live mode the
 // call panel shows what Atlas decided, not a transcript.
 //
-// Admin key: open the screen once with ?key=<ADMIN_TOKEN>. It moves to this
-// browser's localStorage and leaves the address bar, as the previous screen did.
+// Admin key: open the screen once with ?key=<ADMIN_TOKEN>, or paste it when a
+// button asks for it. It is checked against GET /admin/status, kept in this
+// browser's localStorage and taken out of the address bar.
 
 import { WORDS } from './format.js';
 
 const KEY_STORE = 'allclear.adminKey';
+const KEY_REFUSED = 'key refused';
 const LEASE_TTL_S = 8;
 
 // The demo's parties, as scripts/demo.py names them. The judge's call releases
 // Harbour and Lakeside only; the kill beat arms the failpoint for Corner Mart
 // first and only then lets Corner Mart and Queen St Grocer's held reply go, so
 // Corner Mart can never be dialled before the failpoint is waiting for it.
-const JUDGE_PARTIES = ['harbour-market', 'lakeside-foods'];
+const HARBOUR = 'harbour-market';
+const FOLLOW_STORE = 'allclear.follow'; // recall id whose real calls' forwards this browser releases
 const KILL_PARTY = 'corner-mart';
 const KILL_RELEASES = ['corner-mart', 'queen-st-grocer'];
 const KILL_FAILPOINT = 'after_dial_request';
@@ -60,6 +63,8 @@ const ROUTES = {
   consignee_found: [['ledger>found', 'found>due'], 'ink'],
   attempt_refused: [['sys>validator'], 'red'],
   memory_hit: [['memory>dispatch'], 'ink'],
+  memory_suspect: [['memory>dispatch', 'dispatch>w1'], 'green'],
+  call_placed: [['due>dispatch', 'dispatch>w1', 'w1>gate'], 'ink'],
   close_refused: [['found>close', 'close>clear'], 'red'],
   closed: [['found>close', 'close>clear'], 'green'],
 };
@@ -82,6 +87,8 @@ export function normalizeParty(p) {
     real: !simulated,
     connected: !!(p.connected || p.connected_panels),
     phoneTail: p.phone_tail ?? null,
+    memory: p.memory || null,
+    attempts: typeof p.attempts === 'number' ? p.attempts : Array.isArray(p.attempts) ? p.attempts.length : 0,
     shippedIn: p.shipped_in ?? 0,
     sold: mid,
     onShelf,
@@ -124,7 +131,12 @@ export function createLive(api) {
   let timers = [];
   let last = null;
   let link = { ok: false, host: api ? new URL(api).host : window.location.host, at: null, error: null, note: null };
-  const key = loadKey();
+  let key = loadKey();
+  // Asking for the admin key: null, 'missing', 'refused', 'checking', 'wrong' or 'unreachable'.
+  let keyAsk = null;
+  let pending = null; // the button that was pressed without a working key; it runs once the key is in
+  let follow = readStore(FOLLOW_STORE);
+  const followed = new Set(); // parties this browser already released after a real call named them
   let pulseSeq = 0;
   const pulses = [];
   const seenLines = new Set();
@@ -155,6 +167,20 @@ export function createLive(api) {
     }
   }
 
+  function freshId() {
+    const d = new Date();
+    const two = (n) => String(n).padStart(2, '0');
+    return `RCL-${d.getFullYear()}-${two(d.getMonth() + 1)}${two(d.getDate())}-${two(d.getHours())}${two(d.getMinutes())}${two(d.getSeconds())}`;
+  }
+
+  function readStore(name) {
+    try {
+      return window.localStorage.getItem(name);
+    } catch {
+      return null;
+    }
+  }
+
   const headers = (json) => ({
     Accept: 'application/json',
     ...(json ? { 'Content-Type': 'application/json' } : {}),
@@ -177,6 +203,14 @@ export function createLive(api) {
     const rawParties = d.parties || d.stores || [];
     const parties = rawParties.map(normalizeParty);
     const byId = Object.fromEntries(parties.map((p) => [p.id, p]));
+    // Real phone calls, newest first (only with the admin key): number tail and, after the call, the words.
+    const realCalls = Array.isArray(d.real_calls) ? d.real_calls : [];
+    const realById = Object.fromEntries(realCalls.map((c) => [c._id, c]));
+    for (const rc of realCalls) {
+      const p = byId[rc.party_id];
+      if (p && !p.phoneTail && rc.phone_tail) p.phoneTail = rc.phone_tail;
+      if (p && !p.lastCall) p.lastCall = rc._id;
+    }
     const food = rawParties.some((p) => 'on_shelf' in p || 'held' in p || 'sold' in p) || /milk|tin/i.test(d.recall?.product || '');
     const words = !rawParties.length || food ? WORDS.tins : WORDS.panels;
 
@@ -202,11 +236,17 @@ export function createLive(api) {
     });
 
     // One write, one movement: a line this browser has not seen before moves a dot.
+    // Trace mode: once this run has a real phone call, the diagram follows the real stores
+    // only. Their lines move the dots and stay marked on the stations; simulated stores
+    // keep working but no longer move the diagram.
+    const realIds = new Set(parties.filter((p) => p.real).map((p) => p.id));
+    const trace = realCalls.length > 0 || parties.some((p) => p.real && p.liveAttempt);
+    const traced = (e) => !trace || realIds.has(e.partyId);
     for (const e of events) {
       if (seenLines.has(e.id)) continue;
       seenLines.add(e.id);
       const route = ROUTES[e.kind];
-      if (primed && route) pulse(route[0], route[1]);
+      if (primed && route && traced(e)) pulse(route[0], route[1]);
     }
 
     // --- leases and workers -------------------------------------------------
@@ -274,6 +314,25 @@ export function createLive(api) {
       }
       if (p.real) focus = la.id;
     }
+    // A real call this browser did not see live (opened after it, or between polls).
+    for (const rc of [...realCalls].reverse()) {
+      if (calls[rc._id]) continue;
+      const startedS = Math.max(0, (serverNow - Date.parse(rc.intent_at)) / 1000) || 0;
+      const p = byId[rc.party_id];
+      calls[rc._id] = {
+        attemptId: rc._id, partyId: rc.party_id, partyName: p?.name || rc.party_id, real: true, channel: 'voice',
+        phoneTail: rc.phone_tail, firstSeen: tNow - startedS * 1000 - 1500, connectedAt: null, rows: [], slips: [],
+        lineIds: new Set(), turns: 0, live: false, endedAt: tNow, state: 'ended',
+      };
+    }
+    for (const c of Object.values(calls)) {
+      const rc = realById[c.attemptId];
+      if (rc) {
+        c.words = (rc.transcript || []).filter((t) => t.message).map((t, i) => ({ n: i + 1, kind: t.role === 'agent' ? 'line' : 'store', text: t.message }));
+        c.durationS = rc.call_duration_secs ?? null;
+        c.phoneTail = c.phoneTail || rc.phone_tail;
+      }
+    }
     for (const c of Object.values(calls)) {
       const p = byId[c.partyId];
       if (!p?.liveAttempt || p.liveAttempt.id !== c.attemptId) {
@@ -282,7 +341,7 @@ export function createLive(api) {
         c.inDoubt = false;
         c.holder = null;
       }
-      c.callS = c.connectedAt == null ? 0 : ((c.endedAt ?? tNow) - c.connectedAt) / 1000;
+      c.callS = !c.live && c.durationS != null ? c.durationS : c.connectedAt == null ? 0 : ((c.endedAt ?? tNow) - c.connectedAt) / 1000;
       if (!c.live && tNow - (c.endedAt ?? 0) > 8000) continue;
       for (const e of events) {
         if (e.partyId !== c.partyId || e.at < c.firstSeen || c.lineIds.has(e.id)) continue;
@@ -297,11 +356,11 @@ export function createLive(api) {
         else if (e.rawKind === 'sim_reply' || e.rawKind === 'form_claim') c.rows.push({ n: c.rows.length + 1, kind: 'sim', text: e.text, at: e.at });
       }
     }
-    if (!focus) focus = parties.find((p) => p.liveAttempt && p.real)?.liveAttempt.id || null;
+    if (!focus) focus = parties.find((p) => p.liveAttempt && p.real)?.liveAttempt.id || realCalls[0]?._id || null;
     const shown = (pin && calls[pin]) || (focus && calls[focus]) || null;
 
     // --- stations: the mark of the newest relevant line -------------------------
-    const newest = (...kinds) => [...events].reverse().find((e) => kinds.includes(e.kind));
+    const newest = (...kinds) => [...events].reverse().find((e) => kinds.includes(e.kind) && traced(e));
     const name = (pid) => byId[pid]?.name || '';
     const station = { dispatch: null, memory: null, gate: null, validator: null, ask: null, ledger: null, found: null, close: null };
     const claim = newest('claim_rejected', 'claim_accepted');
@@ -314,8 +373,11 @@ export function createLive(api) {
     }
     const found = newest('consignee_found');
     if (found) station.found = { yes: true, name: name(found.partyId) || /: (.+?) \(/.exec(found.text)?.[1] || found.text, from: '', at: found.at };
-    const mem = newest('memory_hit');
+    const mem = newest('memory_hit', 'memory_suspect');
     if (mem) station.memory = { party: name(mem.partyId), episodes: [], at: mem.at };
+    const placed = newest('call_placed');
+    if (placed) station.dispatch = { party: name(placed.partyId), at: placed.at };
+    if (trace) for (const k of Object.keys(station)) if (station[k]) station[k] = { ...station[k], hold: true };
     const closeLine = newest('close_refused');
     let close = null;
     if (closeLine) {
@@ -347,7 +409,7 @@ export function createLive(api) {
     primed = true;
 
     return {
-      source: 'live', link: { ...link, ageS: link.at == null ? 0 : (tNow - link.at) / 1000 }, admin: !!key, words,
+      source: 'live', link: { ...link, ageS: link.at == null ? 0 : (tNow - link.at) / 1000 }, admin: !!key, keyAsk, words,
       t: tNow, speed: 1, paused: !!run.paused, playing: false, failpointArmed: !!d.failpoint || Object.keys(d.failpoints || {}).length > 0,
       recall: {
         id: d.recall?._id || '', batch: d.recall?.batch_code || '', product: d.recall?.product || '', unitsTotal: total,
@@ -377,7 +439,8 @@ export function createLive(api) {
         north: order('north'), east: order('east'),
         stores: { connected: 0, events: 0, last: null }, agents: { name: '', reports: 0 }, touched: {},
       },
-      station, call: shown, pinned: !!(pin && calls[pin]), lastSlip: null, events, pulses,
+      station, call: shown && { ...shown, memory: byId[shown.partyId]?.memory || null }, pinned: !!(pin && calls[pin]), lastSlip: null, events, pulses,
+      realParties: parties.filter((p) => p.real).map((p) => p.id),
     };
   }
 
@@ -385,7 +448,7 @@ export function createLive(api) {
   function empty() {
     const none = { name: '', version: 1, status: 'active', source: null, ops: [] };
     return {
-      source: 'live', link: { ...link, ageS: 0 }, admin: !!key, words: WORDS.tins, t: now(), speed: 1, paused: false, playing: false, failpointArmed: false,
+      source: 'live', link: { ...link, ageS: 0 }, admin: !!key, keyAsk, words: WORDS.tins, t: now(), speed: 1, paused: false, playing: false, failpointArmed: false,
       recall: { id: '', batch: '', product: '', unitsTotal: 0, status: 'open', open: 0, notLocated: 0, onShelf: 0, disputed: 0, close: null },
       tins: { removed: 0, sold: 0, onShelf: 0, notLocated: 0, balance: 0 },
       metrics: { checked: [0, 0], located: [0, 0], removed: [0, 0] },
@@ -402,16 +465,53 @@ export function createLive(api) {
     listeners.forEach((l) => l());
   };
 
+  // Follow the phone across runs: a real call placed by another (older, paused) run is the one
+  // the room hears, so the screen shows that run until Start over or a call elsewhere.
+  let pollN = 0;
+  let phoneRecall = null;
+  async function findPhone() {
+    try {
+      const r = await fetch(`${api}/admin/status`, { headers: headers(false), cache: 'no-store' });
+      if (!r.ok) return;
+      const live = ((await r.json()).live_attempts || []).find((a) => a.channel === 'voice');
+      if (live?.recall_id) phoneRecall = live.recall_id;
+    } catch {
+      /* the newest run is shown */
+    }
+  }
+
   async function poll() {
     try {
-      const r = await fetch(`${api}/wall/state`, { headers: headers(false), cache: 'no-store' });
+      if (key && pollN++ % 2 === 0) await findPhone();
+      const q = phoneRecall ? `?recall_id=${encodeURIComponent(phoneRecall)}` : '';
+      const r = await fetch(`${api}/wall/state${q}`, { headers: headers(false), cache: 'no-store' });
       if (!r.ok) throw new Error(`/wall/state answered ${r.status}`);
       last = await r.json();
       link = { ...link, ok: true, at: now(), error: null };
+      followForwards();
     } catch (err) {
       link = { ...link, ok: false, error: err.message };
     }
     emit();
+  }
+
+  // After Call Harbour: when a real call names a store that is held for the demo
+  // (an edge from a real store to it), release that store so it is called next.
+  function followForwards() {
+    const d = last;
+    const rid = d?.recall?._id;
+    if (!key || !rid || follow !== rid) return;
+    const parties = d.parties || [];
+    const real = new Set(parties.filter((p) => p.channel === 'voice' && !p.simulated).map((p) => p.party_id));
+    const held = new Set(parties.filter((p) => p.hold_for_demo).map((p) => p.party_id));
+    for (const e of d.edges || []) {
+      const once = `${rid}:${e.to_party}`;
+      if (!real.has(e.from_party) || !held.has(e.to_party) || followed.has(once)) continue;
+      followed.add(once);
+      send('/admin/release', { recall_id: rid, party_id: e.to_party }).then((problem) => {
+        if (problem) link = { ...link, note: problem === KEY_REFUSED ? 'Buttons locked: the admin key was refused' : problem };
+      });
+    }
   }
 
   // One admin request. Returns null when it worked, or the problem in words.
@@ -420,7 +520,7 @@ export function createLive(api) {
       const r = await fetch(`${api}${path}`, { method: 'POST', headers: headers(true), body: JSON.stringify(body) });
       if (r.ok) return null;
       const text = await r.text();
-      if (r.status === 401) return 'The admin key was refused. Open the screen with ?key=<admin token>';
+      if (r.status === 401) return KEY_REFUSED;
       return `${path} answered ${r.status}: ${text.slice(0, 160)}`;
     } catch (err) {
       return `${path}: ${err.message}`;
@@ -429,20 +529,76 @@ export function createLive(api) {
 
   // An operator action: one or more requests in order. A party this recall does
   // not have (404 from /admin/release) is skipped; any other failure stops the
-  // action and its words go to the top bar.
-  const act = (steps) => async () => {
-    const rid = last?.recall?._id;
-    let note = null;
-    for (const [path, body, optional] of steps(rid)) {
-      const problem = await send(path, body);
-      if (problem && !(optional && / 404:/.test(problem))) {
-        note = problem;
-        break;
+  // action and its words go to the top bar. Without a working admin key the
+  // screen asks for one, then runs the action.
+  const act = (steps, after) => {
+    const run = async () => {
+      if (!key) {
+        keyAsk = 'missing';
+        pending = run;
+        emit();
+        return;
       }
-    }
-    link = { ...link, note };
-    poll();
+      if (!last?.recall?._id) await poll();     // a press right after a restart or a new run: read the run first
+      const rid = last?.recall?._id;
+      if (!rid) {
+        link = { ...link, note: 'No open run yet. Wait a second and press again' };
+        emit();
+        return;
+      }
+      let note = null;
+      for (const [path, body, optional] of steps(rid)) {
+        const problem = await send(path, body);
+        if (problem === KEY_REFUSED) {
+          keyAsk = 'refused';
+          pending = run;
+          note = 'Buttons locked: the admin key was refused';
+          break;
+        }
+        if (problem && !(optional && / 404:/.test(problem))) {
+          note = problem;
+          break;
+        }
+      }
+      link = { ...link, note };
+      if (!note && after) after();
+      poll();
+    };
+    return run;
   };
+
+  // Check a pasted key against the API, keep it in this browser, then run the waiting action.
+  async function setKey(value) {
+    const k = (value || '').trim();
+    if (!k) return;
+    keyAsk = 'checking';
+    emit();
+    let status = 0;
+    try {
+      const r = await fetch(`${api}/admin/status`, { headers: { Accept: 'application/json', 'X-Admin-Token': k }, cache: 'no-store' });
+      status = r.status;
+    } catch {
+      status = 0;
+    }
+    if (status < 200 || status >= 300) {
+      keyAsk = status === 401 ? 'wrong' : 'unreachable';
+      emit();
+      return;
+    }
+    key = k;
+    try {
+      window.localStorage.setItem(KEY_STORE, k);
+    } catch {
+      /* private window: the key lasts until reload */
+    }
+    keyAsk = null;
+    link = { ...link, note: null };
+    const next = pending;
+    pending = null;
+    emit();
+    if (next) next();
+  }
+
   const post = (path, body) => act((rid) => [[path, body(rid)]]);
 
   snapshot = empty();
@@ -463,11 +619,36 @@ export function createLive(api) {
       timers = [];
     },
     actions: {
-      // The judge's call (scripts/demo.py judge): pause random kills, release Harbour and Lakeside only.
-      releaseStores: act((recall_id) => [
-        ['/admin/supervisor', { recall_id, paused: true, reason: "the judge's call: the kill beat uses the failpoint" }],
-        ...JUDGE_PARTIES.map((party_id) => ['/admin/release', { recall_id, party_id }, true]),
-      ]),
+      // The small live demo: pause random kills and call Harbour Market only. If Harbour
+      // says it passed tins to another store, followForwards releases that store next.
+      releaseStores: act((recall_id) => {
+        follow = recall_id;
+        try {
+          window.localStorage.setItem(FOLLOW_STORE, recall_id);
+        } catch {
+          /* the follow lasts until reload */
+        }
+        return [
+          ['/admin/supervisor', { recall_id, paused: true, reason: 'the live call: random kills wait' }],
+          ['/admin/release', { recall_id, party_id: HARBOUR }, true],
+        ];
+      }),
+      // Start over: pause the clock of every open run (so no old timer rings a phone again)
+      // and open a small, quiet run: recall_1 (Harbour, two held simulated stores, Corner Mart
+      // and the live stores in the directory), every store held until Call Harbour. Nothing is
+      // deleted: the calls of earlier runs stay in memory, for Vector Search to find.
+      startOver: act(() => {
+        const open = (last?.recalls || []).filter((r) => r.status !== 'closed').map((r) => r._id);
+        return [
+          ...open.map((recall_id) => ['/admin/clock', { recall_id, action: 'pause' }, true]),
+          ['/admin/recalls', { scenario: 'recall_1', mode: 'demo', hold_slice: true, recall_id: freshId() }],
+        ];
+      }, () => {
+        follow = null;
+        pin = null;
+        focus = null;
+        phoneRecall = null;
+      }),
       armFailpoint: () => post('/admin/failpoint', () => ({ name: snapshot.failpointArmed ? null : 'after_dial_request' }))(),
       // The kill beat (scripts/demo.py kill-arm). The API cannot kill a process: it arms the failpoint for
       // Corner Mart, then releases Corner Mart and Queen St Grocer's reply, whose claim names Corner Mart.
@@ -481,6 +662,16 @@ export function createLive(api) {
       closeRecall: post('/admin/close', (recall_id) => ({ recall_id })),
       togglePause: () => post('/admin/clock', (recall_id) => ({ recall_id, action: snapshot.paused ? 'resume' : 'pause' }))(),
       storeEvent: () => {},
+      setKey,
+      askKey: () => {
+        keyAsk = keyAsk || 'missing';
+        emit();
+      },
+      dismissKey: () => {
+        keyAsk = null;
+        pending = null;
+        emit();
+      },
       focus: (attemptId) => {
         pin = attemptId || null;
         emit();

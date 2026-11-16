@@ -393,6 +393,58 @@ def test_wall_shows_the_newest_runtime_recall_by_default(api, app, client, db):
     assert (unknown["recall"], unknown["parties"]) == (None, [])
 
 
+def test_wall_state_adds_real_calls_only_for_the_admin_key(api, app, client, db, rid):
+    """The words of a real call and the number dialled reach a screen holding
+    the admin key; the public body, cached and shared, never carries them."""
+    party = db.parties.find_one({"recall_id": rid})["party_id"]
+    voice = open_attempt(db, recall_id=rid, party_id=party, channel="voice", to_number="+16479361710")
+    complete(db, voice["_id"], "completed")
+    db.attempts.update_one({"_id": voice["_id"]}, {"$set": {
+        "transcript": [{"role": "agent", "message": "Hello, this is the recall line."},
+                       {"role": "user", "message": "We sold twenty to Corner Mart."}],
+        "call_duration_secs": 37}})
+    open_attempt(db, recall_id=rid, party_id=party, channel="sim", to_number="+14165550142")
+    app.state.wall_cache.clear()
+
+    assert "real_calls" not in api.get("/wall/state").json()
+    assert "real_calls" not in api.get("/wall/state", headers={"X-Admin-Token": "wrong"}).json()
+    calls = api.get("/wall/state", headers={"X-Admin-Token": "test-admin-token"}).json()["real_calls"]
+    assert [(c["_id"], c["party_id"], c["phone_tail"], c["call_duration_secs"]) for c in calls] == [
+        (voice["_id"], party, "1710", 37)]
+    assert calls[0]["transcript"][1] == {"role": "user", "message": "We sold twenty to Corner Mart."}
+    assert "to_number" not in calls[0]
+    assert "real_calls" not in api.get("/wall/state").json()    # the cached public body is unchanged
+
+
+def test_live_words_reads_elevenlabs_once_per_interval(monkeypatch):
+    """While a real call is live, the words so far come from ElevenLabs, read at
+    most once per LIVE_WORDS_EVERY_S whoever polls; a failed read keeps the last turns."""
+    reads = []
+
+    class Reply:
+        status_code = 200
+
+        def json(self):
+            return {"status": "in-progress", "transcript": [{"role": "agent", "message": "Hey there!"},
+                                                            {"role": "user", "message": None},
+                                                            {"role": "user", "message": "Yes, Harbour Market."}]}
+
+    def get(url, headers, timeout):
+        reads.append((url, headers["xi-api-key"]))
+        return Reply()
+
+    monkeypatch.setattr(wall.httpx, "get", get)
+    wall._live_words.clear()
+    off = types.SimpleNamespace(voice_provider="sim", eleven_api_key="k", eleven_base_url="https://x")
+    assert wall.live_words(off) is None
+    on = types.SimpleNamespace(voice_provider="elevenlabs", eleven_api_key="k", eleven_base_url="https://x")
+    words = wall.live_words(on)
+    assert words("conv_1") == [{"role": "agent", "message": "Hey there!"},
+                               {"role": "user", "message": "Yes, Harbour Market."}]
+    assert words("conv_1")[1]["message"] == "Yes, Harbour Market."
+    assert reads == [("https://x/v1/convai/conversations/conv_1", "k")]      # the second read was cached
+
+
 def test_wall_page_and_screen_assets(monkeypatch, tmp_path, settings, client):
     monkeypatch.setattr(wall, "SCREEN_DIR", tmp_path / "missing")
     bare = TestClient(create_app(settings, client=client, sim_network=StubNetwork()))
